@@ -1,7 +1,7 @@
 import { sendChat } from '../api/agent'
 import type { ModelConfig } from '../types/agent'
 import type {
-  AgentLayers,
+  AgentWorkspace,
   MultiAgentConfig,
   OrchestrationPlan,
   OrchestrationResult,
@@ -57,17 +57,19 @@ export function shouldUseMultiAgent(
 }
 
 async function callSpecialist(params: {
-  layers: AgentLayers
+  workspace: AgentWorkspace
   skillPrompt: string
   agent: SpecialistAgent
   userContent: string
   model: ModelConfig
   temperature: number
+  bootstrapMaxChars: number
 }): Promise<string> {
   const system = composeSystemPrompt(
-    params.layers,
+    params.workspace,
     params.skillPrompt,
     `${params.agent.name}：${params.agent.role}${params.agent.systemPrompt ? `\n${params.agent.systemPrompt}` : ''}`,
+    params.bootstrapMaxChars,
   )
 
   return sendChat({
@@ -85,21 +87,31 @@ async function callSpecialist(params: {
 
 export async function runMultiAgentPipeline(params: {
   userPrompt: string
-  layers: AgentLayers
+  workspace: AgentWorkspace
   skillPrompt: string
   multiAgent: MultiAgentConfig
   model: ModelConfig
   baseTemperature: number
+  bootstrapMaxChars: number
 }): Promise<OrchestrationResult> {
-  const { multiAgent, model, layers, skillPrompt, userPrompt, baseTemperature } = params
+  const {
+    multiAgent,
+    model,
+    workspace,
+    skillPrompt,
+    userPrompt,
+    baseTemperature,
+    bootstrapMaxChars,
+  } = params
   const orch = multiAgent.orchestrator
 
   const planPrompt = composeSystemPrompt(
-    layers,
+    workspace,
     skillPrompt,
     `${orch.name}：${orch.role}。请将用户任务拆解为 JSON，格式：
 {"summary":"一句话","steps":[{"agentId":"planner|creator|reviewer","task":"子任务描述"}]}
 仅输出 JSON，steps 2～4 项。可用 agentId：${multiAgent.agents.map((a) => a.id).join(', ')}`,
+    bootstrapMaxChars,
   )
 
   let planRaw = await sendChat({
@@ -124,12 +136,13 @@ export async function runMultiAgentPipeline(params: {
     const agent =
       specialistById(multiAgent.agents, step.agentId) ?? multiAgent.agents[0]
     const content = await callSpecialist({
-      layers,
+      workspace,
       skillPrompt,
       agent: agent!,
       userContent: `【总任务】${userPrompt}\n【本子任务】${step.task}\n【前序摘要】${context.slice(-2000) || '无'}`,
       model,
       temperature: baseTemperature,
+      bootstrapMaxChars,
     })
     stepOutputs.push({
       agentId: agent!.id,
@@ -144,9 +157,10 @@ export async function runMultiAgentPipeline(params: {
       {
         role: 'system',
         content: composeSystemPrompt(
-          layers,
+          workspace,
           skillPrompt,
           `${orch.name}：汇总各子 Agent 产出，给用户一份完整、可执行的最终答复。`,
+          bootstrapMaxChars,
         ),
       },
       {

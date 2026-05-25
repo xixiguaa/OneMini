@@ -155,13 +155,15 @@ export const useAgentStore = defineStore('agent', () => {
       resolveModelForChat(agentConfig.skeleton, settings) ??
       requireModelForSkill('chat')
     if (!model) {
-      throw new Error('请在「模型配置」填写对话模型 API Key，或在「Agent 配置 → 骨架」设置主模型')
+      throw new Error('请在「模型配置」填写对话模型 API Key，或在「Agent 配置 → 运行时」设置主模型')
     }
 
     const fullContent = buildUserContent(content)
     const systemPrompt = composeSystemPrompt(
-      agentConfig.layers,
+      agentConfig.workspace,
       skill?.systemPrompt || '',
+      undefined,
+      agentConfig.bootstrapMaxChars,
     )
     const maxHist = agentConfig.skeleton.session.maxHistoryMessages
     const history = truncateHistory(
@@ -188,11 +190,12 @@ export const useAgentStore = defineStore('agent', () => {
         })
         const result = await runMultiAgentPipeline({
           userPrompt: fullContent,
-          layers: agentConfig.layers,
+          workspace: agentConfig.workspace,
           skillPrompt: skill?.systemPrompt || '',
           multiAgent: agentConfig.skeleton.multiAgent,
           model,
           baseTemperature: temperature,
+          bootstrapMaxChars: agentConfig.bootstrapMaxChars,
         })
         const sections = result.stepOutputs
           .map((s) => `### ${s.agentName}\n${s.content}`)

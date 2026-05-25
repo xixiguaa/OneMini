@@ -1,5 +1,7 @@
 {
   "version": "1.0.0",
+  "workspace": "agent-config/",
+  "bootstrapMaxChars": 18000,
   "models": {
     "primary": "deepseek-v4-pro",
     "fallbacks": ["gpt-5.5-high", "claude-sonnet"],

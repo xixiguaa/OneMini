@@ -1,19 +1,22 @@
 <script setup lang="ts">
 import {
-  ChevronDown,
   Download,
+  Globe,
+  Image as ImageIcon,
   Maximize2,
   Minimize2,
+  Plus,
   Settings,
   Sparkles,
   Type,
-  Image as ImageIcon,
 } from 'lucide-vue-next'
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import Viewport3D from './Viewport3D.vue'
 import { useAgentStore } from '../stores/agent'
 import { useSettingsStore } from '../stores/settings'
 import { useWorldHistoryStore } from '../stores/worldHistory'
+import { BRAND_NAME } from '../utils/modelLogo'
+
 const agent = useAgentStore()
 const settings = useSettingsStore()
 const worldHistory = useWorldHistoryStore()
@@ -25,6 +28,12 @@ const imagePreview = ref<string | null>(null)
 const imageBase64 = ref<string | null>(null)
 const fileInput = ref<HTMLInputElement | null>(null)
 
+const boundWorldModel = computed(() => {
+  const skill = settings.getSkill('world')
+  const id = skill?.defaultModelId || settings.worldModels[0]?.id
+  return id ? settings.getModel(id) : null
+})
+
 const queueText = computed(() => {
   if (agent.worldStatus === 'WAIT') return '排队中'
   if (agent.worldStatus === 'RUN') return '生成中'
@@ -32,6 +41,16 @@ const queueText = computed(() => {
 })
 
 const activeWorld = computed(() => worldHistory.activeItem())
+
+function statusLabel(status: string) {
+  const map: Record<string, string> = {
+    WAIT: '排队中',
+    RUN: '生成中',
+    DONE: '已完成',
+    FAIL: '失败',
+  }
+  return map[status] || status
+}
 
 watch(
   () => agent.worldPreviewUrl,
@@ -49,6 +68,23 @@ function toggleFullscreen() {
   fullscreen.value = !fullscreen.value
 }
 
+watch(fullscreen, async (on) => {
+  document.body.style.overflow = on ? 'hidden' : ''
+  await nextTick()
+  window.dispatchEvent(new Event('resize'))
+})
+
+function openNew() {
+  worldHistory.activeId = null
+  prompt.value = '一条古老的石板小巷，两旁石墙与木桶，远处有石阶，写实风格'
+  imagePreview.value = null
+  imageBase64.value = null
+  worldMode.value = 'text'
+  agent.worldPreviewUrl = null
+  agent.worldJobId = null
+  agent.worldStatus = null
+}
+
 async function onImagePick(e: Event) {
   const file = (e.target as HTMLInputElement).files?.[0]
   if (!file) return
@@ -61,11 +97,9 @@ async function onImagePick(e: Event) {
 }
 
 async function generate() {
-  const skill = settings.getSkill('world')
-  const modelId = skill?.defaultModelId || settings.worldModels[0]?.id || ''
-  const model = settings.getModel(modelId)
+  const model = boundWorldModel.value
   if (!model?.enabled) {
-    alert('请先在「模型配置」添加并启用 3D 世界生成模型，并在「技能配置」绑定')
+    alert('请先在「模型配置」添加并启用 3D 世界生成模型，并在「Agent 配置 → 技能」绑定')
     agent.setCurrentView('models')
     return
   }
@@ -75,7 +109,10 @@ async function generate() {
     return
   }
 
-  const text = worldMode.value === 'text' ? prompt.value.trim() : prompt.value.trim() || '根据参考图生成 3D 场景'
+  const text =
+    worldMode.value === 'text'
+      ? prompt.value.trim()
+      : prompt.value.trim() || '根据参考图生成 3D 场景'
   if (!text && worldMode.value === 'text') return
 
   const title = text.slice(0, 24) || '新世界'
@@ -92,22 +129,15 @@ async function generate() {
       previewUrl: imagePreview.value ?? undefined,
     })
     if (agent.worldJobId) {
-      worldHistory.update(entry.id, { jobId: agent.worldJobId, status: agent.worldStatus || 'WAIT' })
+      worldHistory.update(entry.id, {
+        jobId: agent.worldJobId,
+        status: agent.worldStatus || 'WAIT',
+      })
     }
   } catch {
     worldHistory.update(entry.id, { status: 'FAIL' })
   }
 }
-
-function onEscape(e: KeyboardEvent) {
-  if (e.key === 'Escape' && fullscreen.value) fullscreen.value = false
-}
-
-onMounted(() => window.addEventListener('keydown', onEscape))
-onUnmounted(() => {
-  window.removeEventListener('keydown', onEscape)
-  fullscreen.value = false
-})
 
 function selectHistory(id: string) {
   worldHistory.select(id)
@@ -119,141 +149,158 @@ function selectHistory(id: string) {
     agent.worldStatus = item.status
   }
 }
+
+function onEscape(e: KeyboardEvent) {
+  if (e.key === 'Escape' && fullscreen.value) fullscreen.value = false
+}
+
+onMounted(() => window.addEventListener('keydown', onEscape))
+onUnmounted(() => {
+  window.removeEventListener('keydown', onEscape)
+  fullscreen.value = false
+  document.body.style.overflow = ''
+})
 </script>
 
 <template>
-  <div class="world-page" :class="{ 'is-fullscreen': fullscreen }">
-    <div class="world-body">
-      <div class="stage card">
-        <Viewport3D class="viewport-layer" />
+  <div class="models-page">
+    <header class="page-header">
+      <h2>世界生成</h2>
+      <p>
+        {{ BRAND_NAME }} · 混元生 3D ·
+        <span v-if="boundWorldModel?.enabled" class="status-ok">{{ boundWorldModel.name }}</span>
+        <span v-else class="status-warn">未绑定 3D 模型</span>
+      </p>
+    </header>
 
-        <div class="stage-tools">
-          <button type="button" class="stage-tool-btn" title="模型配置" @click="agent.setCurrentView('models')">
-            <Settings :size="18" />
-          </button>
-          <button
-            type="button"
-            class="stage-tool-btn"
-            :title="fullscreen ? '退出全屏' : '全屏'"
-            @click="toggleFullscreen"
-          >
-            <Minimize2 v-if="fullscreen" :size="18" />
-            <Maximize2 v-else :size="18" />
-          </button>
-        </div>
+    <div class="split-layout">
+      <aside class="model-list card">
+        <p class="group-label">生成记录</p>
+        <p v-if="!worldHistory.items.length" class="list-empty">暂无记录</p>
+        <button
+          v-for="item in worldHistory.items"
+          :key="item.id"
+          type="button"
+          class="model-item"
+          :class="{
+            active: worldHistory.activeId === item.id,
+            enabled: item.status === 'DONE',
+            pending: item.status === 'WAIT' || item.status === 'RUN',
+          }"
+          @click="selectHistory(item.id)"
+        >
+          <Globe :size="20" class="section-icon" />
+          <div class="item-text">
+            <span class="name">{{ item.title }}</span>
+            <span class="state">{{ statusLabel(item.status) }}</span>
+          </div>
+        </button>
 
-        <div class="control-legend">
-          <span class="legend-title">操作</span>
-          <span class="legend-item"><kbd>QWEASD</kbd> 移动</span>
-          <span class="legend-item"><kbd>Shift</kbd> 加速</span>
-          <span class="legend-item"><kbd>Space</kbd> 跳跃</span>
-          <span class="legend-item">鼠标拖拽环顾</span>
-        </div>
+        <button type="button" class="add-trigger" @click="openNew">
+          <Plus :size="16" />
+          新建世界
+        </button>
+        <button type="button" class="add-trigger secondary" @click="agent.setCurrentView('models')">
+          <Settings :size="16" />
+          模型配置
+        </button>
+      </aside>
 
-        <div class="gen-dock">
-          <div class="gen-bar">
-            <div class="mode-tabs">
-              <button type="button" :class="{ active: worldMode === 'text' }" @click="worldMode = 'text'">
-                <Type :size="15" />
-                文生场景
-              </button>
-              <button type="button" :class="{ active: worldMode === 'image' }" @click="worldMode = 'image'">
-                <ImageIcon :size="15" />
-                图生场景
-              </button>
+      <section class="right-panel card">
+        <div class="detail">
+          <Teleport to="body" :disabled="!fullscreen">
+            <div class="viewport-wrap" :class="{ 'is-fullscreen': fullscreen }">
+              <Viewport3D class="viewport-layer" />
+              <div class="viewport-tools">
+                <button
+                  type="button"
+                  class="viewport-tool-btn"
+                  :title="fullscreen ? '退出全屏' : '全屏'"
+                  @click="toggleFullscreen"
+                >
+                  <Minimize2 v-if="fullscreen" :size="18" />
+                  <Maximize2 v-else :size="18" />
+                </button>
+              </div>
+              <div class="control-legend">
+                <span class="legend-title">操作</span>
+                <span><kbd>QWEASD</kbd> 移动</span>
+                <span><kbd>Shift</kbd> 加速</span>
+                <span><kbd>Space</kbd> 跳跃</span>
+                <span>鼠标拖拽环顾</span>
+              </div>
             </div>
+          </Teleport>
 
-            <div class="gen-main">
-              <button
-                v-if="worldMode === 'image'"
-                type="button"
-                class="thumb-wrap"
-                title="上传参考图"
-                @click="fileInput?.click()"
-              >
-                <img v-if="imagePreview" :src="imagePreview" alt="参考" />
-                <span v-else class="thumb-placeholder">参考图</span>
+          <div v-if="queueText" class="queue-banner">
+            <Sparkles :size="16" />
+            <span>{{ queueText }}</span>
+            <span v-if="agent.worldStatus === 'WAIT'" class="queue-sub">预计还需数分钟</span>
+          </div>
+
+          <div class="gen-section">
+            <label class="field">
+              <span>生成方式</span>
+              <div class="mode-row">
+                <button type="button" class="mode-btn" :class="{ active: worldMode === 'text' }" @click="worldMode = 'text'">
+                  <Type :size="15" />
+                  文生场景
+                </button>
+                <button type="button" class="mode-btn" :class="{ active: worldMode === 'image' }" @click="worldMode = 'image'">
+                  <ImageIcon :size="15" />
+                  图生场景
+                </button>
+              </div>
+            </label>
+
+            <label v-if="worldMode === 'image'" class="field">
+              <span>参考图</span>
+              <button type="button" class="image-pick" @click="fileInput?.click()">
+                <img v-if="imagePreview" :src="imagePreview" alt="参考图" />
+                <span v-else>点击上传图片</span>
               </button>
+              <input ref="fileInput" type="file" accept="image/*" hidden @change="onImagePick" />
+            </label>
 
-              <input
+            <label class="field">
+              <span>场景描述</span>
+              <textarea
                 v-model="prompt"
-                class="prompt-input"
+                class="input textarea"
+                rows="3"
                 :placeholder="
                   worldMode === 'text'
                     ? '描述你想生成的 3D 世界场景…'
-                    : '可选：补充场景描述（不填则根据参考图生成）'
+                    : '可选：补充描述（不填则根据参考图生成）'
                 "
-                @keydown.enter="generate"
+                @keydown.enter.exact.prevent="generate"
               />
+            </label>
+
+            <div class="actions">
+              <button type="button" class="btn-primary" :disabled="agent.isProcessing" @click="generate">
+                <Sparkles :size="16" />
+                立即生成
+              </button>
             </div>
+          </div>
 
-            <button type="button" class="generate-btn" :disabled="agent.isProcessing" @click="generate">
-              <Sparkles :size="17" />
-              立即生成
-            </button>
-
-            <input ref="fileInput" type="file" accept="image/*" hidden @change="onImagePick" />
+          <div v-if="activeWorld?.files?.length" class="downloads">
+            <p class="field-label">下载资源</p>
+            <a
+              v-for="f in activeWorld.files"
+              :key="f.url"
+              :href="f.url"
+              target="_blank"
+              rel="noopener"
+              class="dl-link"
+            >
+              <Download :size="14" />
+              {{ f.type }}
+            </a>
           </div>
         </div>
-      </div>
-
-      <aside class="history-panel card">
-        <div class="panel-tabs">
-          <button
-            type="button"
-            :class="{ active: worldHistory.rightTab === 'explore' }"
-            @click="worldHistory.rightTab = 'explore'"
-          >
-            探索
-          </button>
-          <button
-            type="button"
-            :class="{ active: worldHistory.rightTab === 'create' }"
-            @click="worldHistory.rightTab = 'create'"
-          >
-            创作
-          </button>
-        </div>
-
-        <div v-if="queueText" class="queue-card">
-          <span>{{ queueText }}</span>
-          <span v-if="agent.worldStatus === 'WAIT'" class="queue-time">预计还需数分钟</span>
-        </div>
-
-        <div class="thumb-list">
-          <button
-            v-for="item in worldHistory.items"
-            :key="item.id"
-            type="button"
-            class="history-thumb"
-            :class="{ active: worldHistory.activeId === item.id }"
-            @click="selectHistory(item.id)"
-          >
-            <img v-if="item.previewUrl" :src="item.previewUrl" alt="" />
-            <div v-else class="thumb-empty">{{ item.title }}</div>
-            <span class="thumb-status">{{ item.status }}</span>
-          </button>
-          <p v-if="!worldHistory.items.length" class="empty-hint">生成后将显示在这里</p>
-        </div>
-
-        <div v-if="activeWorld?.files?.length" class="download-row">
-          <button type="button" class="download-btn">
-            <Download :size="16" />
-            下载
-            <ChevronDown :size="14" />
-          </button>
-          <a
-            v-for="f in activeWorld.files"
-            :key="f.url"
-            :href="f.url"
-            target="_blank"
-            rel="noopener"
-            class="dl-link"
-          >
-            {{ f.type }}
-          </a>
-        </div>
-      </aside>
+      </section>
     </div>
   </div>
 </template>
@@ -261,51 +308,226 @@ function selectHistory(id: string) {
 <style scoped lang="scss">
 @use '../styles/variables.scss' as *;
 
-.world-page {
+.models-page {
   flex: 1;
   display: flex;
   flex-direction: column;
   min-height: 0;
+  padding: 24px 28px;
+}
+
+.page-header {
+  margin-bottom: 20px;
+
+  h2 {
+    font-size: 22px;
+    font-weight: 600;
+  }
+
+  p {
+    font-size: 13px;
+    color: $text-secondary;
+    margin-top: 4px;
+  }
+}
+
+.status-ok {
+  color: $accent;
+  font-weight: 500;
+}
+
+.status-warn {
+  color: $accent-gold;
+  font-weight: 500;
+}
+
+.split-layout {
+  flex: 1;
+  display: grid;
+  grid-template-columns: 280px 1fr;
+  gap: 16px;
+  min-height: 0;
+}
+
+.card {
+  background: $bg-card;
+  border: 1px solid $glass-border;
+  border-radius: $radius-md;
+  box-shadow: $shadow-sm;
+  min-height: 0;
   overflow: hidden;
-  padding: 16px 20px 20px;
+}
+
+.model-list {
+  display: flex;
+  flex-direction: column;
+  padding: 12px;
+  overflow-y: auto;
+}
+
+.group-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: $text-muted;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 8px 8px 6px;
+}
+
+.list-empty {
+  font-size: 12px;
+  color: $text-muted;
+  padding: 8px 10px 12px;
+}
+
+.model-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 10px;
+  border-radius: 10px;
+  text-align: left;
+  margin-bottom: 4px;
+  border: 1px solid transparent;
+  color: $text-primary;
+
+  &:hover {
+    background: $accent-light;
+  }
+
+  &.active {
+    background: $accent-light;
+    border-color: $accent;
+    box-shadow: inset 3px 0 0 $accent;
+
+    .name {
+      font-weight: 600;
+    }
+  }
+
+  &.enabled .state {
+    color: $accent;
+    font-weight: 500;
+  }
+
+  &.pending .state {
+    color: $accent-gold;
+    font-weight: 500;
+  }
+}
+
+.section-icon {
+  flex-shrink: 0;
+  color: $accent;
+  opacity: 0.85;
+}
+
+.item-text {
+  min-width: 0;
+
+  .name {
+    display: block;
+    font-size: 13px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .state {
+    display: block;
+    font-size: 11px;
+    color: $text-secondary;
+    margin-top: 2px;
+  }
+}
+
+.add-trigger {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 8px;
+  padding: 12px;
+  border: 1px dashed $border-light;
+  border-radius: 10px;
+  font-size: 13px;
+  color: $text-secondary;
+
+  &:hover {
+    border-color: $accent;
+    color: $accent;
+    background: $accent-light;
+  }
+
+  &.secondary {
+    margin-top: 6px;
+    border-style: solid;
+  }
+}
+
+.right-panel {
+  display: flex;
+  flex-direction: column;
+  min-height: 400px;
+}
+
+.detail {
+  padding: 20px;
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.viewport-wrap {
+  position: relative;
+  flex: 1;
+  min-height: 280px;
+  max-height: min(52vh, 480px);
+  border-radius: $radius-sm;
+  overflow: hidden;
+  background: #1a1f1c;
+  border: 1px solid $border-light;
+  margin-bottom: 16px;
 
   &.is-fullscreen {
     position: fixed;
     inset: 0;
-    z-index: 2000;
-    padding: 12px;
+    z-index: 3000;
+    width: 100vw;
+    height: 100vh;
+    max-height: none;
+    min-height: 0;
+    margin: 0;
+    border: none;
+    border-radius: 0;
     background: #0f1410;
-
-    .history-panel {
-      background: rgba(0, 0, 0, 0.45);
-      border-color: rgba(255, 255, 255, 0.1);
-      color: #fff;
-    }
-
-    .stage {
-      border-color: rgba(255, 255, 255, 0.12);
-    }
   }
 }
 
-.world-body {
-  flex: 1;
-  display: flex;
-  gap: 14px;
-  min-height: 0;
+.viewport-layer {
+  position: absolute !important;
+  inset: 0;
+  z-index: 0;
+
+  :deep(canvas) {
+    pointer-events: auto;
+  }
 }
 
-.stage-tools {
+.viewport-tools {
   position: absolute;
-  top: 12px;
-  right: 12px;
-  z-index: 30;
+  top: 10px;
+  right: 10px;
+  z-index: 20;
   display: flex;
   gap: 8px;
   pointer-events: auto;
 }
 
-.stage-tool-btn {
+.viewport-tool-btn {
   width: 36px;
   height: 36px;
   display: flex;
@@ -323,138 +545,115 @@ function selectHistory(id: string) {
   }
 }
 
-.stage {
-  flex: 1;
-  position: relative;
-  min-width: 0;
-  min-height: 320px;
-  overflow: hidden;
-  border-radius: $radius-md;
-  background: #1a1f1c;
-}
-
-.viewport-layer {
-  position: absolute !important;
-  inset: 0;
-  z-index: 0;
-  pointer-events: none;
-
-  :deep(canvas) {
-    pointer-events: auto;
-  }
-}
-
 .control-legend {
   position: absolute;
-  top: 56px;
-  left: 14px;
+  top: 10px;
+  left: 10px;
   z-index: 10;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 6px 12px;
-  max-width: min(420px, calc(100% - 120px));
-  padding: 8px 12px;
-  background: rgba(15, 18, 16, 0.78);
+  gap: 6px 10px;
+  max-width: calc(100% - 20px);
+  padding: 6px 10px;
+  background: rgba(15, 18, 16, 0.82);
   border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 10px;
-  font-size: 11px;
-  color: rgba(255, 255, 255, 0.72);
+  border-radius: 8px;
+  font-size: 10px;
+  color: rgba(255, 255, 255, 0.75);
   pointer-events: none;
-}
 
-.legend-title {
-  font-weight: 600;
-  color: rgba(255, 255, 255, 0.45);
-  margin-right: 2px;
-}
-
-.legend-item {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  white-space: nowrap;
+  .legend-title {
+    font-weight: 600;
+    color: rgba(255, 255, 255, 0.45);
+  }
 
   kbd {
-    padding: 2px 6px;
+    padding: 1px 5px;
     background: rgba(255, 255, 255, 0.12);
     border-radius: 4px;
-    font-size: 10px;
-    color: rgba(255, 255, 255, 0.9);
+    font-size: 9px;
   }
 }
 
-.gen-dock {
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  z-index: 20;
-  padding: 0 16px 14px;
-  pointer-events: none;
-}
-
-.gen-bar {
-  pointer-events: auto;
-  max-width: 920px;
-  margin: 0 auto;
-  display: flex;
-  align-items: stretch;
-  gap: 12px;
-  padding: 10px 12px;
-  background: rgba(15, 18, 16, 0.92);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 14px;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.35);
-}
-
-.mode-tabs {
-  display: flex;
-  flex-shrink: 0;
-  align-self: center;
-  padding: 3px;
-  gap: 2px;
-  background: rgba(0, 0, 0, 0.35);
-  border-radius: 10px;
-
-  button {
-    display: inline-flex;
-    align-items: center;
-    gap: 5px;
-    padding: 7px 12px;
-    border-radius: 8px;
-    font-size: 12px;
-    color: rgba(255, 255, 255, 0.55);
-    white-space: nowrap;
-    transition: background 0.15s, color 0.15s;
-
-    &.active {
-      background: rgba(255, 255, 255, 0.14);
-      color: #fff;
-    }
-
-    &:hover:not(.active) {
-      color: rgba(255, 255, 255, 0.85);
-    }
-  }
-}
-
-.gen-main {
-  flex: 1;
-  min-width: 0;
+.queue-banner {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
+  padding: 10px 14px;
+  margin-bottom: 14px;
+  background: $accent-light;
+  border-radius: $radius-sm;
+  font-size: 13px;
+  color: $accent;
+  flex-shrink: 0;
+
+  .queue-sub {
+    font-size: 12px;
+    opacity: 0.85;
+  }
 }
 
-.thumb-wrap {
-  width: 52px;
-  height: 40px;
-  border-radius: 8px;
-  overflow: hidden;
+.gen-section {
   flex-shrink: 0;
-  border: 1px dashed rgba(255, 255, 255, 0.28);
-  background: rgba(0, 0, 0, 0.25);
+  padding-top: 4px;
+  border-top: 1px solid $border-light;
+}
+
+.field {
+  display: block;
+  margin-bottom: 14px;
+
+  > span {
+    display: block;
+    font-size: 12px;
+    color: $text-secondary;
+    margin-bottom: 8px;
+  }
+}
+
+.mode-row {
+  display: flex;
+  gap: 8px;
+}
+
+.mode-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  border-radius: $radius-sm;
+  border: 1px solid $border-light;
+  font-size: 13px;
+  color: $text-secondary;
+  background: $bg-input;
+
+  &.active {
+    border-color: $accent;
+    color: $accent;
+    background: $accent-light;
+    font-weight: 600;
+  }
+
+  &:hover:not(.active) {
+    border-color: rgba(45, 138, 78, 0.35);
+    color: $text-primary;
+  }
+}
+
+.image-pick {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  max-width: 200px;
+  aspect-ratio: 4 / 3;
+  border: 1px dashed $border-light;
+  border-radius: $radius-sm;
+  overflow: hidden;
+  font-size: 12px;
+  color: $text-muted;
+  background: $bg-input;
 
   img {
     width: 100%;
@@ -463,254 +662,88 @@ function selectHistory(id: string) {
   }
 
   &:hover {
-    border-color: rgba(255, 255, 255, 0.45);
+    border-color: $accent;
+    color: $accent;
   }
 }
 
-.thumb-placeholder {
-  display: flex;
-  align-items: center;
-  justify-content: center;
+.input {
   width: 100%;
-  height: 100%;
-  font-size: 10px;
-  color: rgba(255, 255, 255, 0.45);
-}
-
-.prompt-input {
-  flex: 1;
-  min-width: 0;
-  min-height: 40px;
-  padding: 10px 14px;
-  background: rgba(0, 0, 0, 0.3);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 10px;
-  color: #fff;
+  padding: 10px 12px;
+  background: $bg-input;
+  border: 1px solid $border-light;
+  border-radius: 8px;
   font-size: 13px;
-  line-height: 1.4;
-
-  &::placeholder {
-    color: rgba(255, 255, 255, 0.35);
-  }
+  color: $text-primary;
 
   &:focus {
-    border-color: rgba(59, 130, 246, 0.5);
-    outline: none;
+    border-color: $accent;
+    box-shadow: 0 0 0 3px $accent-light;
+  }
+
+  &.textarea {
+    resize: vertical;
+    line-height: 1.5;
   }
 }
 
-.generate-btn {
-  display: flex;
+.actions {
+  margin-top: 4px;
+}
+
+.btn-primary {
+  display: inline-flex;
   align-items: center;
-  justify-content: center;
-  align-self: center;
-  gap: 6px;
-  padding: 0 20px;
-  min-height: 40px;
-  background: linear-gradient(135deg, #3b82f6, #2563eb);
-  color: #fff;
-  border-radius: 10px;
+  gap: 8px;
+  padding: 10px 20px;
+  border-radius: $radius-sm;
   font-size: 13px;
   font-weight: 600;
-  white-space: nowrap;
-  flex-shrink: 0;
-
-  &:hover:not(:disabled) {
-    filter: brightness(1.06);
-  }
+  background: linear-gradient(135deg, $accent, $accent-magic);
+  color: #fff;
 
   &:disabled {
     opacity: 0.5;
   }
-}
 
-.history-panel {
-  width: 220px;
-  flex-shrink: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  padding: 12px;
-  min-height: 0;
-  overflow: hidden;
-}
-
-.panel-tabs {
-  display: flex;
-  gap: 4px;
-  flex-shrink: 0;
-
-  button {
-    flex: 1;
-    padding: 8px;
-    font-size: 12px;
-    border-radius: 8px;
-    color: $text-secondary;
-
-    &.active {
-      background: $accent-light;
-      color: $accent;
-      font-weight: 600;
-    }
+  &:not(:disabled):hover {
+    box-shadow: $shadow-glow;
   }
 }
 
-.queue-card {
-  padding: 10px 12px;
-  background: $accent-light;
-  border-radius: 8px;
+.downloads {
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid $border-light;
+}
+
+.field-label {
   font-size: 12px;
-  color: $accent;
-  flex-shrink: 0;
-
-  .queue-time {
-    display: block;
-    font-size: 11px;
-    opacity: 0.8;
-    margin-top: 4px;
-  }
-}
-
-.thumb-list {
-  flex: 1;
-  overflow-y: auto;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  min-height: 0;
-}
-
-.history-thumb {
-  position: relative;
-  width: 100%;
-  aspect-ratio: 16 / 10;
-  border-radius: 8px;
-  overflow: hidden;
-  border: 2px solid transparent;
-
-  &.active {
-    border-color: $accent;
-  }
-
-  img {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-  }
-}
-
-.thumb-empty {
-  width: 100%;
-  height: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: $bg-input;
-  font-size: 11px;
-  color: $text-muted;
-  padding: 8px;
-  text-align: center;
-}
-
-.thumb-status {
-  position: absolute;
-  bottom: 4px;
-  right: 6px;
-  font-size: 9px;
-  padding: 2px 6px;
-  background: rgba(0, 0, 0, 0.55);
-  border-radius: 4px;
-  color: #fff;
-}
-
-.empty-hint {
-  font-size: 11px;
-  color: $text-muted;
-  text-align: center;
-  padding: 16px 0;
-}
-
-.download-row {
-  flex-shrink: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.download-btn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  padding: 10px;
-  background: linear-gradient(135deg, $accent, $accent-magic);
-  color: #fff;
-  border-radius: 18px;
-  font-size: 12px;
-  font-weight: 600;
+  color: $text-secondary;
+  margin-bottom: 8px;
 }
 
 .dl-link {
-  font-size: 11px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-right: 12px;
+  font-size: 13px;
   color: $accent;
-  text-align: center;
   text-decoration: none;
-}
 
-.is-fullscreen .panel-tabs button {
-  color: rgba(255, 255, 255, 0.55);
-
-  &.active {
-    background: rgba(255, 255, 255, 0.15);
-    color: #fff;
+  &:hover {
+    text-decoration: underline;
   }
 }
 
-.is-fullscreen .thumb-empty {
-  background: rgba(255, 255, 255, 0.08);
-  color: rgba(255, 255, 255, 0.5);
-}
-
-.is-fullscreen .empty-hint,
-.is-fullscreen .queue-card {
-  color: rgba(255, 255, 255, 0.7);
-  background: rgba(0, 0, 0, 0.35);
-}
-
-@media (max-width: 900px) {
-  .world-body {
-    flex-direction: column;
+@media (max-width: 768px) {
+  .split-layout {
+    grid-template-columns: 1fr;
   }
 
-  .history-panel {
-    width: 100%;
-    max-height: 200px;
-  }
-
-  .stage {
-    min-height: 280px;
-  }
-
-  .gen-bar {
-    flex-wrap: wrap;
-  }
-
-  .mode-tabs {
-    width: 100%;
-    justify-content: center;
-  }
-
-  .gen-main {
-    width: 100%;
-  }
-
-  .generate-btn {
-    width: 100%;
-  }
-
-  .control-legend {
-    top: 52px;
-    max-width: calc(100% - 28px);
+  .viewport-wrap {
+    max-height: 320px;
   }
 }
 </style>

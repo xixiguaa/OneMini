@@ -1,31 +1,34 @@
-import type { AgentLayers } from '../types/agentConfig'
+import { WORKSPACE_FILES, WORKSPACE_INJECT_ORDER } from '../config/workspaceFiles'
+import type { AgentWorkspace } from '../types/agentConfig'
 
-const LAYER_HEADERS: Record<keyof AgentLayers, string> = {
-  agents: '【宪法 · AGENTS】',
-  soul: '【灵魂 · SOUL】',
-  identity: '【身份 · IDENTITY】',
-  user: '【人设 · USER】',
-}
+const FILE_MAP = Object.fromEntries(
+  WORKSPACE_FILES.map((f) => [f.key, f.filename]),
+) as Record<keyof AgentWorkspace, string>
 
-/** 按 OpenClaw 四层顺序合成系统提示词 */
+/** OpenClaw 顺序注入工作区 bootstrap 文件 */
 export function composeSystemPrompt(
-  layers: AgentLayers,
+  workspace: AgentWorkspace,
   skillPrompt = '',
   specialistRole?: string,
+  bootstrapMaxChars = 18000,
 ): string {
   const parts: string[] = []
 
-  for (const key of ['agents', 'soul', 'identity', 'user'] as const) {
-    const body = layers[key]?.trim()
-    if (body) parts.push(`${LAYER_HEADERS[key]}\n${body}`)
+  for (const key of WORKSPACE_INJECT_ORDER) {
+    let body = workspace[key]?.trim()
+    if (!body) continue
+    if (body.length > bootstrapMaxChars) {
+      body = `${body.slice(0, bootstrapMaxChars)}\n\n…（已截断，完整内容见 ${FILE_MAP[key]}）`
+    }
+    parts.push(`<!-- ${FILE_MAP[key]} -->\n${body}`)
   }
 
   if (specialistRole?.trim()) {
-    parts.push(`【多智能体角色】\n${specialistRole.trim()}`)
+    parts.push(`<!-- CREW ROLE -->\n${specialistRole.trim()}`)
   }
 
   const skill = skillPrompt.trim()
-  if (skill) parts.push(`【当前技能】\n${skill}`)
+  if (skill) parts.push(`<!-- SKILL -->\n${skill}`)
 
   return parts.join('\n\n')
 }

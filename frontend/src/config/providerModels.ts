@@ -106,6 +106,7 @@ export const PROVIDER_MODEL_OPTIONS: Record<
   nanobanana: {
     image: [MANUAL],
   },
+  custom: {},
 }
 
 export function getModelOptions(

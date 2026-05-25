@@ -2,14 +2,14 @@ import { defineStore } from 'pinia'
 import { computed, ref, watch } from 'vue'
 import {
   buildDefaultAgentConfig,
-  DEFAULT_LAYERS,
   DEFAULT_SKELETON,
+  DEFAULT_WORKSPACE,
 } from '../config/agentConfigDefaults'
 import type {
   AgentConfigBundle,
-  AgentLayerKey,
-  AgentLayers,
+  AgentWorkspace,
   OneMiniSkeleton,
+  WorkspaceFileKey,
 } from '../types/agentConfig'
 
 const STORAGE_KEY = 'onemini-agent-config-v1'
@@ -35,12 +35,13 @@ function mergeSkeleton(saved?: Partial<OneMiniSkeleton>): OneMiniSkeleton {
   }
 }
 
-function mergeLayers(saved?: Partial<AgentLayers>): AgentLayers {
+function mergeWorkspace(saved?: Partial<AgentWorkspace>): AgentWorkspace {
   return {
-    agents: saved?.agents ?? DEFAULT_LAYERS.agents,
-    soul: saved?.soul ?? DEFAULT_LAYERS.soul,
-    identity: saved?.identity ?? DEFAULT_LAYERS.identity,
-    user: saved?.user ?? DEFAULT_LAYERS.user,
+    agents: saved?.agents ?? DEFAULT_WORKSPACE.agents,
+    soul: saved?.soul ?? DEFAULT_WORKSPACE.soul,
+    identity: saved?.identity ?? DEFAULT_WORKSPACE.identity,
+    user: saved?.user ?? DEFAULT_WORKSPACE.user,
+    tools: saved?.tools ?? DEFAULT_WORKSPACE.tools,
   }
 }
 
@@ -48,9 +49,12 @@ function loadBundle(): AgentConfigBundle {
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
     if (raw) {
-      const parsed = JSON.parse(raw) as Partial<AgentConfigBundle>
+      const parsed = JSON.parse(raw) as Partial<AgentConfigBundle> & {
+        layers?: AgentWorkspace
+      }
+      const workspace = mergeWorkspace(parsed.workspace ?? parsed.layers)
       return {
-        layers: mergeLayers(parsed.layers),
+        workspace,
         skeleton: mergeSkeleton(parsed.skeleton),
       }
     }
@@ -70,21 +74,36 @@ export const useAgentConfigStore = defineStore('agentConfig', () => {
   )
 
   const skeleton = computed(() => bundle.value.skeleton)
-  const layers = computed(() => bundle.value.layers)
+  const workspace = computed(() => bundle.value.workspace)
+  /** @deprecated 使用 workspace */
+  const layers = workspace
   const multiAgentEnabled = computed(() => skeleton.value.multiAgent.enabled)
   const temperature = computed(() => skeleton.value.models.temperature)
   const maxHistory = computed(() => skeleton.value.session.maxHistoryMessages)
+  const bootstrapMaxChars = computed(
+    () => skeleton.value.bootstrapMaxChars ?? 18000,
+  )
 
-  function updateLayer(key: AgentLayerKey, content: string) {
-    bundle.value.layers[key] = content
+  function updateWorkspaceFile(key: WorkspaceFileKey, content: string) {
+    bundle.value.workspace[key] = content
+  }
+
+  /** @deprecated */
+  function updateLayer(key: WorkspaceFileKey, content: string) {
+    updateWorkspaceFile(key, content)
   }
 
   function updateSkeleton(patch: Partial<OneMiniSkeleton>) {
     bundle.value.skeleton = mergeSkeleton({ ...bundle.value.skeleton, ...patch })
   }
 
+  function resetWorkspace() {
+    bundle.value.workspace = { ...DEFAULT_WORKSPACE }
+  }
+
+  /** @deprecated */
   function resetLayers() {
-    bundle.value.layers = { ...DEFAULT_LAYERS }
+    resetWorkspace()
   }
 
   function resetSkeleton() {
@@ -115,12 +134,16 @@ export const useAgentConfigStore = defineStore('agentConfig', () => {
   return {
     bundle,
     skeleton,
+    workspace,
     layers,
     multiAgentEnabled,
     temperature,
     maxHistory,
+    bootstrapMaxChars,
+    updateWorkspaceFile,
     updateLayer,
     updateSkeleton,
+    resetWorkspace,
     resetLayers,
     resetSkeleton,
     resetAll,
