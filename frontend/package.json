@@ -1,0 +1,38 @@
+{
+  "name": "wordmodel",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "concurrently -n api,web -c blue,green \"node server/index.js\" \"vite --host\"",
+    "dev:web": "vite --host",
+    "dev:api": "node server/index.js",
+    "build": "vue-tsc -b && vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@types/three": "^0.184.1",
+    "axios": "^1.16.1",
+    "cors": "^2.8.6",
+    "dompurify": "^3.4.5",
+    "dotenv": "^17.4.2",
+    "express": "^5.2.1",
+    "lucide-vue-next": "^1.0.0",
+    "marked": "^18.0.4",
+    "mermaid": "^11.15.0",
+    "pinia": "^3.0.4",
+    "three": "^0.184.0",
+    "vue": "^3.5.34"
+  },
+  "devDependencies": {
+    "@types/dompurify": "^3.2.0",
+    "@types/node": "^24.12.3",
+    "@vitejs/plugin-vue": "^6.0.6",
+    "@vue/tsconfig": "^0.9.1",
+    "concurrently": "^9.2.1",
+    "sass": "^1.99.0",
+    "typescript": "~6.0.2",
+    "vite": "^8.0.12",
+    "vue-tsc": "^3.2.8"
+  }
+}

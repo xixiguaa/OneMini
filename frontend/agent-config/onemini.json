@@ -1,0 +1,60 @@
+{
+  "version": "1.0.0",
+  "models": {
+    "primary": "deepseek-v4-pro",
+    "fallbacks": ["gpt-5.5-high", "claude-sonnet"],
+    "temperature": 0.2,
+    "maxTokens": 4096
+  },
+  "session": {
+    "maxHistoryMessages": 20,
+    "dailyReset": false
+  },
+  "sandbox": {
+    "mode": "warn",
+    "allowedSkills": ["chat", "image", "video", "world"]
+  },
+  "skills": {
+    "plugins": [
+      "short-film",
+      "ecommerce-set",
+      "poster",
+      "brand",
+      "cinematic"
+    ]
+  },
+  "multiAgent": {
+    "enabled": false,
+    "triggerKeywords": ["周报", "分析报告", "分镜", "全套", "协作"],
+    "minPromptLength": 120,
+    "orchestrator": {
+      "id": "orchestrator",
+      "name": "总指挥",
+      "role": "拆解任务、分配子 Agent、汇总结果",
+      "temperature": 0.1
+    },
+    "agents": [
+      {
+        "id": "planner",
+        "name": "规划师",
+        "role": "产出结构化步骤与验收标准",
+        "skillIds": ["chat"],
+        "temperature": 0.2
+      },
+      {
+        "id": "creator",
+        "name": "创作师",
+        "role": "撰写文案、分镜、画面与提示词",
+        "skillIds": ["chat", "image", "video"],
+        "temperature": 0.3
+      },
+      {
+        "id": "reviewer",
+        "name": "质检员",
+        "role": "检查完整性、一致性与风险",
+        "skillIds": ["chat"],
+        "temperature": 0.1
+      }
+    ]
+  }
+}

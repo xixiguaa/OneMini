@@ -1,0 +1,60 @@
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# 环境变量与密钥（保留 *.example 模板）
+.env
+.env.local
+.env.*.local
+
+# 日志
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# Node.js / OneMini（Vue + Vite）
+node_modules/
+dist/
+dist-ssr/
+*.local
+.vite/
+
+# Python / backend
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+.eggs/
+htmlcov/
+
+# TypeScript / 构建缓存
+*.tsbuildinfo
+
+# 测试与覆盖率
+coverage/
+.nyc_output/
+
+# IDE 与编辑器
+.vscode/*
+!.vscode/extensions.json
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# 临时文件
+*.tmp
+*.temp
+.cache/
