@@ -242,7 +242,7 @@ $column-max: 48rem;
   flex-direction: column;
   height: 102px;
   box-sizing: border-box;
-  padding: 12px 14px 8px;
+  padding: 12px 14px 10px;
   background: var(--composer-bg);
   border: 1px solid var(--composer-border);
   border-radius: 20px;
@@ -250,8 +250,8 @@ $column-max: 48rem;
   transition: border-color 0.2s, box-shadow 0.2s;
 
   &:focus-within {
-    border-color: rgba(45, 138, 78, 0.4);
-    box-shadow: 0 0 0 3px $accent-light, $shadow-sm;
+    border-color: var(--composer-border-focus);
+    box-shadow: $shadow-sm;
   }
 
   :deep(.model-logo) {

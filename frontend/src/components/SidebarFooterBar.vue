@@ -6,6 +6,10 @@ import { useUiPrefsStore } from '../stores/uiPrefs'
 import { APP_VERSION } from '../types/agent'
 import { BRAND_NAME } from '../utils/modelLogo'
 
+const props = defineProps<{
+  collapsed?: boolean
+}>()
+
 const ui = useUiPrefsStore()
 const { t } = useLocale()
 
@@ -26,7 +30,7 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocClick))
 </script>
 
 <template>
-  <div ref="rootRef" class="footer-bar">
+  <div ref="rootRef" class="footer-bar" :class="{ collapsed: props.collapsed }">
     <div class="footer-toolbar">
       <div class="footer-actions">
         <div class="action-wrap">
@@ -94,7 +98,7 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocClick))
         </button>
       </div>
 
-      <span class="version">{{ APP_VERSION }}</span>
+      <span v-show="!props.collapsed" class="version">{{ APP_VERSION }}</span>
     </div>
   </div>
 </template>
@@ -104,8 +108,14 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocClick))
 
 .footer-bar {
   flex-shrink: 0;
-  margin: auto -12px -16px;
+  margin: auto -10px -12px;
   border-top: 1px solid $glass-border;
+
+  &.collapsed {
+    margin-left: -6px;
+    margin-right: -6px;
+    margin-bottom: -12px;
+  }
 }
 
 .footer-toolbar {
@@ -114,12 +124,24 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocClick))
   justify-content: space-between;
   gap: 8px;
   padding: 6px 8px;
+
+  .footer-bar.collapsed & {
+    flex-direction: column;
+    justify-content: center;
+    gap: 6px;
+    padding: 8px 4px;
+  }
 }
 
 .footer-actions {
   display: flex;
   align-items: center;
   gap: 2px;
+
+  .footer-bar.collapsed & {
+    flex-direction: column;
+    gap: 4px;
+  }
 }
 
 .action-wrap {
@@ -155,6 +177,11 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocClick))
   padding: 12px;
   z-index: 30;
   box-shadow: $shadow-md;
+
+  .footer-bar.collapsed & {
+    left: calc(100% + 8px);
+    bottom: 0;
+  }
 }
 
 .popover-menu {

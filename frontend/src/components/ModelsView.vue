@@ -6,7 +6,6 @@ import ModelAddPanel from './ModelAddPanel.vue'
 import ModelDetailPanel from './ModelDetailPanel.vue'
 import { useSettingsStore } from '../stores/settings'
 import ModelLogo from './ModelLogo.vue'
-import { BRAND_NAME } from '../utils/modelLogo'
 import type { ModelCapability, ModelConfig } from '../types/agent'
 
 const settings = useSettingsStore()
@@ -50,11 +49,6 @@ function modelState(m: ModelConfig) {
 
 <template>
   <div class="models-page">
-    <header class="page-header">
-      <h2>模型配置</h2>
-      <p>{{ BRAND_NAME }} · 选择模型并在右侧填写 API 密钥</p>
-    </header>
-
     <div class="split-layout">
       <aside class="model-list card">
         <div
@@ -105,21 +99,6 @@ function modelState(m: ModelConfig) {
   flex-direction: column;
   min-height: 0;
   padding: 24px 28px;
-}
-
-.page-header {
-  margin-bottom: 20px;
-
-  h2 {
-    font-size: 22px;
-    font-weight: 600;
-  }
-
-  p {
-    font-size: 13px;
-    color: $text-secondary;
-    margin-top: 4px;
-  }
 }
 
 .split-layout {
@@ -174,7 +153,7 @@ function modelState(m: ModelConfig) {
   &.active {
     background: $accent-light;
     border-color: $accent;
-    box-shadow: inset 3px 0 0 $accent;
+    box-shadow: inset $active-indicator 0 0 $accent;
 
     .name {
       color: $text-primary;

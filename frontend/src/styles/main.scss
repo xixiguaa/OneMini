@@ -91,7 +91,29 @@ select {
 
   &:focus {
     border-color: $accent;
-    box-shadow: 0 0 0 2px $accent-light;
+    box-shadow: $shadow-focus;
+  }
+}
+
+input:not([type='checkbox']):not([type='radio']):not([type='range']):not(.composer-input),
+textarea:not(.composer-input) {
+  &:focus {
+    border-color: $accent;
+    box-shadow: $shadow-focus;
+  }
+}
+
+/* 对话/创作输入区：仅外卡片描边，避免 textarea 内层套框 */
+.composer-input {
+  border: none;
+  box-shadow: none;
+  outline: none;
+  background: transparent;
+
+  &:focus {
+    border: none;
+    box-shadow: none;
+    outline: none;
   }
 }
 

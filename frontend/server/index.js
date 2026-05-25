@@ -3,6 +3,7 @@ import os from 'os'
 import express from 'express'
 import cors from 'cors'
 import { signTencentRequest } from './tencent-sign.js'
+import { getModelCatalog, SUPPORTED_CAPABILITIES } from './modelCatalog.js'
 
 function getLanAddresses() {
   const addrs = []
@@ -382,6 +383,21 @@ app.post('/api/query-rapid', async (req, res) => {
     console.error('[query-rapid]', err)
     res.status(500).json({ error: err.message, detail: err.data })
   }
+})
+
+/** 模型展示目录（Phase 1：分类、标签、中文名） */
+app.get('/api/models/catalog', (req, res) => {
+  const provider = String(req.query.provider || '').trim()
+  const capability = String(req.query.capability || 'chat').trim()
+
+  if (!provider) {
+    return res.status(400).json({ error: '缺少 provider 参数' })
+  }
+  if (!SUPPORTED_CAPABILITIES.includes(capability)) {
+    return res.status(400).json({ error: `不支持的能力类型: ${capability}` })
+  }
+
+  res.json(getModelCatalog(provider, capability))
 })
 
 app.get('/api/health', (_req, res) => {

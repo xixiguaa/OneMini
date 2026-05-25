@@ -55,13 +55,20 @@ export const useAgentStore = defineStore('agent', () => {
 
   let pollTimer: ReturnType<typeof setInterval> | null = null
 
+  const isIncognito = computed(() => conversations.isIncognito)
+
   const messages = computed({
     get: () => {
+      if (conversations.isIncognito) return conversations.getIncognitoMessages()
       const id = conversations.activeId
       if (!id) return []
       return conversations.getMessages(id)
     },
     set: (val: ChatMessage[]) => {
+      if (conversations.isIncognito) {
+        conversations.setIncognitoMessages(val)
+        return
+      }
       const id = conversations.ensureActive()
       conversations.setMessages(id, val)
     },
@@ -93,13 +100,14 @@ export const useAgentStore = defineStore('agent', () => {
   }
 
   function patchMessage(messageId: string, patch: Partial<ChatMessage>) {
-    const convId = conversations.ensureActive()
-    const list = conversations.getMessages(convId)
+    const list = conversations.isIncognito
+      ? [...conversations.getIncognitoMessages()]
+      : [...conversations.getMessages(conversations.ensureActive())]
     const idx = list.findIndex((m) => m.id === messageId)
     if (idx < 0) return
     const next = [...list]
     next[idx] = { ...next[idx], ...patch }
-    conversations.setMessages(convId, next)
+    messages.value = next
   }
 
   async function addAttachments(files: FileList | File[]) {
@@ -383,7 +391,7 @@ export const useAgentStore = defineStore('agent', () => {
     if (!content && !pendingAttachments.value.length) return
     if (isProcessing.value) return
 
-    conversations.ensureActive()
+    conversations.ensureMessagingSession()
     const skill = skillOverride ?? activeSkill.value
     const skillCfg = settings.getSkill(skill)
 
@@ -460,7 +468,7 @@ export const useAgentStore = defineStore('agent', () => {
   async function generateFromStudio() {
     const skill = skillFromCreateMode(createMode.value)
     currentView.value = 'chat'
-    conversations.ensureActive()
+    conversations.ensureMessagingSession()
     try {
       await sendMessage(skill)
     } finally {
@@ -468,8 +476,7 @@ export const useAgentStore = defineStore('agent', () => {
     }
   }
 
-  function newSession() {
-    conversations.createConversation()
+  function resetChatSurface() {
     stopWorldPolling()
     worldJobId.value = null
     worldStatus.value = null
@@ -479,9 +486,26 @@ export const useAgentStore = defineStore('agent', () => {
     currentView.value = 'chat'
   }
 
+  function newSession() {
+    conversations.createConversation()
+    resetChatSurface()
+  }
+
+  function newIncognitoSession() {
+    conversations.startIncognito()
+    resetChatSurface()
+  }
+
+  function exitIncognito() {
+    if (!conversations.isIncognito) return
+    conversations.exitIncognito()
+    conversations.ensureActive()
+    resetChatSurface()
+  }
+
   function selectConversation(id: string) {
     conversations.selectConversation(id)
-    currentView.value = 'chat'
+    resetChatSurface()
   }
 
   function deleteConversation(id: string) {
@@ -559,7 +583,10 @@ export const useAgentStore = defineStore('agent', () => {
     clearImage,
     sendMessage,
     generateFromStudio,
+    isIncognito,
     newSession,
+    newIncognitoSession,
+    exitIncognito,
     selectConversation,
     deleteConversation,
     initConversations,

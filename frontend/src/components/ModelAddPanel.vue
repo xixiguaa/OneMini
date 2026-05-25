@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from 'vue'
-import { Plus } from 'lucide-vue-next'
 import { CAPABILITY_LABELS } from '../config/defaults'
 import { getProviderDefinition } from '../config/providers'
 import {
@@ -8,7 +7,10 @@ import {
   getProvidersForCapability,
   type ProviderModelOption,
 } from '../config/providerModels'
+import { pickerOptionToProviderOption } from '../api/models'
+import ModelPickerPopover from './ModelPickerPopover.vue'
 import ProviderSelect from './ProviderSelect.vue'
+import type { PickerModelOption } from '../types/modelCatalog'
 import { useSettingsStore } from '../stores/settings'
 import SecureApiKeyField from './SecureApiKeyField.vue'
 import type { ModelCapability, ModelProvider } from '../types/agent'
@@ -17,6 +19,8 @@ const emit = defineEmits<{ saved: [id: string] }>()
 
 const settings = useSettingsStore()
 const savedModelId = ref<string | null>(null)
+/** 从预设列表点选时的展示名（自定义填写模型 ID 时不强制绑定） */
+const presetLabel = ref('')
 
 const form = reactive({
   name: '',
@@ -32,9 +36,9 @@ const providers = computed(() => getProvidersForCapability(form.capability))
 
 const modelOptions = computed(() => getModelOptions(form.provider, form.capability))
 
-const selectedOption = computed(() =>
-  modelOptions.value.find((o) => o.model === form.modelId),
-)
+function firstRealOption(opts: ProviderModelOption[]) {
+  return opts.find((o) => o.model?.trim())
+}
 
 watch(
   () => form.capability,
@@ -47,22 +51,23 @@ watch(
 watch(
   [() => form.provider, () => form.capability],
   () => {
+    presetLabel.value = ''
     const def = getProviderDefinition(form.provider)
     if (def.defaultBaseUrl && !form.baseUrl.trim()) {
       form.baseUrl = def.defaultBaseUrl
     }
     const opts = getModelOptions(form.provider, form.capability)
-    if (!opts.some((o) => o.model === form.modelId)) {
-      form.modelId = opts[0]?.model ?? ''
-      applyOptionDefaults(opts[0])
+    const first = firstRealOption(opts)
+    if (first && !opts.some((o) => o.model === form.modelId)) {
+      form.modelId = first.model
+      presetLabel.value = first.label
+      applyOptionDefaults(first)
+    } else if (!first) {
+      form.modelId = ''
     }
   },
   { immediate: true },
 )
-
-watch(selectedOption, (opt) => {
-  if (opt) applyOptionDefaults(opt)
-})
 
 function applyOptionDefaults(opt?: ProviderModelOption) {
   if (!opt) return
@@ -71,14 +76,25 @@ function applyOptionDefaults(opt?: ProviderModelOption) {
   if (opt.description) form.description = opt.description
 }
 
-function onSelectModel() {
-  applyOptionDefaults(selectedOption.value)
+function onPickerSelect(opt: PickerModelOption) {
+  const mapped = pickerOptionToProviderOption(opt)
+  presetLabel.value = mapped.label
+  applyOptionDefaults(mapped)
+}
+
+function onModelIdInput() {
+  const match = modelOptions.value.find((o) => o.model === form.modelId.trim())
+  if (match) {
+    presetLabel.value = match.label
+  } else {
+    presetLabel.value = ''
+  }
 }
 
 function saveModel() {
-  const opt = selectedOption.value
-  if (!opt?.model && form.provider !== 'tencent') {
-    alert('请选择具体模型')
+  const modelId = form.modelId.trim()
+  if (!modelId && form.provider !== 'tencent') {
+    alert('请填写模型 ID')
     return
   }
   if (!form.provider) {
@@ -86,15 +102,26 @@ function saveModel() {
     return
   }
 
+  const preset = modelOptions.value.find((o) => o.model === modelId)
+  const picked = preset
+    ? pickerOptionToProviderOption({
+        id: modelId,
+        model: modelId,
+        label: preset.label,
+        baseUrl: preset.baseUrl,
+        description: preset.description,
+      })
+    : null
+
   const id = settings.addCustomModel({
-    name: form.name.trim() || opt?.label || '未命名模型',
-    model: opt?.model || form.modelId,
+    name: form.name.trim() || presetLabel.value || picked?.label || modelId || '未命名模型',
+    model: modelId,
     capability: form.capability,
     provider: form.provider,
-    baseUrl: form.baseUrl.trim() || opt?.baseUrl,
+    baseUrl: form.baseUrl.trim() || picked?.baseUrl,
     apiKey: undefined,
     enabled: false,
-    description: form.description.trim() || opt?.description || '',
+    description: form.description.trim() || picked?.description || '',
   })
 
   savedModelId.value = id
@@ -103,6 +130,7 @@ function saveModel() {
 
 function resetForm() {
   savedModelId.value = null
+  presetLabel.value = ''
   Object.assign(form, {
     name: '',
     capability: 'chat',
@@ -113,8 +141,10 @@ function resetForm() {
     description: '',
   })
   const opts = getModelOptions(form.provider, form.capability)
-  form.modelId = opts[0]?.model ?? ''
-  applyOptionDefaults(opts[0])
+  const first = firstRealOption(opts)
+  form.modelId = first?.model ?? ''
+  presetLabel.value = first?.label ?? ''
+  applyOptionDefaults(first)
 }
 
 const pendingModel = computed(() =>
@@ -124,11 +154,7 @@ const pendingModel = computed(() =>
 
 <template>
   <div class="add-panel">
-    <h3>
-      <Plus :size="18" />
-      添加自定义模型
-    </h3>
-    <p class="hint">先选能力类型与服务商，再选具体模型；显示名称可随意，服务商与模型标识决定 API 调用。</p>
+    <p class="hint top-hint">先选能力类型与服务商；可从预设列表快速填入模型 ID，也可直接输入（如火山方舟接入点 ep-xxx）。</p>
 
     <template v-if="!savedModelId">
       <label>
@@ -143,13 +169,28 @@ const pendingModel = computed(() =>
         <ProviderSelect v-model="form.provider" :providers="providers" />
       </div>
 
+      <div class="field-block">
+        <span class="field-label">预设模型</span>
+        <ModelPickerPopover
+          v-model="form.modelId"
+          :provider="form.provider"
+          :capability="form.capability"
+          :selected-label="presetLabel"
+          @select="onPickerSelect"
+        />
+        <p class="field-hint">从推荐列表选择，将自动填入下方的模型 ID。</p>
+      </div>
+
       <label>
-        <span>具体模型 <em>*</em></span>
-        <select v-model="form.modelId" @change="onSelectModel">
-          <option v-for="opt in modelOptions" :key="opt.model" :value="opt.model">
-            {{ opt.label }} — {{ opt.model }}
-          </option>
-        </select>
+        <span>模型 ID <em>*</em></span>
+        <input
+          v-model="form.modelId"
+          placeholder="例如 deepseek-chat 或 ep-20241201xxxx"
+          @input="onModelIdInput"
+        />
+        <p class="field-hint">
+          调用 API 时传入的 <code>model</code> 参数；豆包等需在火山方舟控制台创建接入点后填写对应 ID。
+        </p>
       </label>
 
       <label>
@@ -199,19 +240,15 @@ const pendingModel = computed(() =>
   overflow-y: auto;
 }
 
-h3 {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 16px;
-  margin-bottom: 8px;
-}
-
 .hint {
   font-size: 12px;
   color: $text-secondary;
   line-height: 1.5;
   margin-bottom: 16px;
+
+  &.top-hint {
+    margin-top: 4px;
+  }
 
   &.block {
     margin: -8px 0 14px;
@@ -232,6 +269,21 @@ h3 {
 
 .field-block {
   margin-bottom: 14px;
+}
+
+.field-hint {
+  margin: 6px 0 0;
+  font-size: 11px;
+  color: $text-muted;
+  line-height: 1.45;
+
+  code {
+    font-size: 10px;
+    padding: 1px 4px;
+    border-radius: 4px;
+    background: $accent-light;
+    color: $accent;
+  }
 }
 
 .field-label {
@@ -255,6 +307,11 @@ label {
     font-size: 12px;
     color: $text-secondary;
     margin-bottom: 6px;
+
+    em {
+      color: $color-danger;
+      font-style: normal;
+    }
   }
 
   input,

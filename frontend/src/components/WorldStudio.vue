@@ -15,8 +15,6 @@ import Viewport3D from './Viewport3D.vue'
 import { useAgentStore } from '../stores/agent'
 import { useSettingsStore } from '../stores/settings'
 import { useWorldHistoryStore } from '../stores/worldHistory'
-import { BRAND_NAME } from '../utils/modelLogo'
-
 const agent = useAgentStore()
 const settings = useSettingsStore()
 const worldHistory = useWorldHistoryStore()
@@ -164,18 +162,13 @@ onUnmounted(() => {
 
 <template>
   <div class="models-page">
-    <header class="page-header">
-      <h2>世界生成</h2>
-      <p>
-        {{ BRAND_NAME }} · 混元生 3D ·
-        <span v-if="boundWorldModel?.enabled" class="status-ok">{{ boundWorldModel.name }}</span>
-        <span v-else class="status-warn">未绑定 3D 模型</span>
-      </p>
-    </header>
-
     <div class="split-layout">
       <aside class="model-list card">
-        <p class="group-label">生成记录</p>
+        <p class="group-label">
+          生成记录
+          <span v-if="boundWorldModel?.enabled" class="status-ok model-badge">{{ boundWorldModel.name }}</span>
+          <span v-else class="status-warn model-badge">未绑定 3D 模型</span>
+        </p>
         <p v-if="!worldHistory.items.length" class="list-empty">暂无记录</p>
         <button
           v-for="item in worldHistory.items"
@@ -316,21 +309,6 @@ onUnmounted(() => {
   padding: 24px 28px;
 }
 
-.page-header {
-  margin-bottom: 20px;
-
-  h2 {
-    font-size: 22px;
-    font-weight: 600;
-  }
-
-  p {
-    font-size: 13px;
-    color: $text-secondary;
-    margin-top: 4px;
-  }
-}
-
 .status-ok {
   color: $accent;
   font-weight: 500;
@@ -339,6 +317,15 @@ onUnmounted(() => {
 .status-warn {
   color: $accent-gold;
   font-weight: 500;
+}
+
+.group-label .model-badge {
+  display: block;
+  margin-top: 4px;
+  font-size: 10px;
+  font-weight: 500;
+  text-transform: none;
+  letter-spacing: 0;
 }
 
 .split-layout {
@@ -399,7 +386,7 @@ onUnmounted(() => {
   &.active {
     background: $accent-light;
     border-color: $accent;
-    box-shadow: inset 3px 0 0 $accent;
+    box-shadow: inset $active-indicator 0 0 $accent;
 
     .name {
       font-weight: 600;
@@ -678,7 +665,7 @@ onUnmounted(() => {
 
   &:focus {
     border-color: $accent;
-    box-shadow: 0 0 0 3px $accent-light;
+    box-shadow: $shadow-focus;
   }
 
   &.textarea {

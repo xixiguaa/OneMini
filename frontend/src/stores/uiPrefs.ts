@@ -9,6 +9,7 @@ const STORAGE_KEY = 'aji-ui-prefs'
 interface UiPrefs {
   theme: ThemeMode
   locale: Locale
+  sidebarCollapsed: boolean
 }
 
 function loadPrefs(): UiPrefs {
@@ -19,12 +20,13 @@ function loadPrefs(): UiPrefs {
       return {
         theme: parsed.theme === 'dark' ? 'dark' : 'light',
         locale: parsed.locale === 'en' ? 'en' : 'zh',
+        sidebarCollapsed: Boolean(parsed.sidebarCollapsed),
       }
     }
   } catch {
     /* ignore */
   }
-  return { theme: 'light', locale: 'zh' }
+  return { theme: 'light', locale: 'zh', sidebarCollapsed: false }
 }
 
 export function applyTheme(theme: ThemeMode) {
@@ -40,6 +42,9 @@ export function initUiPrefsFromStorage() {
   const prefs = loadPrefs()
   applyTheme(prefs.theme)
   applyLocale(prefs.locale)
+  document.documentElement.dataset.sidebarCollapsed = prefs.sidebarCollapsed
+    ? 'true'
+    : 'false'
   return prefs
 }
 
@@ -47,13 +52,21 @@ export const useUiPrefsStore = defineStore('uiPrefs', () => {
   const saved = loadPrefs()
   const theme = ref<ThemeMode>(saved.theme)
   const locale = ref<Locale>(saved.locale)
+  const sidebarCollapsed = ref(saved.sidebarCollapsed)
 
   watch(
-    () => ({ theme: theme.value, locale: locale.value }),
+    () => ({
+      theme: theme.value,
+      locale: locale.value,
+      sidebarCollapsed: sidebarCollapsed.value,
+    }),
     (val) => {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(val))
       applyTheme(val.theme)
       applyLocale(val.locale)
+      document.documentElement.dataset.sidebarCollapsed = val.sidebarCollapsed
+        ? 'true'
+        : 'false'
     },
     { immediate: true },
   )
@@ -66,5 +79,21 @@ export const useUiPrefsStore = defineStore('uiPrefs', () => {
     locale.value = next
   }
 
-  return { theme, locale, toggleTheme, setLocale }
+  function toggleSidebar() {
+    sidebarCollapsed.value = !sidebarCollapsed.value
+  }
+
+  function setSidebarCollapsed(v: boolean) {
+    sidebarCollapsed.value = v
+  }
+
+  return {
+    theme,
+    locale,
+    sidebarCollapsed,
+    toggleTheme,
+    setLocale,
+    toggleSidebar,
+    setSidebarCollapsed,
+  }
 })

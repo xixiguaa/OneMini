@@ -119,7 +119,7 @@ const current = () => WORKSPACE_FILES.find((f) => f.key === activeFile.value)!
 
   &:focus {
     border-color: $accent;
-    box-shadow: 0 0 0 3px $accent-light;
+    box-shadow: $shadow-focus;
   }
 }
 

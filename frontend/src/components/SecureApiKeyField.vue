@@ -183,12 +183,12 @@ function disableKey() {
 
   &:focus {
     border-color: $accent;
-    box-shadow: 0 0 0 3px $accent-light;
+    box-shadow: $shadow-focus;
   }
 
   &.invalid {
     border-color: $color-danger;
-    box-shadow: 0 0 0 3px $color-danger-soft;
+    box-shadow: $shadow-focus-danger;
   }
 
   &.is-pending,

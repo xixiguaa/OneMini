@@ -216,7 +216,7 @@ function patchModels(patch: Partial<typeof agentConfig.skeleton.models>) {
 
   &:focus {
     border-color: $accent;
-    box-shadow: 0 0 0 3px $accent-light;
+    box-shadow: $shadow-focus;
   }
 }
 

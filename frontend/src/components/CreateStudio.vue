@@ -212,11 +212,17 @@ const canSend = () =>
 
 .composer.card {
   width: 100%;
-  padding: 16px 18px 12px;
+  padding: 16px 18px 14px;
   border-radius: 16px;
   background: var(--composer-bg);
   border: 1px solid var(--composer-border);
   box-shadow: $shadow-sm;
+  transition: border-color 0.2s, box-shadow 0.2s;
+
+  &:focus-within {
+    border-color: var(--composer-border-focus);
+    box-shadow: $shadow-sm;
+  }
 }
 
 .composer-input {

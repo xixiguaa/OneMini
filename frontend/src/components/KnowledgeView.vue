@@ -9,8 +9,6 @@ import {
   type KnowledgeDocument,
 } from '../api/platform'
 import { usePlatformStore } from '../stores/platform'
-import { BRAND_NAME } from '../utils/modelLogo'
-
 const platform = usePlatformStore()
 
 const documents = ref<KnowledgeDocument[]>([])
@@ -106,19 +104,14 @@ onMounted(async () => {
 
 <template>
   <div class="models-page">
-    <header class="page-header">
-      <h2>知识库</h2>
-      <p>
-        {{ BRAND_NAME }} · 文档切块 → 嵌入 → Milvus ·
-        <span :class="platform.milvusOk ? 'status-ok' : 'status-warn'">
-          {{ platform.milvusOk ? 'Milvus 已连接' : 'Milvus 未连接' }}
-        </span>
-      </p>
-    </header>
-
     <div class="split-layout">
       <aside class="model-list card">
-        <p class="group-label">已入库文档</p>
+        <p class="group-label">
+          已入库文档
+          <span :class="platform.milvusOk ? 'status-ok' : 'status-warn'" class="milvus-badge">
+            {{ platform.milvusOk ? 'Milvus 已连接' : 'Milvus 未连接' }}
+          </span>
+        </p>
         <p v-if="loading && !documents.length" class="list-empty">加载中…</p>
         <p v-else-if="!documents.length" class="list-empty">暂无文档</p>
         <button
@@ -154,14 +147,6 @@ onMounted(async () => {
 
       <section class="right-panel card">
         <div v-if="selectedId === 'add'" class="detail">
-          <div class="detail-head">
-            <Database :size="40" class="head-icon" />
-            <div class="head-meta">
-              <h3 class="panel-title">录入知识</h3>
-              <p>粘贴文本或上传 .txt / .md，写入后可在对话中启用 RAG</p>
-            </div>
-          </div>
-
           <p v-if="error" class="error">{{ error }}</p>
 
           <label class="field">
@@ -211,13 +196,15 @@ onMounted(async () => {
         </div>
 
         <div v-else-if="selectedDoc()" class="detail">
-          <div class="detail-head">
-            <FileText :size="40" class="head-icon" />
-            <div class="head-meta">
-              <h3 class="panel-title">{{ selectedDoc()!.source }}</h3>
-              <p>{{ selectedDoc()!.chunks }} 个向量片段</p>
-            </div>
-          </div>
+          <label class="field">
+            <span>来源名称</span>
+            <code class="readonly">{{ selectedDoc()!.source }}</code>
+          </label>
+
+          <label class="field">
+            <span>向量片段</span>
+            <code class="readonly">{{ selectedDoc()!.chunks }} 段</code>
+          </label>
 
           <label class="field">
             <span>文档 ID</span>
@@ -267,21 +254,6 @@ onMounted(async () => {
   padding: 24px 28px;
 }
 
-.page-header {
-  margin-bottom: 20px;
-
-  h2 {
-    font-size: 22px;
-    font-weight: 600;
-  }
-
-  p {
-    font-size: 13px;
-    color: $text-secondary;
-    margin-top: 4px;
-  }
-}
-
 .status-ok {
   color: $accent;
   font-weight: 500;
@@ -290,6 +262,15 @@ onMounted(async () => {
 .status-warn {
   color: $accent-gold;
   font-weight: 500;
+}
+
+.group-label .milvus-badge {
+  display: block;
+  margin-top: 4px;
+  font-size: 10px;
+  font-weight: 500;
+  text-transform: none;
+  letter-spacing: 0;
 }
 
 .split-layout {
@@ -350,7 +331,7 @@ onMounted(async () => {
   &.active {
     background: $accent-light;
     border-color: $accent;
-    box-shadow: inset 3px 0 0 $accent;
+    box-shadow: inset $active-indicator 0 0 $accent;
 
     .name {
       font-weight: 600;
@@ -424,34 +405,6 @@ onMounted(async () => {
   overflow-y: auto;
 }
 
-.detail-head {
-  display: flex;
-  gap: 14px;
-  align-items: flex-start;
-  margin-bottom: 20px;
-}
-
-.head-icon {
-  color: $accent;
-  flex-shrink: 0;
-}
-
-.head-meta {
-  flex: 1;
-  min-width: 0;
-
-  .panel-title {
-    font-size: 18px;
-    font-weight: 600;
-  }
-
-  p {
-    font-size: 12px;
-    color: $text-secondary;
-    margin-top: 6px;
-  }
-}
-
 .field {
   display: block;
   margin-bottom: 14px;
@@ -475,7 +428,7 @@ onMounted(async () => {
 
   &:focus {
     border-color: $accent;
-    box-shadow: 0 0 0 3px $accent-light;
+    box-shadow: $shadow-focus;
   }
 
   &.textarea {

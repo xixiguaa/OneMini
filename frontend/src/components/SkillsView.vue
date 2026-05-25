@@ -1,13 +1,12 @@
 <script setup lang="ts">
 import { FileText, RotateCcw, Settings, Users, Wand2 } from 'lucide-vue-next'
-import { computed, ref } from 'vue'
+import { ref } from 'vue'
 import AgentCrewPanel from './AgentCrewPanel.vue'
 import AgentRuntimePanel from './AgentRuntimePanel.vue'
 import AgentSkillsPanel from './AgentSkillsPanel.vue'
 import AgentWorkspacePanel from './AgentWorkspacePanel.vue'
 import { useAgentConfigStore } from '../stores/agentConfig'
 import { CONFIG_SECTIONS, type AgentConfigSection } from '../types/agentConfig'
-import { BRAND_NAME } from '../utils/modelLogo'
 
 const agentConfig = useAgentConfigStore()
 const section = ref<AgentConfigSection>('workspace')
@@ -18,17 +17,10 @@ const sectionIcon = {
   skills: Wand2,
   crew: Users,
 } as const
-
-const activeMeta = computed(() => CONFIG_SECTIONS.find((s) => s.id === section.value))
 </script>
 
 <template>
   <div class="models-page">
-    <header class="page-header">
-      <h2>Agent 配置</h2>
-      <p>{{ BRAND_NAME }} · 工作区 Markdown 与运行时 onemini.json（OpenClaw 式分层）</p>
-    </header>
-
     <div class="split-layout">
       <aside class="model-list card">
         <p class="group-label">配置分区</p>
@@ -57,10 +49,6 @@ const activeMeta = computed(() => CONFIG_SECTIONS.find((s) => s.id === section.v
       </aside>
 
       <section class="right-panel card">
-        <div v-if="activeMeta" class="panel-head">
-          <h3>{{ activeMeta.label }}</h3>
-          <p>{{ activeMeta.desc }}</p>
-        </div>
         <AgentWorkspacePanel v-show="section === 'workspace'" />
         <AgentRuntimePanel v-show="section === 'runtime'" />
         <AgentSkillsPanel v-show="section === 'skills'" />
@@ -79,21 +67,6 @@ const activeMeta = computed(() => CONFIG_SECTIONS.find((s) => s.id === section.v
   flex-direction: column;
   min-height: 0;
   padding: 24px 28px;
-}
-
-.page-header {
-  margin-bottom: 20px;
-
-  h2 {
-    font-size: 22px;
-    font-weight: 600;
-  }
-
-  p {
-    font-size: 13px;
-    color: $text-secondary;
-    margin-top: 4px;
-  }
 }
 
 .split-layout {
@@ -148,7 +121,7 @@ const activeMeta = computed(() => CONFIG_SECTIONS.find((s) => s.id === section.v
   &.active {
     background: $accent-light;
     border-color: $accent;
-    box-shadow: inset 3px 0 0 $accent;
+    box-shadow: inset $active-indicator 0 0 $accent;
 
     .name {
       color: $text-primary;
@@ -215,25 +188,6 @@ const activeMeta = computed(() => CONFIG_SECTIONS.find((s) => s.id === section.v
   display: flex;
   flex-direction: column;
   min-height: 400px;
-}
-
-.panel-head {
-  flex-shrink: 0;
-  padding: 16px 20px 0;
-  border-bottom: 1px solid $border-light;
-  margin-bottom: 0;
-
-  h3 {
-    font-size: 16px;
-    font-weight: 600;
-  }
-
-  p {
-    font-size: 12px;
-    color: $text-secondary;
-    margin-top: 4px;
-    padding-bottom: 12px;
-  }
 }
 
 @media (max-width: 768px) {

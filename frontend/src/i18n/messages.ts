@@ -11,7 +11,12 @@ export const messages = {
       knowledge: '知识库',
     },
     sidebar: {
+      collapse: '收起侧栏',
+      expand: '展开侧栏',
+      navAria: '功能导航',
       newChat: '新对话',
+      incognito: '隐身对话',
+      incognitoHint: '不留历史、不写入本地',
       external: '外链',
       arenaTitle: '模型竞技场',
       arenaSub: 'Chatbot Arena 排名',
@@ -21,6 +26,14 @@ export const messages = {
       empty: '暂无历史，开始新对话吧',
       delete: '删除',
       messages: '条',
+      incognitoActive: '隐身对话进行中',
+    },
+    incognito: {
+      bannerTitle: '隐身对话',
+      bannerDesc: '本对话不会出现在侧边栏历史，也不会保存到本地。关闭或切换普通对话后将清除内容。',
+      exit: '结束隐身',
+      emptyTitle: '隐身对话',
+      emptySub: '对话不留痕，关闭后内容将被清除',
     },
     footer: {
       about: '关于',
@@ -43,7 +56,12 @@ export const messages = {
       knowledge: 'Knowledge',
     },
     sidebar: {
+      collapse: 'Collapse sidebar',
+      expand: 'Expand sidebar',
+      navAria: 'Main navigation',
       newChat: 'New chat',
+      incognito: 'Incognito chat',
+      incognitoHint: 'No history, not saved locally',
       external: 'Links',
       arenaTitle: 'Model Arena',
       arenaSub: 'Chatbot Arena rankings',
@@ -53,6 +71,15 @@ export const messages = {
       empty: 'No history yet — start a new chat',
       delete: 'Delete',
       messages: 'msgs',
+      incognitoActive: 'Incognito chat in progress',
+    },
+    incognito: {
+      bannerTitle: 'Incognito chat',
+      bannerDesc:
+        'This chat will not appear in sidebar history or be saved locally. Content is cleared when you end incognito or switch to a normal chat.',
+      exit: 'End incognito',
+      emptyTitle: 'Incognito chat',
+      emptySub: 'Nothing is kept — content is cleared when you leave',
     },
     footer: {
       about: 'About',

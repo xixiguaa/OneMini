@@ -261,6 +261,7 @@ npm run dev                        # 同时启动 server/index.js 与 vite
 | POST | `/api/query` | 3D 任务查询 |
 | POST | `/api/submit-rapid` | 快速 3D 提交 |
 | POST | `/api/query-rapid` | 快速 3D 查询 |
+| GET | `/api/models/catalog` | 模型展示目录（`?provider=&capability=`） |
 | GET | `/api/health` | Node 服务健康 |
 
 ### Python（`/api/platform` → :8000）

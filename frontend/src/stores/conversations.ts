@@ -25,6 +25,9 @@ function genTitle(messages: ChatMessage[]): string {
 export const useConversationsStore = defineStore('conversations', () => {
   const list = ref<Conversation[]>(loadConversations())
   const activeId = ref<string | null>(list.value[0]?.id ?? null)
+  /** 隐身模式：消息仅驻留内存，不写入 localStorage / 历史列表 */
+  const incognitoActive = ref(false)
+  const incognitoMessages = ref<ChatMessage[]>([])
 
   watch(
     list,
@@ -32,15 +35,42 @@ export const useConversationsStore = defineStore('conversations', () => {
     { deep: true },
   )
 
+  const isIncognito = computed(() => incognitoActive.value)
+
   const activeConversation = computed(() =>
-    list.value.find((c) => c.id === activeId.value) ?? null,
+    incognitoActive.value ? null : list.value.find((c) => c.id === activeId.value) ?? null,
   )
 
   const sortedList = computed(() =>
     [...list.value].sort((a, b) => b.updatedAt - a.updatedAt),
   )
 
+  function startIncognito() {
+    incognitoActive.value = true
+    incognitoMessages.value = []
+  }
+
+  function exitIncognito() {
+    incognitoActive.value = false
+    incognitoMessages.value = []
+  }
+
+  function getIncognitoMessages(): ChatMessage[] {
+    return incognitoMessages.value
+  }
+
+  function setIncognitoMessages(messages: ChatMessage[]) {
+    incognitoMessages.value = messages
+  }
+
+  /** 发送消息前：隐身模式无需创建持久会话 */
+  function ensureMessagingSession(): void {
+    if (incognitoActive.value) return
+    ensureActive()
+  }
+
   function createConversation(): Conversation {
+    exitIncognito()
     const conv: Conversation = {
       id: randomUUID(),
       title: '新对话',
@@ -54,6 +84,7 @@ export const useConversationsStore = defineStore('conversations', () => {
   }
 
   function selectConversation(id: string) {
+    exitIncognito()
     if (list.value.some((c) => c.id === id)) activeId.value = id
   }
 
@@ -89,11 +120,18 @@ export const useConversationsStore = defineStore('conversations', () => {
     activeId,
     activeConversation,
     sortedList,
+    isIncognito,
+    incognitoActive,
+    startIncognito,
+    exitIncognito,
+    getIncognitoMessages,
+    setIncognitoMessages,
     createConversation,
     selectConversation,
     getMessages,
     setMessages,
     deleteConversation,
     ensureActive,
+    ensureMessagingSession,
   }
 })

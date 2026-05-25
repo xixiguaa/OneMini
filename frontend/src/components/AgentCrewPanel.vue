@@ -151,7 +151,7 @@ const ma = () => agentConfig.skeleton.multiAgent
 
   &:focus {
     border-color: $accent;
-    box-shadow: 0 0 0 3px $accent-light;
+    box-shadow: $shadow-focus;
   }
 }
 

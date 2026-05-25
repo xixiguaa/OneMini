@@ -4,9 +4,12 @@ import BrandLogo from './BrandLogo.vue'
 import ChatInput from './ChatInput.vue'
 import ChatMessages from './ChatMessages.vue'
 import ConfigBanner from './ConfigBanner.vue'
+import IncognitoBanner from './IncognitoBanner.vue'
+import { useLocale } from '../composables/useLocale'
 import { useAgentStore } from '../stores/agent'
 
 const agent = useAgentStore()
+const { t } = useLocale()
 
 const isEmpty = computed(() => !agent.messages.length)
 </script>
@@ -14,10 +17,16 @@ const isEmpty = computed(() => !agent.messages.length)
 <template>
   <div class="chat-view">
     <div v-if="isEmpty" class="chat-empty">
-      <div class="empty-hero">
-        <BrandLogo :size="64" />
-        <h2 class="empty-title">今天我能帮你什么？</h2>
-        <p class="empty-sub">上传文档与图片，支持多轮对话</p>
+      <div class="empty-hero" :class="{ 'empty-hero--incognito': agent.isIncognito }">
+        <BrandLogo :size="64" class="empty-logo" />
+        <template v-if="agent.isIncognito">
+          <h2 class="empty-title">{{ t('incognito.emptyTitle') }}</h2>
+          <p class="empty-sub">{{ t('incognito.emptySub') }}</p>
+          <IncognitoBanner variant="hero" class="empty-banner" />
+        </template>
+        <template v-else>
+          <h2 class="empty-title">今天我能帮你什么？</h2>
+        </template>
         <ChatInput centered class="empty-input" />
       </div>
     </div>
@@ -25,7 +34,8 @@ const isEmpty = computed(() => !agent.messages.length)
     <template v-else>
       <div class="chat-conversation">
         <div class="banner-wrap">
-          <ConfigBanner />
+          <IncognitoBanner v-if="agent.isIncognito" />
+          <ConfigBanner v-else />
         </div>
         <ChatMessages />
         <ChatInput />
@@ -76,26 +86,54 @@ const isEmpty = computed(() => !agent.messages.length)
   max-width: 48rem;
   display: flex;
   flex-direction: column;
-  align-items: center;
+  align-items: stretch;
   text-align: center;
-  gap: 16px;
+  gap: 0;
+}
+
+.empty-logo {
+  align-self: center;
+  margin-bottom: 20px;
 }
 
 .empty-title {
+  align-self: center;
   font-size: 26px;
   font-weight: 500;
   color: $text-primary;
   letter-spacing: -0.02em;
   line-height: 1.3;
+  margin: 0 0 20px;
+  max-width: 100%;
 }
 
 .empty-sub {
+  align-self: center;
   font-size: 14px;
   color: $text-secondary;
+  line-height: 1.5;
+  margin: 0 0 20px;
+  max-width: 36rem;
+}
+
+.empty-hero--incognito {
+  .empty-title {
+    font-size: 24px;
+    margin-bottom: 6px;
+  }
+
+  .empty-sub {
+    margin-bottom: 16px;
+  }
+}
+
+.empty-banner {
+  width: 100%;
+  margin-bottom: 20px;
 }
 
 .empty-input {
   width: 100%;
-  margin-top: 8px;
+  margin-top: 0;
 }
 </style>

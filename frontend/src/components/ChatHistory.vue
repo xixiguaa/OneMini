@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { MessageSquare, Trash2 } from 'lucide-vue-next'
+import { EyeOff, MessageSquare, Trash2 } from 'lucide-vue-next'
 import { useLocale } from '../composables/useLocale'
 import { useAgentStore } from '../stores/agent'
 import { useConversationsStore } from '../stores/conversations'
@@ -22,12 +22,20 @@ function formatDate(ts: number) {
 <template>
   <div class="history">
     <div class="history-label">{{ t('history.label') }}</div>
-    <div class="history-list">
+    <div
+      v-if="conversations.isIncognito"
+      class="incognito-pill"
+      role="status"
+    >
+      <EyeOff :size="12" />
+      <span>{{ t('history.incognitoActive') }}</span>
+    </div>
+    <div class="history-list" :class="{ dimmed: conversations.isIncognito }">
       <div
         v-for="conv in conversations.sortedList"
         :key="conv.id"
         class="history-item"
-        :class="{ active: conversations.activeId === conv.id }"
+        :class="{ active: !conversations.isIncognito && conversations.activeId === conv.id }"
         role="button"
         tabindex="0"
         @click="agent.selectConversation(conv.id)"
@@ -72,12 +80,36 @@ function formatDate(ts: number) {
   padding: 0 8px 8px;
 }
 
+.incognito-pill {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  margin: 0 4px 8px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.2;
+  color: #5a4a78;
+  background: rgba(90, 70, 140, 0.12);
+  border: 1px solid rgba(90, 70, 140, 0.28);
+
+  svg {
+    flex-shrink: 0;
+  }
+}
+
 .history-list {
   flex: 1;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
   gap: 4px;
+
+  &.dimmed {
+    opacity: 0.55;
+  }
 }
 
 .history-item {
@@ -104,7 +136,7 @@ function formatDate(ts: number) {
   &.active {
     background: $accent-light;
     border-color: rgba(45, 138, 78, 0.35);
-    box-shadow: inset 3px 0 0 $accent;
+    box-shadow: inset $active-indicator 0 0 $accent;
 
     .item-title {
       color: $accent;
