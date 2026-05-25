@@ -4,7 +4,8 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import get_settings
-from app.routers import chat, health, knowledge
+from app.routers import chat, conversations, health, knowledge
+from app.services.chat_store import _get_chat_collection
 from app.services.milvus_store import connect_milvus, disconnect_milvus, ping_milvus
 
 
@@ -15,6 +16,11 @@ async def lifespan(_app: FastAPI):
     if status.get("ok"):
         print(f"✓ Milvus 已连接 {settings.milvus_host}:{settings.milvus_port} ({status.get('version')})")
         connect_milvus(settings)
+        try:
+            _get_chat_collection(settings)
+            print(f"✓ 对话集合 {settings.milvus_chat_collection} 已就绪（Attu 可查看）")
+        except Exception as exc:
+            print(f"⚠ 对话集合初始化失败: {exc}")
     else:
         print(f"⚠ Milvus 未连接: {status.get('error')}")
     yield
@@ -40,6 +46,7 @@ API_PREFIX = "/api/platform"
 app.include_router(health.router, prefix=API_PREFIX)
 app.include_router(knowledge.router, prefix=API_PREFIX)
 app.include_router(chat.router, prefix=API_PREFIX)
+app.include_router(conversations.router, prefix=API_PREFIX)
 
 
 @app.get("/")

@@ -487,8 +487,7 @@ export const useAgentStore = defineStore('agent', () => {
   }
 
   function newSession() {
-    conversations.createConversation()
-    resetChatSurface()
+    void conversations.createConversation().then(() => resetChatSurface())
   }
 
   function newIncognitoSession() {
@@ -512,9 +511,17 @@ export const useAgentStore = defineStore('agent', () => {
     conversations.deleteConversation(id)
   }
 
-  function initConversations() {
-    if (conversations.list.length === 0) conversations.createConversation()
-    else conversations.ensureActive()
+  async function initConversations() {
+    await conversations.hydrate()
+    if (conversations.persistError.value && conversations.list.length === 0) {
+      conversations.createConversationLocal()
+      return
+    }
+    if (conversations.list.length === 0) {
+      await conversations.createConversation()
+    } else {
+      conversations.ensureActive()
+    }
   }
 
   function setCurrentView(id: ViewId) {

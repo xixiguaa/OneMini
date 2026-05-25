@@ -13,4 +13,4 @@ app.use(pinia)
 
 app.mount('#app')
 
-useAgentStore().initConversations()
+useAgentStore().initConversations().catch(console.error)

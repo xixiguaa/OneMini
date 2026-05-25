@@ -7,7 +7,7 @@
 ```
 OneMini 前端 (5173)
   ├─ /api/*           → Node 代理 (3001)  对话 / 图片 / 视频 / 3D
-  └─ /api/platform/*  → Python 后端 (8000) Milvus 知识库 + RAG
+  └─ /api/platform/*  → Python 后端 (8000) Milvus 知识库 + RAG + 对话持久化
          ↓
     Milvus (19530)  ← Docker milvus-standalone
     Attu (3000)     ← 可视化
@@ -19,6 +19,7 @@ OneMini 前端 (5173)
 2. **检索**：用户提问 → 向量相似度检索 Top-K 片段
 3. **生成**：检索结果 + 对话历史 → OpenAI 兼容 LLM 流式回答
 4. **对话**：勾选「知识库增强」后，对话页走 RAG 接口
+5. **历史**：会话与消息写入 Milvus 集合 `onemini_chat`（Attu 可查看），详见 [docs/milvus-chat-schema.md](docs/milvus-chat-schema.md)
 
 ## 快速开始
 

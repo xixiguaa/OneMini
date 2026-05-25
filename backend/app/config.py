@@ -16,6 +16,7 @@ class Settings(BaseSettings):
     milvus_host: str = "127.0.0.1"
     milvus_port: int = 19530
     milvus_collection: str = "onemini_knowledge"
+    milvus_chat_collection: str = "onemini_chat"
 
     embedding_model: str = "BAAI/bge-small-zh-v1.5"
 
