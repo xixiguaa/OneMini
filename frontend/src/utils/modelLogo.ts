@@ -5,9 +5,6 @@ import type { ModelConfig } from '../types/agent'
 /** 预设模型 → logo（优先于服务商默认图标） */
 const LOGO_MAP: Record<string, string> = {
   'deepseek-v4-pro': '/logos/deepseek-color.svg',
-  'gpt-5.5-high': '/logos/openai.svg',
-  'claude-sonnet': '/logos/claude-color.svg',
-  'glm-4-plus': '/logos/zhipu-color.svg',
 }
 
 const CAPABILITY_LOGO: Record<string, string> = {

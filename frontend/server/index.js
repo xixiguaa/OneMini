@@ -208,69 +208,19 @@ const OPENAI_COMPATIBLE_PROVIDERS = new Set([
   'kling',
 ])
 
-/** 文本对话（非流式，兼容旧客户端） */
-app.post('/api/chat', async (req, res) => {
-  try {
-    const { messages, model, provider, baseUrl, apiKey, temperature } = req.body
-
-    let content
-    if (provider === 'tencent') {
-      content = await callHunyuanChat(messages, model)
-    } else if (OPENAI_COMPATIBLE_PROVIDERS.has(provider)) {
-      const url = baseUrl || PROVIDER_BASE_URLS[provider] || OPENAI_BASE_URL
-      content = await callOpenAIChat(messages, model, url, apiKey, temperature)
-    } else if (OPENAI_API_KEY) {
-      content = await callOpenAIChat(messages, model, baseUrl, apiKey, temperature)
-    } else {
-      content = mockChatReply(messages)
-    }
-
-    res.json({ content })
-  } catch (err) {
-    console.error('[chat]', err)
-    res.status(500).json({ error: err.message })
-  }
+/** 对话已迁移至 Python 平台 API（密钥仅存服务端） */
+app.post('/api/chat', (_req, res) => {
+  res.status(410).json({
+    error: '已迁移',
+    message: '请使用 POST /api/platform/agent/chat（由 Vite 代理至 Python 后端）',
+  })
 })
 
-/** 文本对话（SSE 流式，DeepSeek / OpenAI 兼容接口） */
-app.post('/api/chat/stream', async (req, res) => {
-  try {
-    const { messages, model, provider, baseUrl, apiKey, temperature } = req.body
-
-    if (provider === 'tencent') {
-      const content = await callHunyuanChat(messages, model)
-      res.setHeader('Content-Type', 'text/event-stream; charset=utf-8')
-      res.setHeader('Cache-Control', 'no-cache, no-transform')
-      res.write(`data: ${JSON.stringify({ delta: content })}\n\n`)
-      res.write('data: [DONE]\n\n')
-      return res.end()
-    }
-
-    if (OPENAI_COMPATIBLE_PROVIDERS.has(provider)) {
-      const url = baseUrl || PROVIDER_BASE_URLS[provider] || OPENAI_BASE_URL
-      await streamOpenAIChat(res, messages, model, url, apiKey, temperature)
-      return
-    }
-
-    if (OPENAI_API_KEY) {
-      await streamOpenAIChat(res, messages, model, baseUrl, apiKey, temperature)
-      return
-    }
-
-    const content = mockChatReply(messages)
-    res.setHeader('Content-Type', 'text/event-stream; charset=utf-8')
-    res.write(`data: ${JSON.stringify({ delta: content })}\n\n`)
-    res.write('data: [DONE]\n\n')
-    res.end()
-  } catch (err) {
-    console.error('[chat/stream]', err)
-    if (!res.headersSent) {
-      res.status(500).json({ error: err.message })
-    } else {
-      res.write(`data: ${JSON.stringify({ error: err.message })}\n\n`)
-      res.end()
-    }
-  }
+app.post('/api/chat/stream', (_req, res) => {
+  res.status(410).json({
+    error: '已迁移',
+    message: '请使用 POST /api/platform/agent/chat/stream',
+  })
 })
 
 /** 图片生成 */

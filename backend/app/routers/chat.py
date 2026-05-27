@@ -1,9 +1,10 @@
 import json
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
+from app.deps import get_user_id
 from app.services import rag
 
 router = APIRouter(prefix="/chat", tags=["chat"])
@@ -19,12 +20,14 @@ class RagChatRequest(BaseModel):
     messages: list[ChatMessage] = Field(default_factory=list)
     top_k: int | None = None
     model: str | None = None
-    api_key: str | None = None
+    provider: str | None = None
+    system_extra: str | None = None
+    model_config_id: str | None = None
     base_url: str | None = None
 
 
 @router.post("/rag")
-async def rag_chat(req: RagChatRequest):
+async def rag_chat(req: RagChatRequest, user_id: str = Depends(get_user_id)):
     question = req.question.strip()
     if not question:
         raise HTTPException(400, "缺少 question")
@@ -36,7 +39,10 @@ async def rag_chat(req: RagChatRequest):
             history=history,
             top_k=req.top_k,
             model=req.model,
-            api_key=req.api_key,
+            provider=req.provider,
+            system_extra=req.system_extra,
+            model_config_id=req.model_config_id,
+            user_id=user_id,
             base_url=req.base_url,
         )
         return result
@@ -45,7 +51,7 @@ async def rag_chat(req: RagChatRequest):
 
 
 @router.post("/rag/stream")
-async def rag_chat_stream(req: RagChatRequest):
+async def rag_chat_stream(req: RagChatRequest, user_id: str = Depends(get_user_id)):
     question = req.question.strip()
     if not question:
         raise HTTPException(400, "缺少 question")
@@ -58,7 +64,10 @@ async def rag_chat_stream(req: RagChatRequest):
             history=history,
             top_k=req.top_k,
             model=req.model,
-            api_key=req.api_key,
+            provider=req.provider,
+            system_extra=req.system_extra,
+            model_config_id=req.model_config_id,
+            user_id=user_id,
             base_url=req.base_url,
         )
     except Exception as exc:

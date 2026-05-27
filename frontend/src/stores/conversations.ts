@@ -1,3 +1,4 @@
+import axios from 'axios'
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 import {
@@ -38,6 +39,8 @@ export const useConversationsStore = defineStore('conversations', () => {
   const incognitoMessages = ref<ChatMessage[]>([])
 
   const persistTimers = new Map<string, ReturnType<typeof setTimeout>>()
+  /** 流式生成期间暂停防抖写入，结束后统一 flush，避免同一条消息触发两次 PUT */
+  const persistPaused = ref(false)
 
   const isIncognito = computed(() => incognitoActive.value)
 
@@ -49,8 +52,18 @@ export const useConversationsStore = defineStore('conversations', () => {
     [...list.value].sort((a, b) => b.updatedAt - a.updatedAt),
   )
 
+  function setPersistPaused(paused: boolean) {
+    persistPaused.value = paused
+    if (paused) {
+      for (const [id, timer] of persistTimers) {
+        clearTimeout(timer)
+        persistTimers.delete(id)
+      }
+    }
+  }
+
   function schedulePersist(conversationId: string) {
-    if (incognitoActive.value) return
+    if (incognitoActive.value || persistPaused.value) return
     const existing = persistTimers.get(conversationId)
     if (existing) clearTimeout(existing)
     persistTimers.set(
@@ -101,6 +114,21 @@ export const useConversationsStore = defineStore('conversations', () => {
       console.error('[conversations] hydrate', e)
     } finally {
       loading.value = false
+      hydrated.value = true
+    }
+  }
+
+  async function ensureAtLeastOneConversation(): Promise<void> {
+    if (list.value.length > 0) return
+    if (persistError.value) {
+      createConversationLocal()
+      return
+    }
+    try {
+      await createConversation()
+    } catch (e) {
+      persistError.value = e instanceof Error ? e.message : '创建对话失败'
+      createConversationLocal()
     }
   }
 
@@ -122,8 +150,11 @@ export const useConversationsStore = defineStore('conversations', () => {
     incognitoMessages.value = messages
   }
 
-  function ensureMessagingSession(): void {
+  /** 保证已 hydrate 且存在可写入的会话（发消息前 await） */
+  async function ensureMessagingSession(): Promise<void> {
     if (incognitoActive.value) return
+    if (!hydrated.value) await hydrate()
+    await ensureAtLeastOneConversation()
     ensureActive()
   }
 
@@ -168,11 +199,16 @@ export const useConversationsStore = defineStore('conversations', () => {
     try {
       await deleteConversationApi(id)
     } catch (e) {
-      console.error('[conversations] delete', e)
+      const is404 = axios.isAxiosError(e) && e.response?.status === 404
+      if (!is404) console.error('[conversations] delete', e)
     }
     list.value = list.value.filter((c) => c.id !== id)
     if (activeId.value === id) {
       activeId.value = list.value[0]?.id ?? null
+    }
+    if (list.value.length === 0) {
+      await ensureAtLeastOneConversation()
+      ensureActive()
     }
     const timer = persistTimers.get(id)
     if (timer) {
@@ -182,10 +218,10 @@ export const useConversationsStore = defineStore('conversations', () => {
   }
 
   function ensureActive(): string {
+    if (list.value.length === 0) {
+      return createConversationLocal().id
+    }
     if (!activeId.value || !list.value.some((c) => c.id === activeId.value)) {
-      if (list.value.length === 0) {
-        throw new Error('会话尚未加载，请先调用 hydrate()')
-      }
       activeId.value = list.value[0].id
     }
     return activeId.value!
@@ -228,7 +264,9 @@ export const useConversationsStore = defineStore('conversations', () => {
     setMessages,
     deleteConversation,
     ensureActive,
+    ensureAtLeastOneConversation,
     ensureMessagingSession,
+    setPersistPaused,
     flushPersist,
   }
 })

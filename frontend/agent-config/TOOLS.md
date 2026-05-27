@@ -3,7 +3,10 @@
 > 对标 OpenClaw：记录环境事实（端点、密钥位置、设备名），不重复 openclaw.json / onemini.json 里的策略。
 
 ## API 与模型
-- 对话/多智能体：见「模型配置」与 `onemini.json` 的 `models.primary` / `fallbacks`
+- **API Key**：仅在服务端加密保险库（`data/secrets.vault`），Web UI 不保存、不回显明文
+- **实际对话模型**：以聊天输入框当前所选为准（写入技能 `defaultModelId`）
+- **骨架 primary/fallback**：仅作 Agent 运行时默认与多智能体编排，不等于每条消息的后端调用
+- 多智能体编排：见 `onemini.json` 的 `models.primary` / `fallbacks`
 - 3D 世界：腾讯云混元生 3D，密钥在服务端 `.env`（`TENCENT_SECRET_ID` / `KEY`）
 
 ## 技能约定

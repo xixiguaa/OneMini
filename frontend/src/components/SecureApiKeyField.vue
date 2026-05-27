@@ -3,43 +3,50 @@ import { computed, ref } from 'vue'
 import type { ModelProvider } from '../types/agent'
 import {
   getApiKeyFormatHint,
-  maskApiKey,
   preventCopy,
   validateApiKey,
 } from '../utils/apiKey'
 
 const props = defineProps<{
-  apiKey: string
+  /** 服务端是否已保存密钥 */
+  configured: boolean
+  /** 服务端返回的掩码 */
+  hint?: string
   enabled: boolean
   provider?: ModelProvider
   isTencent?: boolean
 }>()
 
 const emit = defineEmits<{
-  save: [key: string]
-  enable: []
+  /** 保存到服务端后可选择立即启用 */
+  configure: [payload: { apiKey?: string; enable: boolean }]
   cancel: []
   disable: []
 }>()
 
 const draft = ref('')
 const validationError = ref('')
+const saving = ref(false)
 
-const hasKey = computed(() => !!props.apiKey?.trim())
+const hasKey = computed(() => props.configured)
 const showEditor = computed(() => !props.enabled && !props.isTencent && !hasKey.value)
 const showPending = computed(
   () => !props.enabled && !props.isTencent && hasKey.value,
 )
 const showLocked = computed(() => props.enabled && !props.isTencent && hasKey.value)
-const masked = computed(() => maskApiKey(props.apiKey))
+const masked = computed(() => props.hint?.trim() || '••••••••')
 
 const draftValidation = computed(() => {
-  const key = draft.value.trim() || props.apiKey?.trim() || ''
+  const key = draft.value.trim()
   if (!key || props.isTencent) return { valid: true as const }
   return validateApiKey(key, props.provider ?? 'custom')
 })
 
-const canEnable = computed(() => draftValidation.value.valid && !!(draft.value.trim() || props.apiKey?.trim()))
+const canEnable = computed(
+  () =>
+    draftValidation.value.valid &&
+    (!!draft.value.trim() || hasKey.value),
+)
 
 const formatHint = computed(() =>
   props.isTencent ? '' : getApiKeyFormatHint(props.provider ?? 'custom'),
@@ -52,28 +59,29 @@ function onDraftInput() {
     return
   }
   const result = validateApiKey(key, props.provider ?? 'custom')
-  if (result.valid) {
-    validationError.value = ''
-    emit('save', key)
-  } else {
-    validationError.value = result.message ?? '格式不正确'
-  }
+  validationError.value = result.valid ? '' : (result.message ?? '格式不正确')
 }
 
-function enableKey() {
-  const key = draft.value.trim() || props.apiKey?.trim()
-  if (!key && !props.isTencent) return
+async function enableKey() {
+  const key = draft.value.trim()
+  if (!key && !hasKey.value && !props.isTencent) return
 
-  const result = validateApiKey(key, props.provider ?? 'custom')
-  if (!result.valid) {
-    validationError.value = result.message ?? '格式不正确'
-    return
+  if (key) {
+    const result = validateApiKey(key, props.provider ?? 'custom')
+    if (!result.valid) {
+      validationError.value = result.message ?? '格式不正确'
+      return
+    }
   }
 
   validationError.value = ''
-  if (key !== props.apiKey) emit('save', key)
-  emit('enable')
-  draft.value = ''
+  saving.value = true
+  try {
+    emit('configure', { apiKey: key || undefined, enable: true })
+    draft.value = ''
+  } finally {
+    saving.value = false
+  }
 }
 
 function cancelKey() {
@@ -92,11 +100,12 @@ function disableKey() {
 <template>
   <div class="secure-key">
     <span class="label">API Key</span>
+    <p v-if="!isTencent" class="vault-hint">密钥仅保存于服务端加密保险库，不会写入浏览器本地存储。</p>
 
     <template v-if="isTencent">
       <p class="hint">使用服务器环境变量中的腾讯云密钥。</p>
       <div class="actions">
-        <button v-if="!enabled" type="button" class="btn enable" @click="emit('enable')">启用</button>
+        <button v-if="!enabled" type="button" class="btn enable" @click="enableKey">启用</button>
         <button v-else type="button" class="btn ghost" @click="disableKey">停用</button>
       </div>
     </template>
@@ -107,17 +116,17 @@ function disableKey() {
         type="password"
         class="key-input"
         :class="{ invalid: validationError }"
-        placeholder="粘贴 API Key"
+        placeholder="粘贴 API Key（仅提交到服务端）"
         autocomplete="off"
         spellcheck="false"
         @input="onDraftInput"
         @keydown.enter="enableKey"
       />
       <p v-if="validationError" class="error">{{ validationError }}</p>
-      <p v-else class="hint">{{ formatHint }}。粘贴后点击「启用」。</p>
+      <p v-else class="hint">{{ formatHint }}。点击「保存并启用」后明文不会留在本页。</p>
       <div class="actions">
-        <button type="button" class="btn enable" :disabled="!canEnable" @click="enableKey">
-          启用
+        <button type="button" class="btn enable" :disabled="!canEnable || saving" @click="enableKey">
+          {{ saving ? '保存中…' : '保存并启用' }}
         </button>
         <button type="button" class="btn ghost" @click="cancelKey">取消</button>
       </div>
@@ -135,7 +144,7 @@ function disableKey() {
       />
       <div class="actions">
         <button type="button" class="btn enable" @click="enableKey">启用</button>
-        <button type="button" class="btn ghost" @click="cancelKey">取消</button>
+        <button type="button" class="btn ghost" @click="cancelKey">撤销密钥</button>
       </div>
     </template>
 
@@ -149,7 +158,7 @@ function disableKey() {
         @cut="preventCopy"
         @contextmenu.prevent
       />
-      <p class="hint">停用后需重新粘贴 API Key 配置。</p>
+      <p class="hint">停用后将删除服务端密钥，需重新粘贴配置。</p>
       <div class="actions">
         <button type="button" class="btn ghost" @click="disableKey">停用</button>
       </div>
@@ -169,6 +178,13 @@ function disableKey() {
   font-size: 12px;
   color: $text-secondary;
   margin-bottom: 8px;
+}
+
+.vault-hint {
+  font-size: 11px;
+  color: $accent;
+  margin-bottom: 10px;
+  line-height: 1.4;
 }
 
 .key-input {

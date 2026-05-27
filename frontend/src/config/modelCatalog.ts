@@ -11,47 +11,17 @@ export interface PresetTemplate {
   brandColor?: string
 }
 
-/** 内置对话模型预设（3D 世界请在模型配置右侧自行添加） */
+/** 内置预设：文本对话仅保留 DeepSeek，其它能力请用「添加模型」自定义 */
 export const MODEL_CATALOG: PresetTemplate[] = [
   {
     id: 'deepseek-v4-pro',
-    name: 'DeepSeek V4 Pro',
+    name: 'DeepSeek',
     provider: 'deepseek',
     model: 'deepseek-chat',
     capability: 'chat',
     baseUrl: 'https://api.deepseek.com/v1',
-    description: 'DeepSeek 旗舰对话模型',
+    description: '内置 DeepSeek 对话；MiniMax、GPT、Claude 等请通过「添加模型」自行配置',
     brandColor: '#4d6bfe',
-  },
-  {
-    id: 'gpt-5.5-high',
-    name: 'GPT-5.5 High',
-    provider: 'openai',
-    model: 'gpt-5.5-high',
-    capability: 'chat',
-    baseUrl: 'https://api.openai.com/v1',
-    description: 'OpenAI 高阶对话（兼容接口）',
-    brandColor: '#10a37f',
-  },
-  {
-    id: 'claude-sonnet',
-    name: 'Claude Sonnet',
-    provider: 'anthropic',
-    model: 'claude-sonnet-4-20250514',
-    capability: 'chat',
-    baseUrl: 'https://api.anthropic.com/v1',
-    description: 'Anthropic Claude',
-    brandColor: '#d97757',
-  },
-  {
-    id: 'glm-4-plus',
-    name: 'GLM-4 Plus',
-    provider: 'zhipu',
-    model: 'glm-4-plus',
-    capability: 'chat',
-    baseUrl: 'https://open.bigmodel.cn/api/paas/v4',
-    description: '智谱 GLM',
-    brandColor: '#1e80ff',
   },
 ]
 
@@ -69,7 +39,7 @@ export function catalogToModel(
     description: preset.description,
     enabled: false,
     preset: true,
-    apiKey: '',
+    secretConfigured: false,
     ...overrides,
   }
 }

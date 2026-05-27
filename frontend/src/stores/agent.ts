@@ -22,7 +22,12 @@ import {
   revokeAttachmentPreviews,
   type ParsedAttachment,
 } from '../utils/files'
-import { composeSystemPrompt, truncateHistory } from '../utils/promptComposer'
+import {
+  composeSystemPrompt,
+  formatRuntimeModelHint,
+  truncateHistory,
+} from '../utils/promptComposer'
+import { resolveChatBaseUrl } from '../config/providers'
 import { resolveModelForChat } from '../utils/resolveModel'
 import { randomUUID } from '../utils/uuid'
 import { useAgentConfigStore } from './agentConfig'
@@ -146,7 +151,7 @@ export const useAgentStore = defineStore('agent', () => {
     if (!modelId) return null
     const model = settings.getModel(modelId)
     if (!model?.enabled) return null
-    if (model.provider !== 'tencent' && !model.apiKey?.trim()) return null
+    if (model.provider !== 'tencent' && !model.secretConfigured) return null
     return model
   }
 
@@ -167,12 +172,16 @@ export const useAgentStore = defineStore('agent', () => {
     }
 
     const fullContent = buildUserContent(content)
-    const systemPrompt = composeSystemPrompt(
-      agentConfig.workspace,
-      skill?.systemPrompt || '',
-      undefined,
-      agentConfig.bootstrapMaxChars,
-    )
+    const runtimeHint = formatRuntimeModelHint(model)
+    const systemPrompt = [
+      composeSystemPrompt(
+        agentConfig.workspace,
+        skill?.systemPrompt || '',
+        undefined,
+        agentConfig.bootstrapMaxChars,
+      ),
+      runtimeHint,
+    ].join('\n\n')
     const maxHist = agentConfig.skeleton.session.maxHistoryMessages
     const history = truncateHistory(
       messages.value
@@ -230,9 +239,11 @@ export const useAgentStore = defineStore('agent', () => {
         await sendRagChatStream({
           question: fullContent,
           messages: history,
+          systemExtra: runtimeHint,
           model: model.model,
-          apiKey: model.apiKey,
-          baseUrl: model.baseUrl,
+          provider: model.provider,
+          modelConfigId: model.id,
+          baseUrl: resolveChatBaseUrl(model.provider, model.baseUrl),
           onContexts: (ctxs) => {
             if (!ctxs.length) return
             const refs = ctxs
@@ -260,8 +271,8 @@ export const useAgentStore = defineStore('agent', () => {
           ],
           model: model.model,
           provider: model.provider,
-          baseUrl: model.baseUrl,
-          apiKey: model.apiKey,
+          baseUrl: resolveChatBaseUrl(model.provider, model.baseUrl),
+          modelConfigId: model.id,
           temperature,
           onDelta: (chunk) => {
             accumulated += chunk
@@ -285,7 +296,7 @@ export const useAgentStore = defineStore('agent', () => {
       prompt,
       model: model.model,
       provider: model.provider,
-      apiKey: model.apiKey,
+      modelConfigId: model.id,
       baseUrl: model.baseUrl,
       aspectRatio: settings.settings.generationPrefs.aspectRatio,
     })
@@ -309,7 +320,7 @@ export const useAgentStore = defineStore('agent', () => {
       imageBase64: imageAtt?.base64,
       model: model.model,
       provider: model.provider,
-      apiKey: model.apiKey,
+      modelConfigId: model.id,
     })
     addMessage({
       role: 'assistant',
@@ -391,7 +402,7 @@ export const useAgentStore = defineStore('agent', () => {
     if (!content && !pendingAttachments.value.length) return
     if (isProcessing.value) return
 
-    conversations.ensureMessagingSession()
+    await conversations.ensureMessagingSession()
     const skill = skillOverride ?? activeSkill.value
     const skillCfg = settings.getSkill(skill)
 
@@ -419,6 +430,7 @@ export const useAgentStore = defineStore('agent', () => {
       return
     }
     isProcessing.value = true
+    conversations.setPersistPaused(true)
     const displayContent = content || '（含附件）'
 
     addMessage({
@@ -454,6 +466,14 @@ export const useAgentStore = defineStore('agent', () => {
       addMessage({ role: 'assistant', type: 'error', content: msg, skillId: skill })
     } finally {
       isProcessing.value = false
+      conversations.setPersistPaused(false)
+      if (!conversations.isIncognito) {
+        try {
+          await conversations.flushPersist(conversations.ensureActive())
+        } catch {
+          /* flushPersist 已写入 persistError */
+        }
+      }
       clearAttachments()
       selectedCreativeSkillId.value = null
     }
@@ -495,10 +515,10 @@ export const useAgentStore = defineStore('agent', () => {
     resetChatSurface()
   }
 
-  function exitIncognito() {
+  async function exitIncognito() {
     if (!conversations.isIncognito) return
     conversations.exitIncognito()
-    conversations.ensureActive()
+    await conversations.ensureMessagingSession()
     resetChatSurface()
   }
 
@@ -513,15 +533,8 @@ export const useAgentStore = defineStore('agent', () => {
 
   async function initConversations() {
     await conversations.hydrate()
-    if (conversations.persistError.value && conversations.list.length === 0) {
-      conversations.createConversationLocal()
-      return
-    }
-    if (conversations.list.length === 0) {
-      await conversations.createConversation()
-    } else {
-      conversations.ensureActive()
-    }
+    await conversations.ensureAtLeastOneConversation()
+    conversations.ensureActive()
   }
 
   function setCurrentView(id: ViewId) {

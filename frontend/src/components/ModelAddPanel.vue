@@ -28,7 +28,6 @@ const form = reactive({
   provider: 'deepseek' as ModelProvider,
   modelId: '',
   baseUrl: '',
-  apiKey: '',
   description: '',
 })
 
@@ -119,7 +118,6 @@ function saveModel() {
     capability: form.capability,
     provider: form.provider,
     baseUrl: form.baseUrl.trim() || picked?.baseUrl,
-    apiKey: undefined,
     enabled: false,
     description: form.description.trim() || picked?.description || '',
   })
@@ -137,7 +135,6 @@ function resetForm() {
     provider: 'deepseek',
     modelId: '',
     baseUrl: '',
-    apiKey: '',
     description: '',
   })
   const opts = getModelOptions(form.provider, form.capability)
@@ -150,11 +147,20 @@ function resetForm() {
 const pendingModel = computed(() =>
   savedModelId.value ? settings.getModel(savedModelId.value) : null,
 )
+
+async function onConfigurePending(payload: { apiKey?: string; enable: boolean }) {
+  const m = pendingModel.value
+  if (!m) return
+  if (payload.apiKey) await settings.saveModelSecret(m.id, payload.apiKey)
+  if (payload.enable) settings.enableModel(m.id)
+}
 </script>
 
 <template>
   <div class="add-panel">
-    <p class="hint top-hint">先选能力类型与服务商；可从预设列表快速填入模型 ID，也可直接输入（如火山方舟接入点 ep-xxx）。</p>
+    <p class="hint top-hint">
+      文本对话内置 DeepSeek；其它模型（MiniMax、GPT、Claude 等）请选择能力「文本对话」后在此自定义添加。
+    </p>
 
     <template v-if="!savedModelId">
       <label>
@@ -204,7 +210,7 @@ const pendingModel = computed(() =>
       </label>
 
       <p v-if="form.provider === 'tencent'" class="hint block">腾讯云模型使用服务端 .env 密钥，添加后在右侧点击「启用」。</p>
-      <p v-else class="hint block">API Key 在保存模型后于下方粘贴并点击「启用」。</p>
+      <p v-else class="hint block">API Key 在保存模型后于下方提交到服务端保险库并启用。</p>
 
       <label>
         <span>备注</span>
@@ -217,12 +223,12 @@ const pendingModel = computed(() =>
     <template v-else-if="pendingModel">
       <p class="success">模型已保存，请粘贴 API Key 并点击「启用」。</p>
       <SecureApiKeyField
-        :api-key="pendingModel.apiKey || ''"
+        :configured="!!pendingModel.secretConfigured"
+        :hint="pendingModel.secretHint"
         :enabled="pendingModel.enabled"
         :provider="pendingModel.provider"
         :is-tencent="pendingModel.provider === 'tencent'"
-        @save="settings.setModelApiKey(pendingModel.id, $event)"
-        @enable="settings.enableModel(pendingModel.id)"
+        @configure="onConfigurePending"
         @cancel="settings.revokeModelApiKey(pendingModel.id)"
         @disable="settings.disableModel(pendingModel.id)"
       />

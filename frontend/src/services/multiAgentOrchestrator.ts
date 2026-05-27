@@ -1,4 +1,5 @@
 import { sendChat } from '../api/agent'
+import { resolveChatBaseUrl } from '../config/providers'
 import type { ModelConfig } from '../types/agent'
 import type {
   AgentWorkspace,
@@ -79,8 +80,8 @@ async function callSpecialist(params: {
     ],
     model: params.model.model,
     provider: params.model.provider,
-    baseUrl: params.model.baseUrl,
-    apiKey: params.model.apiKey,
+    baseUrl: resolveChatBaseUrl(params.model.provider, params.model.baseUrl),
+    modelConfigId: params.model.id,
     temperature: params.agent.temperature ?? params.temperature,
   })
 }
@@ -121,8 +122,8 @@ export async function runMultiAgentPipeline(params: {
     ],
     model: model.model,
     provider: model.provider,
-    baseUrl: model.baseUrl,
-    apiKey: model.apiKey,
+    baseUrl: resolveChatBaseUrl(model.provider, model.baseUrl),
+    modelConfigId: model.id,
     temperature: orch.temperature ?? 0.1,
   })
 
@@ -170,8 +171,8 @@ export async function runMultiAgentPipeline(params: {
     ],
     model: model.model,
     provider: model.provider,
-    baseUrl: model.baseUrl,
-    apiKey: model.apiKey,
+    baseUrl: resolveChatBaseUrl(model.provider, model.baseUrl),
+    modelConfigId: model.id,
     temperature: baseTemperature,
   })
 

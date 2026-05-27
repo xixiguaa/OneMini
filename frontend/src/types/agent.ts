@@ -13,7 +13,10 @@ export interface ModelConfig {
   model: string
   capability: ModelCapability
   baseUrl?: string
-  apiKey?: string
+  /** 密钥是否已保存在服务端（明文不在浏览器） */
+  secretConfigured?: boolean
+  /** 服务端返回的掩码，如 sk-…abc */
+  secretHint?: string
   enabled: boolean
   description?: string
   preset?: boolean

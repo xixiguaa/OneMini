@@ -6,6 +6,44 @@ import httpx
 
 from app.config import Settings, get_settings
 
+# OpenAI 兼容族服务商默认 Base URL（与 frontend/server/index.js 对齐）
+PROVIDER_BASE_URLS: dict[str, str] = {
+    "openai": "https://api.openai.com/v1",
+    "deepseek": "https://api.deepseek.com/v1",
+    "anthropic": "https://api.anthropic.com/v1",
+    "zhipu": "https://open.bigmodel.cn/api/paas/v4",
+    "qwen": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+    "bailian": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+    "doubao": "https://ark.cn-beijing.volces.com/api/v3",
+    "bytedance": "https://ark.cn-beijing.volces.com/api/v3",
+    "minimax": "https://api.minimax.chat/v1",
+    "yuanbao": "https://api.openai.com/v1",
+    "gemini": "https://api.openai.com/v1",
+    "grok": "https://api.openai.com/v1",
+    "meta": "https://api.openai.com/v1",
+    "kling": "https://api.openai.com/v1",
+    "nanobanana": "https://api.openai.com/v1",
+    "custom": "https://api.openai.com/v1",
+}
+
+
+def resolve_llm_endpoint(
+    *,
+    provider: str | None = None,
+    base_url: str | None = None,
+    api_key: str | None = None,
+    settings: Settings | None = None,
+) -> tuple[str, str]:
+    settings = settings or get_settings()
+    url = (base_url or "").strip()
+    if not url and provider:
+        url = PROVIDER_BASE_URLS.get(provider, "")
+    if not url:
+        url = settings.openai_base_url
+    key = (api_key or "").strip() or settings.openai_api_key
+    return url.rstrip("/"), key
+
+
 RAG_SYSTEM = """你是 OneMini 智能助手。请根据下方「参考资料」回答用户问题。
 规则：
 1. 优先使用参考资料中的事实；资料不足时说明不确定，可结合常识简要补充。
@@ -17,6 +55,8 @@ def build_rag_messages(
     question: str,
     contexts: list[dict[str, Any]],
     history: list[dict[str, str]] | None = None,
+    *,
+    system_extra: str | None = None,
 ) -> list[dict[str, str]]:
     blocks = []
     for i, ctx in enumerate(contexts, 1):
@@ -28,7 +68,10 @@ def build_rag_messages(
     context_block = "\n\n".join(blocks) if blocks else "（无匹配片段）"
     user_content = f"参考资料：\n{context_block}\n\n用户问题：{question}"
 
-    messages: list[dict[str, str]] = [{"role": "system", "content": RAG_SYSTEM}]
+    system_content = RAG_SYSTEM
+    if system_extra and system_extra.strip():
+        system_content = f"{RAG_SYSTEM}\n\n{system_extra.strip()}"
+    messages: list[dict[str, str]] = [{"role": "system", "content": system_content}]
     if history:
         for msg in history[-10:]:
             role = msg.get("role")
@@ -43,13 +86,19 @@ async def chat_completion(
     messages: list[dict[str, str]],
     *,
     model: str | None = None,
+    provider: str | None = None,
     api_key: str | None = None,
     base_url: str | None = None,
     temperature: float = 0.3,
     settings: Settings | None = None,
 ) -> str:
     settings = settings or get_settings()
-    key = api_key or settings.openai_api_key
+    resolved_base, key = resolve_llm_endpoint(
+        provider=provider,
+        base_url=base_url,
+        api_key=api_key,
+        settings=settings,
+    )
     if not key:
         last_user = next(
             (m["content"] for m in reversed(messages) if m["role"] == "user"),
@@ -58,10 +107,10 @@ async def chat_completion(
         return (
             "【演示模式】未配置 OPENAI_API_KEY，无法调用大模型。\n\n"
             f"已收到问题片段：「{last_user[:200]}…」\n"
-            "请在 backend/.env 中配置 OPENAI_API_KEY 与 OPENAI_BASE_URL（支持 DeepSeek 等兼容接口）。"
+            "请在「模型配置」填写对应服务商 API Key，或在 backend/.env 配置 OPENAI_API_KEY。"
         )
 
-    url = (base_url or settings.openai_base_url).rstrip("/") + "/chat/completions"
+    url = resolved_base + "/chat/completions"
     payload = {
         "model": model or settings.chat_model,
         "messages": messages,
@@ -87,20 +136,33 @@ async def stream_chat_completion(
     messages: list[dict[str, str]],
     *,
     model: str | None = None,
+    provider: str | None = None,
     api_key: str | None = None,
     base_url: str | None = None,
     temperature: float = 0.3,
     settings: Settings | None = None,
 ) -> AsyncIterator[str]:
     settings = settings or get_settings()
-    key = api_key or settings.openai_api_key
+    resolved_base, key = resolve_llm_endpoint(
+        provider=provider,
+        base_url=base_url,
+        api_key=api_key,
+        settings=settings,
+    )
 
     if not key:
-        text = await chat_completion(messages, settings=settings)
+        text = await chat_completion(
+            messages,
+            model=model,
+            provider=provider,
+            api_key=api_key,
+            base_url=base_url,
+            settings=settings,
+        )
         yield text
         return
 
-    url = (base_url or settings.openai_base_url).rstrip("/") + "/chat/completions"
+    url = resolved_base + "/chat/completions"
     payload = {
         "model": model or settings.chat_model,
         "messages": messages,

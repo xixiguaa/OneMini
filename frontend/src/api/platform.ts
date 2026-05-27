@@ -1,6 +1,11 @@
 import axios from 'axios'
+import { getClientUserId } from '../utils/userId'
 
 const api = axios.create({ baseURL: '/api/platform', timeout: 120000 })
+api.interceptors.request.use((config) => {
+  config.headers.set('X-User-Id', getClientUserId())
+  return config
+})
 
 export interface KnowledgeDocument {
   doc_id: string
@@ -69,8 +74,11 @@ export async function searchKnowledge(query: string, topK = 5) {
 export interface RagStreamOptions {
   question: string
   messages?: { role: string; content: string }[]
+  /** 追加到 RAG system 提示（如实际调用模型说明） */
+  systemExtra?: string
   model?: string
-  apiKey?: string
+  provider?: string
+  modelConfigId?: string
   baseUrl?: string
   topK?: number
   signal?: AbortSignal
@@ -82,12 +90,17 @@ export interface RagStreamOptions {
 export async function sendRagChatStream(opts: RagStreamOptions): Promise<string> {
   const res = await fetch('/api/platform/chat/rag/stream', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      'X-User-Id': getClientUserId(),
+    },
     body: JSON.stringify({
       question: opts.question,
       messages: opts.messages ?? [],
+      system_extra: opts.systemExtra,
       model: opts.model,
-      api_key: opts.apiKey,
+      provider: opts.provider,
+      model_config_id: opts.modelConfigId,
       base_url: opts.baseUrl,
       top_k: opts.topK,
     }),

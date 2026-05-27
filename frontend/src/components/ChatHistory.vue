@@ -1,22 +1,13 @@
 <script setup lang="ts">
-import { EyeOff, MessageSquare, Trash2 } from 'lucide-vue-next'
+import { EyeOff, Trash2 } from 'lucide-vue-next'
 import { useLocale } from '../composables/useLocale'
 import { useAgentStore } from '../stores/agent'
 import { useConversationsStore } from '../stores/conversations'
 
 const agent = useAgentStore()
 const conversations = useConversationsStore()
-const { t, dateLocale } = useLocale()
+const { t } = useLocale()
 
-function formatDate(ts: number) {
-  const d = new Date(ts)
-  const now = new Date()
-  const loc = dateLocale()
-  if (d.toDateString() === now.toDateString()) {
-    return d.toLocaleTimeString(loc, { hour: '2-digit', minute: '2-digit' })
-  }
-  return d.toLocaleDateString(loc, { month: 'short', day: 'numeric' })
-}
 </script>
 
 <template>
@@ -42,10 +33,8 @@ function formatDate(ts: number) {
         @keydown.enter="agent.selectConversation(conv.id)"
         @keydown.space.prevent="agent.selectConversation(conv.id)"
       >
-        <MessageSquare :size="14" class="item-icon" />
         <div class="item-body">
           <span class="item-title">{{ conv.title }}</span>
-          <span class="item-meta">{{ conv.messages.length }} {{ t('history.messages') }} · {{ formatDate(conv.updatedAt) }}</span>
         </div>
         <button
           class="delete-btn"

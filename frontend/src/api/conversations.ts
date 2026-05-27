@@ -1,12 +1,16 @@
 import axios from 'axios'
 import type { ChatMessage, Conversation } from '../types/agent'
+import { getClientUserId } from '../utils/userId'
 
 const api = axios.create({
   baseURL: '/api/platform/conversations',
   timeout: 120000,
 })
 
-const USER_HEADER = 'X-User-Id'
+api.interceptors.request.use((config) => {
+  config.headers.set('X-User-Id', getClientUserId())
+  return config
+})
 
 export async function fetchConversations(includeMessages = true): Promise<Conversation[]> {
   const { data } = await api.get<{ conversations: Conversation[] }>('', {
@@ -50,6 +54,7 @@ export async function fetchChatStorageInfo() {
   return data
 }
 
-export function setConversationUserId(userId: string) {
-  api.defaults.headers.common[USER_HEADER] = userId
+/** @deprecated 使用 getClientUserId() 自动附带请求头 */
+export function setConversationUserId(_userId: string) {
+  /* 保留 API 兼容；实际由拦截器注入 */
 }

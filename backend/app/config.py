@@ -24,6 +24,10 @@ class Settings(BaseSettings):
     openai_base_url: str = "https://api.openai.com/v1"
     chat_model: str = "gpt-4o-mini"
 
+    # 用户模型密钥保险库（加密文件，权限建议 600）
+    secrets_file: str = "data/secrets.vault"
+    secrets_master_key: str = ""
+
     rag_top_k: int = 5
     chunk_size: int = 500
     chunk_overlap: int = 80

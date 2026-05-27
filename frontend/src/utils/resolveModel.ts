@@ -4,10 +4,10 @@ import type { OneMiniSkeleton } from '../types/agentConfig'
 function isModelReady(model: ModelConfig | undefined): model is ModelConfig {
   if (!model?.enabled) return false
   if (model.provider === 'tencent') return true
-  return !!model.apiKey?.trim()
+  return !!model.secretConfigured
 }
 
-/** 按骨架 primary → fallbacks → 技能绑定 → 同能力首个可用 解析模型 */
+/** 对话模型：输入框/技能绑定优先，其次骨架 primary → fallbacks → 同能力首个可用 */
 export function resolveModelForChat(
   skeleton: OneMiniSkeleton,
   settings: {
@@ -18,11 +18,10 @@ export function resolveModelForChat(
   skillId: 'chat' = 'chat',
 ): ModelConfig | null {
   const candidates: string[] = []
-  if (skeleton.models.primary) candidates.push(skeleton.models.primary)
-  candidates.push(...skeleton.models.fallbacks)
-
   const skill = settings.getSkill(skillId)
   if (skill?.defaultModelId) candidates.push(skill.defaultModelId)
+  if (skeleton.models.primary) candidates.push(skeleton.models.primary)
+  candidates.push(...skeleton.models.fallbacks)
 
   for (const id of candidates) {
     const m = settings.getModel(id)
