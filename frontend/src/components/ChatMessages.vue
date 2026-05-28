@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Download, FileText } from 'lucide-vue-next'
+import { Download, FileText, Loader2 } from 'lucide-vue-next'
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { useAgentStore } from '../stores/agent'
 import MarkdownContent from './MarkdownContent.vue'
@@ -132,6 +132,12 @@ onMounted(() => {
             v-if="msg.attachments?.status && msg.attachments.status !== 'DONE'"
             class="status-badge"
           >
+            <Loader2
+              v-if="msg.attachments.status === 'WAIT' || msg.attachments.status === 'RUN'"
+              :size="11"
+              class="om-loading-spinner"
+              aria-hidden="true"
+            />
             {{ msg.attachments.status }}
           </span>
         </div>
@@ -276,11 +282,13 @@ p.content {
 }
 
 .status-badge {
-  display: inline-block;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
   margin-top: 10px;
   padding: 4px 10px;
   background: rgba(184, 134, 11, 0.12);
-  color: $accent-gold;
+  color: $text-muted;
   border-radius: 10px;
   font-size: 11px;
 }

@@ -11,6 +11,7 @@ from typing import Any
 
 from app.config import Settings, get_settings
 from app.services import llm_wiki
+from app.services.wiki_assets import normalize_markdown_images
 from app.services.llm import chat_completion
 from app.services.raw_extract import EXTRACTABLE_SUFFIXES, extract_sidecar_rel
 from app.services.secrets_store import resolve_model_api_key
@@ -146,6 +147,78 @@ def dismiss_ingest_errors(settings: Settings | None = None) -> None:
     _write_job(root, state)
 
 
+def _fm_lists_raw(text: str, raw_rel: str) -> bool:
+    raw_line = raw_rel.replace("\\", "/").strip()
+    if not raw_line:
+        return False
+    in_sources = False
+    for line in text.splitlines():
+        if re.match(r"^sources:\s*$", line):
+            in_sources = True
+            continue
+        if in_sources:
+            m = re.match(r"^\s+-\s+(.+)$", line)
+            if m:
+                entry = m.group(1).strip().strip("'\"").replace("\\", "/")
+                if entry == raw_line or entry.endswith(f"/{raw_line}"):
+                    return True
+                continue
+            if line and not line.startswith(" "):
+                in_sources = False
+    return f"`{raw_line}`" in text or raw_line in text
+
+
+def _is_published_wiki_page(text: str) -> bool:
+    if any(marker in text for marker in _STUB_MARKERS):
+        return False
+    return bool(re.search(r"^status:\s*published\s*$", text, re.MULTILINE))
+
+
+def _rollback_draft_pages_for_raw(root: Path, raw_rel: str) -> list[str]:
+    """撤回该 raw 关联且未 published 的 wiki 页（已成功 ingest 的保留）。"""
+    wiki_dir = root / "wiki"
+    if not wiki_dir.is_dir():
+        return []
+    removed: list[str] = []
+    for path in sorted(wiki_dir.rglob("*.md")):
+        if is_protected_index_name(path.name):
+            continue
+        try:
+            text = path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        if not _fm_lists_raw(text, raw_rel):
+            continue
+        if _is_published_wiki_page(text):
+            continue
+        try:
+            rel = path.relative_to(root).as_posix()
+            path.unlink()
+            removed.append(rel)
+        except OSError:
+            continue
+    return removed
+
+
+def _finalize_job_stopped(root: Path, *, cancelled: bool) -> dict[str, Any]:
+    state = _read_job(root)
+    state["running"] = False
+    state["cancel_requested"] = False
+    state["current"] = None
+    state["finished_at"] = datetime.now(timezone.utc).isoformat()
+    if cancelled:
+        state["cancelled"] = True
+    _write_job(root, state)
+    try:
+        rebuild_wiki_index(root)
+        llm_wiki.rebuild_graph()
+    except Exception as exc:
+        state = _read_job(root)
+        state["errors"].append({"raw": "_graph", "error": f"图谱重建失败: {exc}"})
+        _write_job(root, state)
+    return state
+
+
 def ensure_stubs_for_pending(settings: Settings | None = None) -> list[str]:
     """为尚未有 source 页的 raw 创建占位页。"""
     root = llm_wiki.wiki_root(settings)
@@ -177,11 +250,13 @@ def _read_raw_body(root: Path, raw_rel: str, max_chars: int) -> tuple[str, str]:
                 if end != -1:
                     text = text[end + 5 :]
             note = f"来自提取文本 {sidecar.relative_to(root).as_posix()}"
-            return text[:max_chars], note
+            text = normalize_markdown_images(text[:max_chars], raw_rel)
+            return text, note
         raise ValueError(f"二进制 raw 尚未提取文本：{raw_rel}")
 
     text = full.read_text(encoding="utf-8", errors="replace")
-    return text[:max_chars], "原始文本"
+    text = normalize_markdown_images(text[:max_chars], raw_rel)
+    return text, "原始文本"
 
 
 def _safe_wiki_rel(rel: str) -> str:
@@ -441,6 +516,7 @@ async def _run_ingest_job(
         pending = list_pending_raw(settings)
 
     prev = _read_job(root)
+    prev_results = list(prev.get("results", [])) if retry_failed_only else []
     state: dict[str, Any] = {
         "running": True,
         "started_at": datetime.now(timezone.utc).isoformat(),
@@ -448,9 +524,11 @@ async def _run_ingest_job(
         "total": len(pending),
         "done": 0,
         "current": None,
-        "errors": [],
-        "results": list(prev.get("results", [])) if retry_failed_only else [],
+        "errors": [] if not retry_failed_only else list(prev.get("errors", [])),
+        "results": prev_results,
         "mode": "retry_failed" if retry_failed_only else "all_pending",
+        "cancel_requested": False,
+        "cancelled": False,
     }
     _write_job(root, state)
 
@@ -458,10 +536,14 @@ async def _run_ingest_job(
 
     async def process_one(rel: str) -> None:
         async with sem:
+            state = _read_job(root)
+            if state.get("cancel_requested"):
+                return
             state["current"] = rel
             _write_job(root, state)
             try:
                 result = await ingest_one_raw(rel, settings, user_id=user_id)
+                state = _read_job(root)
                 state["results"].append(result)
                 if result.get("conflicts"):
                     for c in result["conflicts"]:
@@ -474,25 +556,47 @@ async def _run_ingest_job(
                             }
                         )
             except Exception as exc:
+                state = _read_job(root)
+                if not is_raw_ingested(root, rel):
+                    _rollback_draft_pages_for_raw(root, rel)
                 state["errors"].append({"raw": rel, "error": str(exc)})
+            state = _read_job(root)
             state["done"] += 1
             state["current"] = None
             _write_job(root, state)
 
-    for rel in pending:
-        await process_one(rel)
-
-    rebuild_wiki_index(root)
+    cancelled = False
     try:
-        llm_wiki.rebuild_graph(settings)
-    except Exception as exc:
-        state["errors"].append({"raw": "_graph", "error": f"图谱重建失败: {exc}"})
-
-    state["running"] = False
-    state["finished_at"] = datetime.now(timezone.utc).isoformat()
-    state["current"] = None
-    _write_job(root, state)
-    _job_task = None
+        for rel in pending:
+            state = _read_job(root)
+            if state.get("cancel_requested"):
+                cancelled = True
+                break
+            await process_one(rel)
+    except asyncio.CancelledError:
+        cancelled = True
+    finally:
+        state = _read_job(root)
+        if cancelled or state.get("cancel_requested"):
+            cur = state.get("current")
+            if cur and not is_raw_ingested(root, cur):
+                _rollback_draft_pages_for_raw(root, cur)
+            _finalize_job_stopped(root, cancelled=True)
+        else:
+            rebuild_wiki_index(root)
+            try:
+                llm_wiki.rebuild_graph(settings)
+            except Exception as exc:
+                state = _read_job(root)
+                state["errors"].append({"raw": "_graph", "error": f"图谱重建失败: {exc}"})
+                _write_job(root, state)
+            state = _read_job(root)
+            state["running"] = False
+            state["cancel_requested"] = False
+            state["finished_at"] = datetime.now(timezone.utc).isoformat()
+            state["current"] = None
+            _write_job(root, state)
+        _job_task = None
 
 
 async def start_ingest_job(
@@ -537,7 +641,7 @@ async def start_ingest_job(
     )
     return {
         "started": True,
-        "message": f"已开始{mode_label} {len(pending)} 个 raw（DeepSeek / {settings.wiki_ingest_model}）",
+        "message": f"已开始{mode_label} {len(pending)} 个待处理 raw（DeepSeek / {settings.wiki_ingest_model}）",
         "pending_count": len(pending),
         "running": True,
         "total": len(pending),
@@ -546,6 +650,50 @@ async def start_ingest_job(
         "model": settings.wiki_ingest_model,
         "provider": settings.wiki_ingest_provider,
     }
+
+
+async def cancel_ingest_job(settings: Settings | None = None) -> dict[str, Any]:
+    """请求停止后台 ingest / 补全任务；已完成项保留，当前未完成项回滚草稿。"""
+    global _job_task
+    settings = settings or get_settings()
+    root = llm_wiki.wiki_root(settings)
+
+    async with _job_lock:
+        state = _read_job(root)
+        task_alive = _job_task is not None and not _job_task.done()
+        if not state.get("running") and not task_alive:
+            return {
+                "cancelled": False,
+                "message": "没有运行中的构建任务",
+                **ingest_status(settings),
+            }
+
+        state["cancel_requested"] = True
+        current = state.get("current")
+        _write_job(root, state)
+
+        if _job_task and not _job_task.done():
+            _job_task.cancel()
+            try:
+                await _job_task
+            except asyncio.CancelledError:
+                pass
+
+        removed: list[str] = []
+        if current and not is_raw_ingested(root, current):
+            removed = _rollback_draft_pages_for_raw(root, current)
+
+        state = _read_job(root)
+        if state.get("running"):
+            _finalize_job_stopped(root, cancelled=True)
+
+        return {
+            "cancelled": True,
+            "message": "已停止构建，已完成项已保留",
+            "rolled_back": removed,
+            "pending_count": len(list_pending_raw(settings)),
+            **ingest_status(settings),
+        }
 
 
 def _backlink_snippets(
@@ -642,33 +790,52 @@ async def _run_repair_orphans_job(settings: Settings, user_id: str = "default") 
         "errors": [],
         "results": [],
         "mode": "repair_orphans",
+        "cancel_requested": False,
+        "cancelled": False,
     }
     _write_job(root, state)
 
-    for node in orphans:
-        nid = node["id"]
-        state["current"] = nid
-        _write_job(root, state)
-        try:
-            result = await repair_one_orphan(node, edges, settings, user_id=user_id)
-            state["results"].append(result)
-        except Exception as exc:
-            state["errors"].append({"raw": nid, "error": str(exc)})
-        state["done"] += 1
-        state["current"] = None
-        _write_job(root, state)
-        await asyncio.sleep(settings.wiki_ingest_retry_delay_sec)
-
-    rebuild_wiki_index(root)
+    cancelled = False
     try:
-        llm_wiki.rebuild_graph(settings)
-    except Exception as exc:
-        state["errors"].append({"raw": "_graph", "error": str(exc)})
-
-    state["running"] = False
-    state["finished_at"] = datetime.now(timezone.utc).isoformat()
-    _write_job(root, state)
-    _job_task = None
+        for node in orphans:
+            state = _read_job(root)
+            if state.get("cancel_requested"):
+                cancelled = True
+                break
+            nid = node["id"]
+            state["current"] = nid
+            _write_job(root, state)
+            try:
+                result = await repair_one_orphan(node, edges, settings, user_id=user_id)
+                state = _read_job(root)
+                state["results"].append(result)
+            except Exception as exc:
+                state = _read_job(root)
+                state["errors"].append({"raw": nid, "error": str(exc)})
+            state = _read_job(root)
+            state["done"] += 1
+            state["current"] = None
+            _write_job(root, state)
+            await asyncio.sleep(settings.wiki_ingest_retry_delay_sec)
+    except asyncio.CancelledError:
+        cancelled = True
+    finally:
+        if cancelled or _read_job(root).get("cancel_requested"):
+            _finalize_job_stopped(root, cancelled=True)
+        else:
+            rebuild_wiki_index(root)
+            try:
+                llm_wiki.rebuild_graph(settings)
+            except Exception as exc:
+                state = _read_job(root)
+                state["errors"].append({"raw": "_graph", "error": str(exc)})
+                _write_job(root, state)
+            state = _read_job(root)
+            state["running"] = False
+            state["cancel_requested"] = False
+            state["finished_at"] = datetime.now(timezone.utc).isoformat()
+            _write_job(root, state)
+        _job_task = None
 
 
 async def start_repair_orphans_job(

@@ -10,6 +10,7 @@ import {
 } from 'lucide-vue-next'
 import mermaid from 'mermaid'
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
+import LoadingIndicator from './LoadingIndicator.vue'
 import { ensureMermaidInit } from '../utils/mermaidConfig'
 import { highlightMermaidCode } from '../utils/mermaidHighlight'
 import { applyReferenceChartStyle } from '../utils/mermaidStyle'
@@ -319,7 +320,7 @@ onUnmounted(() => {
 
     <div v-show="activeTab === 'chart'" class="chart-panel">
       <div v-if="renderError" class="chart-error">{{ renderError }}</div>
-      <div v-else-if="isRendering" class="chart-loading">渲染中…</div>
+      <LoadingIndicator v-else-if="isRendering" label="渲染中…" variant="block" class="chart-loading" />
       <div
         ref="scrollRef"
         class="chart-viewport"

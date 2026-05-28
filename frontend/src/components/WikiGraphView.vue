@@ -7,11 +7,13 @@ import {
   FileText,
   FileUp,
   Focus,
+  Info,
   Layers,
   Loader2,
   Maximize2,
   Minimize2,
   Network,
+  CircleStop,
   RefreshCw,
   Search,
   Trash2,
@@ -19,6 +21,7 @@ import {
 } from 'lucide-vue-next'
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import {
+  cancelWikiIngest,
   deleteWikiRawFile,
   dismissWikiIngestErrors,
   getWikiGraph,
@@ -46,7 +49,9 @@ import {
   tryOpenObsidianVault,
 } from '../utils/openObsidian'
 import ConfirmDialog from './ConfirmDialog.vue'
+import LoadingIndicator from './LoadingIndicator.vue'
 import WikiGraphCanvas from './WikiGraphCanvas.vue'
+import WikiIssuesDrawer from './WikiIssuesDrawer.vue'
 import WikiNodeDetail from './WikiNodeDetail.vue'
 
 const {
@@ -73,6 +78,8 @@ const ingestConflictsDismissed = ref(false)
 const ingestConflicts = ref<WikiIngestConflict[]>([])
 const resolvingConflictId = ref<string | null>(null)
 const error = ref('')
+const ingestNotice = ref('')
+const cancellingIngest = ref(false)
 const rawFiles = ref<WikiRawFile[]>([])
 const graphNodes = ref<WikiGraphNode[]>([])
 const graphEdges = ref<{ source: string; target: string; type: string }[]>([])
@@ -88,10 +95,16 @@ const obsidianDialogOpen = ref(false)
 const openingObsidian = ref(false)
 let contentRequestSeq = 0
 let ingestPollTimer: ReturnType<typeof setInterval> | null = null
+let finishIngestPollWait: (() => void) | null = null
 
-const ingestActive = computed(
-  () => ingestJob.value?.running === true || loading.value,
-)
+function completeIngestPollWait() {
+  finishIngestPollWait?.()
+  finishIngestPollWait = null
+}
+
+const ingestRunning = computed(() => ingestJob.value?.running === true)
+
+const ingestActive = computed(() => ingestRunning.value || loading.value)
 
 const ingestProgressPct = computed(() => {
   const job = ingestJob.value
@@ -109,11 +122,27 @@ const ingestConflictList = computed(() =>
 
 const ingestConflictCount = computed(() => ingestConflictList.value.length)
 
-function shortRawPath(raw?: string) {
-  if (!raw) return ''
-  const name = raw.split('/').pop() ?? raw
-  return name.length > 48 ? `${name.slice(0, 45)}…` : name
-}
+const issuesDrawerOpen = ref(false)
+const issuesDrawerTab = ref<'conflicts' | 'errors'>('conflicts')
+const flowInfoOpen = ref(false)
+const flowInfoWrapRef = ref<HTMLElement | null>(null)
+const flowInfoAnchorRef = ref<HTMLElement | null>(null)
+const flowInfoPos = ref({ top: 0, left: 0 })
+
+const showIssuesStrip = computed(
+  () =>
+    (ingestConflictCount.value > 0 && !ingestConflictsDismissed.value) ||
+    (ingestErrorCount.value > 0 && !ingestErrorsDismissed.value),
+)
+
+const WIKI_FLOW_FILE_TYPES = [
+  { key: 'raw', label: 'Raw 原始', desc: '上传的 md / PDF / Word 等，作为 ingest 输入。' },
+  { key: 'source', label: '来源 Source', desc: '对应某一 raw 的章节摘要，链回原始文件。' },
+  { key: 'concept', label: '概念 Concept', desc: '从原文提炼的知识点、术语与原理。' },
+  { key: 'entity', label: '实体 Entity', desc: '库、框架、工具等可引用对象（如 NumPy、pandas）。' },
+  { key: 'synthesis', label: '综合 Synthesis', desc: '跨多篇来源整合后的论述页。' },
+  { key: 'query', label: '查询 Query', desc: '问答或检索场景的沉淀页。' },
+] as const
 
 const KIND_LABELS: Record<string, string> = {
   text: '文本',
@@ -396,31 +425,42 @@ function stopIngestPoll() {
   }
 }
 
+async function handleIngestJobFinished(status: WikiIngestStatus) {
+  await refreshAll()
+  canvasRef.value?.fitView()
+  await loadIngestConflicts()
+  if (status.cancelled) {
+    error.value = ''
+    ingestNotice.value =
+      '构建已停止：已完成项已保留，未完成项已撤回；再次点击「构建知识框架」将只处理待构建文件。'
+  } else if (ingestConflictCount.value) {
+    ingestConflictsDismissed.value = false
+    openIssuesDrawer('conflicts')
+  } else if (status.errors?.length) {
+    ingestNotice.value = ''
+    error.value = `已完成，但有 ${status.errors.length} 项失败（见顶部提示）`
+  } else {
+    ingestNotice.value = ''
+  }
+}
+
 async function pollIngestUntilDone() {
   stopIngestPoll()
   return new Promise<void>((resolve) => {
+    finishIngestPollWait = resolve
     const tick = async () => {
       try {
         const status = await getWikiIngestStatus()
         ingestJob.value = status
         if (!status.running) {
           stopIngestPoll()
-          await refreshAll()
-          canvasRef.value?.fitView()
-          if (status.errors?.length) {
-            const n = status.errors.length
-            error.value = `已完成，但有 ${n} 项失败（见下方详情）`
-          }
-          await loadIngestConflicts()
-          if (ingestConflictCount.value) {
-            ingestConflictsDismissed.value = false
-          }
-          resolve()
+          await handleIngestJobFinished(status)
+          completeIngestPollWait()
         }
       } catch (e) {
         stopIngestPoll()
         error.value = e instanceof Error ? e.message : '获取 ingest 进度失败'
-        resolve()
+        completeIngestPollWait()
       }
     }
     void tick()
@@ -437,6 +477,33 @@ async function loadIngestConflicts() {
   }
 }
 
+function openIssuesDrawer(tab: 'conflicts' | 'errors') {
+  issuesDrawerTab.value = tab
+  issuesDrawerOpen.value = true
+  if (tab === 'conflicts') ingestConflictsDismissed.value = false
+}
+
+function dismissIssuesStrip() {
+  if (ingestConflictCount.value) ingestConflictsDismissed.value = true
+  if (ingestErrorCount.value && !ingestErrorsDismissed.value) void dismissIngestErrors()
+}
+
+function toggleFlowInfo() {
+  if (!flowInfoOpen.value && flowInfoAnchorRef.value) {
+    const rect = flowInfoAnchorRef.value.getBoundingClientRect()
+    flowInfoPos.value = { top: rect.bottom + 6, left: rect.left }
+  }
+  flowInfoOpen.value = !flowInfoOpen.value
+}
+
+function onFlowInfoDocClick(e: MouseEvent) {
+  if (!flowInfoOpen.value) return
+  const target = e.target as Node
+  if (flowInfoWrapRef.value?.contains(target)) return
+  if ((e.target as HTMLElement).closest?.('.flow-info-popover--portal')) return
+  flowInfoOpen.value = false
+}
+
 async function resolveIngestConflict(id: string, resolution: WikiConflictResolution) {
   resolvingConflictId.value = id
   error.value = ''
@@ -444,6 +511,7 @@ async function resolveIngestConflict(id: string, resolution: WikiConflictResolut
     await resolveWikiIngestConflict(id, resolution)
     await loadIngestConflicts()
     await refreshAll()
+    if (!ingestConflictCount.value) issuesDrawerOpen.value = false
   } catch (e) {
     error.value = e instanceof Error ? e.message : '冲突处理失败'
   } finally {
@@ -482,6 +550,7 @@ async function refreshAll() {
 }
 
 async function onUpload(ev: Event) {
+  if (ingestRunning.value) return
   const input = ev.target as HTMLInputElement
   const files = input.files ? [...input.files] : []
   if (!files.length) return
@@ -534,9 +603,31 @@ async function runRepairOrphans() {
   }
 }
 
+async function onCancelIngest() {
+  if (!ingestRunning.value || cancellingIngest.value) return
+  cancellingIngest.value = true
+  ingestNotice.value = ''
+  error.value = ''
+  try {
+    await cancelWikiIngest()
+    const status = await getWikiIngestStatus()
+    ingestJob.value = status
+    if (!status.running) {
+      stopIngestPoll()
+      await handleIngestJobFinished(status)
+      completeIngestPollWait()
+    }
+  } catch (e) {
+    error.value = e instanceof Error ? e.message : '停止构建失败'
+  } finally {
+    cancellingIngest.value = false
+  }
+}
+
 async function runIngestJob(retryFailedOnly = false) {
   loading.value = true
   error.value = ''
+  ingestNotice.value = ''
   ingestErrorsDismissed.value = false
   try {
     const result = await rebuildWikiGraph(true, { retryFailedOnly })
@@ -674,8 +765,16 @@ watch(graphFullscreen, async (on) => {
   if (on) canvasRef.value?.fitView()
 })
 
+watch(ingestConflictCount, (n, prev) => {
+  if (n > 0 && (prev ?? 0) === 0) {
+    ingestConflictsDismissed.value = false
+    openIssuesDrawer('conflicts')
+  }
+})
+
 onMounted(async () => {
   window.addEventListener('keydown', onGraphEscape)
+  document.addEventListener('click', onFlowInfoDocClick)
   await refreshAll()
   if (ingestJob.value?.running) {
     loading.value = true
@@ -686,6 +785,9 @@ onMounted(async () => {
 
 onUnmounted(() => {
   window.removeEventListener('keydown', onGraphEscape)
+  document.removeEventListener('click', onFlowInfoDocClick)
+  stopIngestPoll()
+  completeIngestPollWait()
   graphFullscreen.value = false
   document.body.style.overflow = ''
 })
@@ -707,11 +809,36 @@ watch(selectedNodeId, (id) => expandSectionForNode(id))
 <template>
   <div class="wiki-page">
     <p v-if="error" class="error-banner">{{ error }}</p>
+    <p v-if="ingestNotice" class="ingest-notice-banner">{{ ingestNotice }}</p>
 
     <div v-if="ingestJob?.running" class="ingest-banner">
       <div class="ingest-banner-head">
-        <span>{{ ingestJob?.mode === 'repair_orphans' ? '正在补全未知 wiki 页…' : '正在 LLM 结构化知识库…' }}</span>
-        <span class="ingest-count">{{ ingestJob.done }} / {{ ingestJob.total }}</span>
+        <LoadingIndicator
+          :label="
+            ingestJob?.cancel_requested
+              ? '正在停止…'
+              : ingestJob?.mode === 'repair_orphans'
+                ? '正在补全未知 wiki 页…'
+                : '正在 LLM 结构化知识库…'
+          "
+          variant="inline"
+          :size="15"
+        />
+        <div class="ingest-banner-actions">
+          <span class="ingest-count">{{ ingestJob.done }} / {{ ingestJob.total }}</span>
+          <span class="ingest-banner-divider" aria-hidden="true" />
+          <button
+            type="button"
+            class="ingest-stop-btn"
+            title="停止构建"
+            :disabled="cancellingIngest || ingestJob?.cancel_requested"
+            @click="onCancelIngest"
+          >
+            <Loader2 v-if="cancellingIngest" :size="13" class="om-loading-spinner" aria-hidden="true" />
+            <CircleStop v-else :size="13" aria-hidden="true" />
+            <span>{{ cancellingIngest || ingestJob?.cancel_requested ? '正在停止' : '停止' }}</span>
+          </button>
+        </div>
       </div>
       <div class="ingest-bar">
         <div class="ingest-bar-fill" :style="{ width: `${ingestProgressPct}%` }" />
@@ -719,96 +846,85 @@ watch(selectedNodeId, (id) => expandSectionForNode(id))
       <p v-if="ingestJob.current" class="ingest-current">当前：{{ ingestJob.current }}</p>
     </div>
 
-    <div
-      v-if="ingestConflictCount && !ingestConflictsDismissed"
-      class="ingest-conflicts-panel"
-      role="region"
-      aria-label="Ingest 冲突"
-    >
-      <div class="ingest-errors-head">
-        <span>内容冲突 {{ ingestConflictCount }} 项（请选择处理方式）</span>
+    <div v-if="showIssuesStrip" class="wiki-issues-strip" role="status">
+      <div class="wiki-issues-strip-main">
         <button
+          v-if="ingestConflictCount && !ingestConflictsDismissed"
           type="button"
-          class="ingest-dismiss-btn"
-          title="关闭"
-          aria-label="关闭冲突提示"
-          @click="ingestConflictsDismissed = true"
+          class="issues-chip warn"
+          @click="openIssuesDrawer('conflicts')"
         >
-          <X :size="16" />
+          内容冲突 {{ ingestConflictCount }}
         </button>
-      </div>
-      <ul class="conflict-list">
-        <li v-for="c in ingestConflictList" :key="c.id" class="conflict-item">
-          <div class="conflict-meta">
-            <strong>{{ c.title }}</strong>
-            <span class="conflict-path">{{ c.wiki_path }}</span>
-            <span class="conflict-sim">相似度 {{ (c.similarity * 100).toFixed(0) }}%</span>
-          </div>
-          <div class="conflict-actions">
-            <button
-              type="button"
-              class="conflict-btn"
-              :disabled="!!resolvingConflictId"
-              @click="resolveIngestConflict(c.id, 'overwrite')"
-            >
-              覆盖
-            </button>
-            <button
-              type="button"
-              class="conflict-btn"
-              :disabled="!!resolvingConflictId"
-              @click="resolveIngestConflict(c.id, 'keep_both')"
-            >
-              保留双方
-            </button>
-            <button
-              type="button"
-              class="conflict-btn muted"
-              :disabled="!!resolvingConflictId"
-              @click="resolveIngestConflict(c.id, 'discard')"
-            >
-              放弃新稿
-            </button>
-          </div>
-        </li>
-      </ul>
-    </div>
-
-    <div
-      v-else-if="ingestErrorCount && !ingestErrorsDismissed"
-      class="ingest-errors-panel"
-      role="alert"
-    >
-      <div class="ingest-errors-head">
-        <span>构建失败 {{ ingestErrorCount }} 项（多为模型返回空 JSON，可重试）</span>
-        <div class="ingest-errors-actions">
-          <button type="button" class="ingest-retry-btn" :disabled="ingestActive" @click="onRetryFailed">
-            重试失败项
+        <div v-if="ingestErrorCount && !ingestErrorsDismissed" class="issues-errors-summary">
+          <span class="issues-errors-text">
+            构建失败 {{ ingestErrorCount }} 项（多为模型返回空 JSON）
+          </span>
+          <button type="button" class="issues-link-btn" :disabled="ingestActive" @click="onRetryFailed">
+            重试
           </button>
-          <button
-            type="button"
-            class="ingest-dismiss-btn"
-            title="关闭"
-            aria-label="关闭错误提示"
-            @click="dismissIngestErrors"
-          >
-            <X :size="16" />
+          <button type="button" class="issues-link-btn" @click="openIssuesDrawer('errors')">
+            查看详情
           </button>
         </div>
       </div>
-      <ul class="ingest-errors">
-        <li v-for="(err, i) in ingestJob!.errors" :key="i">
-          <span class="err-file" :title="err.raw">{{ shortRawPath(err.raw) }}</span>
-          <span class="err-msg">{{ err.error }}</span>
-        </li>
-      </ul>
+      <button
+        type="button"
+        class="issues-strip-dismiss"
+        title="关闭提示"
+        aria-label="关闭提示"
+        @click="dismissIssuesStrip"
+      >
+        <X :size="14" />
+      </button>
     </div>
 
     <div class="split-layout">
       <aside class="side card">
         <div class="side-scroll">
         <section class="side-section">
-          <p class="group-label">LLM-Wiki 流程</p>
+          <div ref="flowInfoWrapRef" class="flow-section-head">
+            <p class="group-label">LLM-Wiki 流程</p>
+            <button
+              ref="flowInfoAnchorRef"
+              type="button"
+              class="flow-info-btn"
+              :aria-expanded="flowInfoOpen"
+              aria-haspopup="dialog"
+              title="流程说明"
+              @click.stop="toggleFlowInfo"
+            >
+              <Info :size="14" />
+            </button>
+          </div>
+          <Teleport to="body">
+            <div
+              v-if="flowInfoOpen"
+              class="flow-info-popover flow-info-popover--portal"
+              role="dialog"
+              aria-label="LLM-Wiki 流程说明"
+              :style="{ top: `${flowInfoPos.top}px`, left: `${flowInfoPos.left}px` }"
+              @click.stop
+            >
+              <p class="flow-info-lead">
+                将上传的原始资料通过 LLM 拆成可双向链接的 wiki 知识页，并在图谱中浏览关系；也可在 Obsidian 中继续编辑同一仓库。
+              </p>
+              <ol class="flow-info-steps">
+                <li><strong>Raw</strong>：上传 md / PDF / Word 等原始文件</li>
+                <li>
+                  <strong>构建知识框架</strong>：仅处理待构建 raw；可随时停止（已完成保留，未完成撤回）
+                </li>
+                <li><strong>图谱与阅读</strong>：点击节点预览正文，按需打开 Obsidian</li>
+              </ol>
+              <p class="flow-info-sub">各类 wiki 页面含义：</p>
+              <ul class="flow-info-types">
+                <li v-for="t in WIKI_FLOW_FILE_TYPES" :key="t.key">
+                  <strong>{{ t.label }}</strong>
+                  <span>{{ t.desc }}</span>
+                </li>
+              </ul>
+            </div>
+          </Teleport>
           <div class="flow-rail" aria-label="raw 到 wiki 到输出流程">
             <div v-for="step in flowStats" :key="step.key" class="flow-step" :data-step="step.key">
               <span class="flow-value">{{ step.value }}</span>
@@ -836,7 +952,12 @@ watch(selectedNodeId, (id) => expandSectionForNode(id))
           </button>
           <template v-if="!isSectionCollapsed(sectionKey('raw'))">
           <p class="list-empty raw-hint">上传的原文、PDF 等；构建前请在此选中文件，再点「构建知识框架」。</p>
-          <p v-if="loading && !rawFiles.length" class="list-empty">加载中…</p>
+          <LoadingIndicator
+            v-if="loading && !rawFiles.length"
+            label="加载中…"
+            variant="block"
+            class="list-empty"
+          />
           <p v-else-if="!rawFiles.length" class="list-empty">
             暂无。支持 md、txt、pdf、docx、xlsx/xls 等
           </p>
@@ -903,7 +1024,12 @@ watch(selectedNodeId, (id) => expandSectionForNode(id))
               <X :size="14" />
             </button>
           </label>
-          <p v-if="loading && !wikiNodes.length" class="list-empty">加载中…</p>
+          <LoadingIndicator
+            v-if="loading && !wikiNodes.length"
+            label="加载中…"
+            variant="block"
+            class="list-empty"
+          />
           <p v-else-if="!wikiNodes.length" class="list-empty">
             暂无结构化 wiki。上传 raw 后点击「构建知识框架」，将自动调用 LLM 生成来源/概念/实体页并更新图谱。
           </p>
@@ -1003,7 +1129,12 @@ watch(selectedNodeId, (id) => expandSectionForNode(id))
         </section>
 
         <div class="side-actions">
-          <button type="button" class="action-btn primary" :disabled="loading" @click="fileInput?.click()">
+          <button
+            type="button"
+            class="action-btn primary"
+            :disabled="loading || ingestRunning"
+            @click="fileInput?.click()"
+          >
             <FileUp :size="16" />
             上传 raw
           </button>
@@ -1016,11 +1147,14 @@ watch(selectedNodeId, (id) => expandSectionForNode(id))
             @change="onUpload"
           />
 
-          <button type="button" class="action-btn primary-outline" :disabled="ingestActive" @click="onRebuild">
-            <span class="action-btn-icon" aria-hidden="true">
-              <Network :size="16" />
-              <Loader2 v-if="ingestActive" :size="15" class="action-btn-spinner" />
-            </span>
+          <button
+            type="button"
+            class="action-btn primary-outline"
+            :disabled="ingestRunning"
+            @click="onRebuild"
+          >
+            <Loader2 v-if="ingestRunning" :size="16" class="om-loading-spinner" aria-hidden="true" />
+            <Network v-else :size="16" aria-hidden="true" />
             构建知识框架
           </button>
           <button
@@ -1033,8 +1167,14 @@ watch(selectedNodeId, (id) => expandSectionForNode(id))
             <RefreshCw :size="16" />
             重试失败项 ({{ ingestErrorCount }})
           </button>
-          <button type="button" class="action-btn" :disabled="loading" @click="refreshAll">
-            <RefreshCw :size="16" />
+          <button
+            type="button"
+            class="action-btn"
+            :class="{ 'is-busy': loading }"
+            :disabled="loading"
+            @click="refreshAll"
+          >
+            <RefreshCw :size="16" aria-hidden="true" />
             刷新
           </button>
           <button
@@ -1044,8 +1184,11 @@ watch(selectedNodeId, (id) => expandSectionForNode(id))
             title="在本地 Obsidian 中打开 llm-wiki 仓库或当前笔记"
             @click="openInObsidian"
           >
-            <ExternalLink :size="16" />
-            {{ openingObsidian ? '正在打开…' : '在 Obsidian 中打开' }}
+            <LoadingIndicator v-if="openingObsidian" label="正在打开…" variant="button" :size="14" />
+            <template v-else>
+              <ExternalLink :size="16" />
+              在 Obsidian 中打开
+            </template>
           </button>
         </div>
 
@@ -1132,6 +1275,17 @@ watch(selectedNodeId, (id) => expandSectionForNode(id))
       </section>
     </div>
 
+    <WikiIssuesDrawer
+      v-model:open="issuesDrawerOpen"
+      v-model:tab="issuesDrawerTab"
+      :conflicts="ingestConflictList"
+      :errors="ingestJob?.errors ?? []"
+      :resolving-conflict-id="resolvingConflictId"
+      :ingest-active="ingestActive"
+      @resolve="resolveIngestConflict"
+      @retry="onRetryFailed"
+    />
+
     <ConfirmDialog
       v-model:open="confirmOpen"
       :loading="confirmLoading"
@@ -1196,6 +1350,17 @@ watch(selectedNodeId, (id) => expandSectionForNode(id))
   font-size: 13px;
 }
 
+.ingest-notice-banner {
+  margin: 0;
+  padding: 10px 14px;
+  border-radius: $radius-md;
+  background: rgba(45, 138, 78, 0.1);
+  border: 1px solid rgba(45, 138, 78, 0.22);
+  color: $text-secondary;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
 .ingest-banner {
   padding: 10px 14px;
   border-radius: $radius-md;
@@ -1206,14 +1371,64 @@ watch(selectedNodeId, (id) => expandSectionForNode(id))
 .ingest-banner-head {
   display: flex;
   justify-content: space-between;
+  align-items: center;
+  gap: 10px;
   font-size: 13px;
   font-weight: 600;
   color: $text-primary;
   margin-bottom: 8px;
 }
 
+.ingest-banner-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.ingest-banner-divider {
+  width: 1px;
+  height: 14px;
+  background: rgba(45, 138, 78, 0.28);
+}
+
+.ingest-stop-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 6px;
+  margin: 0;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: $text-muted;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1;
+  cursor: pointer;
+  transition:
+    color 0.15s ease,
+    background 0.15s ease;
+
+  svg {
+    flex-shrink: 0;
+    opacity: 0.85;
+  }
+
+  &:hover:not(:disabled) {
+    color: var(--color-danger);
+    background: var(--color-danger-soft);
+  }
+
+  &:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+}
+
 .ingest-count {
   font-variant-numeric: tabular-nums;
+  font-weight: 600;
   color: $accent;
 }
 
@@ -1240,119 +1455,60 @@ watch(selectedNodeId, (id) => expandSectionForNode(id))
   white-space: nowrap;
 }
 
-.ingest-conflicts-panel {
-  margin-bottom: 10px;
-  border-radius: $radius-md;
-  background: rgba(184, 134, 11, 0.1);
-  border: 1px solid rgba(184, 134, 11, 0.35);
-  overflow: hidden;
-
-  .ingest-errors-head {
-    color: $accent-gold;
-  }
-}
-
-.conflict-list {
-  margin: 0;
-  padding: 0 12px 12px;
-  list-style: none;
-}
-
-.conflict-item {
-  padding: 10px 0;
-  border-top: 1px solid rgba(184, 134, 11, 0.2);
-
-  &:first-child {
-    border-top: none;
-  }
-}
-
-.conflict-meta {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  margin-bottom: 8px;
-  font-size: 12px;
-  color: $text-secondary;
-
-  strong {
-    color: $text-primary;
-    font-size: 13px;
-  }
-}
-
-.conflict-path {
-  font-family: ui-monospace, monospace;
-  font-size: 11px;
-  word-break: break-all;
-}
-
-.conflict-sim {
-  font-size: 11px;
-  color: $text-muted;
-}
-
-.conflict-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-
-.conflict-btn {
-  padding: 4px 10px;
-  font-size: 12px;
-  border-radius: 6px;
-  border: 1px solid $glass-border;
-  background: $bg-card;
-  color: $text-primary;
-
-  &:hover:not(:disabled) {
-    border-color: $accent;
-    background: $accent-light;
-  }
-
-  &.muted {
-    color: $text-muted;
-  }
-
-  &:disabled {
-    opacity: 0.5;
-  }
-}
-
-.ingest-errors-panel {
-  border-radius: $radius-md;
-  background: rgba(180, 60, 60, 0.08);
-  border: 1px solid rgba(180, 60, 60, 0.22);
-  overflow: hidden;
-}
-
-.ingest-errors-head {
+.wiki-issues-strip {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-  padding: 10px 12px;
-  font-size: 13px;
+  padding: 8px 12px;
+  border-radius: $radius-md;
+  background: rgba(255, 255, 255, 0.88);
+  border: 1px solid $glass-border;
+  box-shadow: $shadow-sm;
+}
+
+.wiki-issues-strip-main {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  min-width: 0;
+}
+
+.issues-chip {
+  padding: 4px 12px;
+  font-size: 12px;
   font-weight: 600;
+  border-radius: 999px;
+  border: 1px solid rgba(184, 134, 11, 0.45);
+  background: rgba(184, 134, 11, 0.12);
+  color: #8a6a12;
+
+  &:hover {
+    background: rgba(184, 134, 11, 0.2);
+  }
+}
+
+.issues-errors-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  font-size: 12px;
   color: #a05050;
 }
 
-.ingest-errors-actions {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  flex-shrink: 0;
+.issues-errors-text {
+  font-weight: 500;
 }
 
-.ingest-retry-btn {
-  padding: 4px 10px;
-  border-radius: 6px;
+.issues-link-btn {
+  padding: 2px 8px;
   font-size: 12px;
   font-weight: 600;
+  border-radius: 6px;
   color: $accent;
-  border: 1px solid $accent;
-  background: #fff;
+  background: transparent;
 
   &:hover:not(:disabled) {
     background: $accent-light;
@@ -1363,12 +1519,12 @@ watch(selectedNodeId, (id) => expandSectionForNode(id))
   }
 }
 
-.ingest-dismiss-btn {
+.issues-strip-dismiss {
+  flex-shrink: 0;
   display: flex;
   padding: 4px;
   border-radius: 6px;
   color: $text-muted;
-  background: transparent;
 
   &:hover {
     color: $text-primary;
@@ -1376,68 +1532,105 @@ watch(selectedNodeId, (id) => expandSectionForNode(id))
   }
 }
 
-.ingest-errors {
-  margin: 0;
-  padding: 0 12px 10px;
-  list-style: none;
-  max-height: 160px;
-  overflow-y: auto;
+.flow-section-head {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 2px;
+
+  .group-label {
+    padding-bottom: 0;
+  }
+}
+
+.flow-info-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  color: $text-muted;
+  background: transparent;
+
+  &:hover {
+    color: $accent;
+    background: $accent-light;
+  }
+}
+
+.flow-info-popover {
+  width: min(300px, calc(100vw - 48px));
+  padding: 12px 14px;
+  border-radius: 10px;
+  border: 1px solid $glass-border;
+  background: $bg-card;
+  box-shadow: $shadow-md;
   font-size: 12px;
-  color: #a05050;
+  line-height: 1.55;
+  color: $text-secondary;
+
+  &--portal {
+    position: fixed;
+    z-index: 2900;
+    max-height: min(70vh, 420px);
+    overflow-y: auto;
+  }
+}
+
+.flow-info-lead {
+  margin: 0 0 10px;
+  color: $text-primary;
+}
+
+.flow-info-steps {
+  margin: 0 0 10px;
+  padding-left: 1.2em;
+  color: $text-secondary;
+
+  li {
+    margin: 4px 0;
+  }
+}
+
+.flow-info-sub {
+  margin: 0 0 6px;
+  font-size: 11px;
+  font-weight: 600;
+  color: $text-muted;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.flow-info-types {
+  margin: 0;
+  padding: 0;
+  list-style: none;
 
   li {
     display: flex;
-    gap: 8px;
-    padding: 4px 0;
-    border-top: 1px solid rgba(180, 60, 60, 0.12);
-  }
+    flex-direction: column;
+    gap: 2px;
+    padding: 6px 0;
+    border-top: 1px solid rgba(120, 165, 130, 0.15);
 
-  .err-file {
-    flex-shrink: 0;
-    max-width: 42%;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    font-weight: 500;
-  }
+    &:first-child {
+      border-top: none;
+      padding-top: 0;
+    }
 
-  .err-msg {
-    flex: 1;
-    min-width: 0;
-    word-break: break-word;
-  }
-}
+    strong {
+      font-size: 12px;
+      color: $text-primary;
+    }
 
-.action-btn-icon {
-  position: relative;
-  display: inline-flex;
-  flex-shrink: 0;
-  align-items: center;
-  justify-content: center;
-  width: 16px;
-  height: 16px;
-}
-
-.action-btn-spinner {
-  position: absolute;
-  inset: -2px;
-  animation: wiki-spin 0.9s linear infinite;
-}
-
-@keyframes wiki-spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-.primary-outline {
-  background: transparent;
-  border-color: $accent;
-  color: $accent;
-  margin-top: 4px;
-
-  &:hover:not(:disabled) {
-    background: $accent-light;
+    span {
+      font-size: 11px;
+      color: $text-muted;
+    }
   }
 }
 
@@ -1773,8 +1966,14 @@ watch(selectedNodeId, (id) => expandSectionForNode(id))
     background: $accent-light;
   }
 
-  &:disabled {
-    opacity: 0.5;
+  &:disabled:not(.primary) {
+    opacity: 0.55;
+  }
+
+  &.is-busy:disabled {
+    opacity: 1;
+    color: $text-muted;
+    cursor: wait;
   }
 
   &.primary {
@@ -1783,9 +1982,34 @@ watch(selectedNodeId, (id) => expandSectionForNode(id))
     border-color: transparent;
     margin-top: 8px;
 
+    svg {
+      color: inherit;
+    }
+
     &:hover:not(:disabled) {
-      background: $accent-hover;
+      background: $btn-primary-hover-bg;
       color: $btn-primary-text;
+      box-shadow: $shadow-glow;
+    }
+
+    &:disabled {
+      opacity: 1;
+      background: $btn-primary-disabled-bg;
+      color: $btn-primary-disabled-text;
+      cursor: not-allowed;
+    }
+  }
+
+  &.primary-outline {
+    background: transparent;
+    border-color: $accent;
+    color: $accent;
+
+    &:hover:not(:disabled) {
+      background: $accent-light;
+      color: $accent;
+      border-color: $accent;
+      box-shadow: $shadow-sm;
     }
   }
 

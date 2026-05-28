@@ -1,13 +1,15 @@
 <script setup lang="ts">
 import DOMPurify from 'dompurify'
 import { marked } from 'marked'
-import { computed } from 'vue'
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { splitMarkdownParts } from '../utils/markdownParts'
 import MermaidDiagram from './MermaidDiagram.vue'
 
 const props = defineProps<{
   content: string
 }>()
+
+const rootRef = ref<HTMLElement | null>(null)
 
 marked.setOptions({ breaks: true, gfm: true })
 
@@ -20,10 +22,33 @@ function renderMd(fragment: string): string {
     ADD_ATTR: ['target', 'rel'],
   })
 }
+
+function hideBrokenImages() {
+  const root = rootRef.value
+  if (!root) return
+  root.querySelectorAll<HTMLImageElement>('img').forEach((img) => {
+    if (img.dataset.fallbackBound === '1') return
+    img.dataset.fallbackBound = '1'
+    img.addEventListener('error', () => {
+      img.remove()
+    }, { once: true })
+  })
+}
+
+onMounted(() => {
+  void nextTick(hideBrokenImages)
+})
+
+watch(
+  () => props.content,
+  () => {
+    void nextTick(hideBrokenImages)
+  },
+)
 </script>
 
 <template>
-  <div class="markdown-body">
+  <div ref="rootRef" class="markdown-body">
     <template v-for="(part, i) in parts" :key="i">
       <div v-if="part.type === 'md' && part.content.trim()" v-html="renderMd(part.content)" />
       <MermaidDiagram v-else-if="part.type === 'mermaid'" :source="part.content" />
@@ -144,6 +169,13 @@ function renderMd(fragment: string): string {
     border: none;
     border-top: 1px solid $glass-border;
     margin: 1em 0;
+  }
+
+  :deep(img) {
+    max-width: 100%;
+    height: auto;
+    border-radius: 8px;
+    margin: 0.5em 0;
   }
 }
 </style>

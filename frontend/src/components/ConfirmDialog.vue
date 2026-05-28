@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { onMounted, onUnmounted, watch } from 'vue'
+import LoadingIndicator from './LoadingIndicator.vue'
 
 const props = withDefaults(
   defineProps<{
@@ -121,7 +122,8 @@ onUnmounted(() => {
               :disabled="loading"
               @click="onConfirm"
             >
-              {{ loading ? '处理中…' : confirmLabel }}
+              <LoadingIndicator v-if="loading" label="处理中…" variant="button" :size="13" />
+              <template v-else>{{ confirmLabel }}</template>
             </button>
           </div>
         </div>
@@ -254,7 +256,8 @@ onUnmounted(() => {
   border: 1px solid transparent;
 
   &:hover:not(:disabled) {
-    background: $accent-hover;
+    background: $btn-primary-hover-bg;
+    box-shadow: $shadow-glow;
   }
 
   &.danger {

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { EyeOff, Trash2 } from 'lucide-vue-next'
+import LoadingIndicator from './LoadingIndicator.vue'
 import { useLocale } from '../composables/useLocale'
 import { useAgentStore } from '../stores/agent'
 import { useConversationsStore } from '../stores/conversations'
@@ -44,7 +45,13 @@ const { t } = useLocale()
           <Trash2 :size="12" />
         </button>
       </div>
-      <p v-if="!conversations.sortedList.length" class="empty">{{ t('history.empty') }}</p>
+      <LoadingIndicator
+        v-if="conversations.loading"
+        label="加载对话…"
+        variant="block"
+        class="empty"
+      />
+      <p v-else-if="!conversations.sortedList.length" class="empty">{{ t('history.empty') }}</p>
     </div>
   </div>
 </template>

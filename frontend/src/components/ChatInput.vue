@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ArrowUp, ChevronDown, FileText, Plus, X } from 'lucide-vue-next'
+import { ArrowUp, ChevronDown, FileText, Loader2, Plus, X } from 'lucide-vue-next'
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { ACCEPT_CHAT_FILES } from '../config/constants'
 import ModelLogo from './ModelLogo.vue'
@@ -147,12 +147,13 @@ onUnmounted(() => {
             <button
               type="button"
               class="send-btn"
-              :class="{ ready: canSend() }"
-              :disabled="!canSend()"
+              :class="{ ready: canSend(), waiting: agent.isProcessing }"
+              :disabled="!canSend() && !agent.isProcessing"
               title="发送"
               @click="agent.sendMessage('chat')"
             >
-              <ArrowUp :size="18" stroke-width="2.5" />
+              <Loader2 v-if="agent.isProcessing" :size="18" class="om-loading-spinner" aria-hidden="true" />
+              <ArrowUp v-else :size="18" stroke-width="2.5" />
             </button>
           </div>
         </div>
@@ -423,8 +424,14 @@ $column-max: 48rem;
     color: #fff;
 
     &:hover {
-      background: $accent-hover;
+      background: $btn-primary-hover-bg;
     }
+  }
+
+  &.waiting {
+    background: $accent;
+    color: #fff;
+    cursor: wait;
   }
 
   &:disabled {

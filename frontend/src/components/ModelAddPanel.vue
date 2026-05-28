@@ -346,7 +346,7 @@ label {
   font-size: 14px;
 
   &:hover {
-    background: $accent-hover;
+    background: $btn-primary-hover-bg;
     box-shadow: $shadow-glow;
   }
 }

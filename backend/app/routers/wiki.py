@@ -1,14 +1,16 @@
 import json
 
+import mimetypes
+
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
-from fastapi.responses import StreamingResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
 from app.config import get_settings
 from app.deps import get_user_id
 from typing import Literal
 
-from app.services import llm_wiki, wiki_ingest, wiki_lint, wiki_query
+from app.services import llm_wiki, wiki_assets, wiki_ingest, wiki_lint, wiki_query
 from app.services.wiki_conflict import list_ingest_conflicts, resolve_conflict
 from app.services.wiki_index import rebuild_wiki_index
 
@@ -84,6 +86,14 @@ def dismiss_ingest_errors():
     return {"ok": True}
 
 
+@router.post("/ingest/cancel")
+async def cancel_ingest():
+    """停止进行中的 ingest / 补全任务；保留已 published 的页面，回滚未完成草稿。"""
+    if not llm_wiki.wiki_root().is_dir():
+        raise HTTPException(404, "LLM-Wiki 目录不存在")
+    return await wiki_ingest.cancel_ingest_job()
+
+
 @router.get("/ingest/conflicts")
 def get_ingest_conflicts():
     if not llm_wiki.wiki_root().is_dir():
@@ -135,6 +145,21 @@ def get_node_content(id: str):
     if not llm_wiki.wiki_root().is_dir():
         raise HTTPException(404, "LLM-Wiki 目录不存在")
     return llm_wiki.read_node_content(id)
+
+
+@router.get("/asset")
+def get_wiki_asset(path: str):
+    """提供 wiki/raw 下的图片等静态资源（由 normalize_markdown_images 生成的 URL）。"""
+    if not llm_wiki.wiki_root().is_dir():
+        raise HTTPException(404, "LLM-Wiki 目录不存在")
+    try:
+        full = wiki_assets.read_wiki_asset_file(path)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    except FileNotFoundError as exc:
+        raise HTTPException(404, "资源不存在") from exc
+    media_type, _ = mimetypes.guess_type(full.name)
+    return FileResponse(full, media_type=media_type or "application/octet-stream")
 
 
 @router.post("/graph/rebuild")

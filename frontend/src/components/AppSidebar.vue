@@ -250,16 +250,17 @@ $sidebar-collapsed: 56px;
 
 .new-chat-btn {
   padding: 11px;
-  background: linear-gradient(135deg, $accent, $accent-magic);
-  color: #fff;
+  background: $accent;
+  color: $btn-primary-text;
 
   &:hover {
+    background: $btn-primary-hover-bg;
     box-shadow: $shadow-glow;
-    transform: translateY(-1px);
   }
 
   &.inactive {
-    opacity: 0.85;
+    background: $btn-primary-disabled-bg;
+    color: $btn-primary-disabled-text;
   }
 }
 

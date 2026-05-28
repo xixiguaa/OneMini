@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { Check, ChevronDown, Search, X } from 'lucide-vue-next'
+import LoadingIndicator from './LoadingIndicator.vue'
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { loadModelPickerOptions } from '../api/models'
 import { CAPABILITY_LABELS } from '../config/defaults'
@@ -145,7 +146,7 @@ onUnmounted(() => document.removeEventListener('click', onDocClick))
         {{ getProviderLabel(provider) }} · {{ CAPABILITY_LABELS[capability] }}
       </p>
 
-      <div v-if="loading" class="panel-loading">加载中…</div>
+      <LoadingIndicator v-if="loading" label="加载中…" variant="block" class="panel-loading" />
 
       <div v-else class="panel-body">
         <template v-if="hasModels">

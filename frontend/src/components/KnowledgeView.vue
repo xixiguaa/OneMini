@@ -12,6 +12,7 @@ import { getWikiStatus, runWikiLint, type WikiLintResult } from '../api/wiki'
 import { useAgentStore } from '../stores/agent'
 import { usePlatformStore } from '../stores/platform'
 import KnowledgeChatModePicker from './KnowledgeChatModePicker.vue'
+import LoadingIndicator from './LoadingIndicator.vue'
 
 const platform = usePlatformStore()
 const agent = useAgentStore()
@@ -185,8 +186,11 @@ onMounted(async () => {
           打开知识图谱
         </button>
         <button type="button" class="add-trigger secondary" :disabled="lintLoading" @click="onLintWiki">
-          <ShieldCheck :size="16" />
-          {{ lintLoading ? '检查中…' : '运行 Lint 检查' }}
+          <LoadingIndicator v-if="lintLoading" label="检查中…" variant="button" :size="14" />
+          <template v-else>
+            <ShieldCheck :size="16" />
+            运行 Lint 检查
+          </template>
         </button>
         <button type="button" class="add-trigger secondary" @click="loadWikiStats">
           <RefreshCw :size="16" />
@@ -235,7 +239,12 @@ onMounted(async () => {
             {{ platform.milvusOk ? 'Milvus 已连接' : 'Milvus 未连接' }}
           </span>
         </p>
-        <p v-if="loading && !documents.length" class="list-empty">加载中…</p>
+        <LoadingIndicator
+          v-if="loading && !documents.length"
+          label="加载中…"
+          variant="block"
+          class="list-empty"
+        />
         <p v-else-if="!documents.length" class="list-empty">暂无文档</p>
         <button
           v-for="doc in documents"
@@ -690,11 +699,13 @@ onMounted(async () => {
 }
 
 .btn-primary {
-  background: linear-gradient(135deg, $accent, $accent-magic);
-  color: #fff;
+  background: $accent;
+  color: $btn-primary-text;
 
   &:disabled {
-    opacity: 0.5;
+    opacity: 1;
+    background: $btn-primary-disabled-bg;
+    color: $btn-primary-disabled-text;
   }
 }
 

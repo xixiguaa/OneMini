@@ -93,6 +93,8 @@ export interface WikiIngestStatus {
   started_at?: string | null
   finished_at?: string | null
   mode?: string
+  cancel_requested?: boolean
+  cancelled?: boolean
 }
 
 export interface WikiRebuildResult {
@@ -154,6 +156,17 @@ export async function rebuildWikiGraph(
 
 export async function dismissWikiIngestErrors() {
   const { data } = await api.post<{ ok: boolean }>('/wiki/ingest/dismiss')
+  return data
+}
+
+/** 停止进行中的构建；已完成项保留，当前未完成项回滚 */
+export async function cancelWikiIngest() {
+  const { data } = await api.post<{
+    cancelled: boolean
+    message: string
+    rolled_back?: string[]
+    pending_count?: number
+  }>('/wiki/ingest/cancel')
   return data
 }
 

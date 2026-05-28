@@ -64,9 +64,9 @@ function selectSkill(id: SkillId) {
   }
 
   &.active {
-    background: linear-gradient(135deg, $accent, $accent-magic);
+    background: $accent;
     border-color: transparent;
-    color: #fff;
+    color: $btn-primary-text;
     font-weight: 500;
     box-shadow: $shadow-glow;
   }

@@ -3,6 +3,7 @@ import {
   Download,
   Globe,
   Image as ImageIcon,
+  Loader2,
   Maximize2,
   Minimize2,
   Plus,
@@ -10,6 +11,7 @@ import {
   Sparkles,
   Type,
 } from 'lucide-vue-next'
+import LoadingIndicator from './LoadingIndicator.vue'
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import Viewport3D from './Viewport3D.vue'
 import { useAgentStore } from '../stores/agent'
@@ -185,7 +187,15 @@ onUnmounted(() => {
           <Globe :size="20" class="section-icon" />
           <div class="item-text">
             <span class="name">{{ item.title }}</span>
-            <span class="state">{{ statusLabel(item.status) }}</span>
+            <span class="state">
+              <Loader2
+                v-if="item.status === 'WAIT' || item.status === 'RUN'"
+                :size="12"
+                class="om-loading-spinner state-spinner"
+                aria-hidden="true"
+              />
+              {{ statusLabel(item.status) }}
+            </span>
           </div>
         </button>
 
@@ -226,8 +236,7 @@ onUnmounted(() => {
           </Teleport>
 
           <div v-if="queueText" class="queue-banner">
-            <Sparkles :size="16" />
-            <span>{{ queueText }}</span>
+            <LoadingIndicator :label="queueText" variant="inline" :size="16" />
             <span v-if="agent.worldStatus === 'WAIT'" class="queue-sub">预计还需数分钟</span>
           </div>
 
@@ -272,8 +281,9 @@ onUnmounted(() => {
 
             <div class="actions">
               <button type="button" class="btn-primary" :disabled="agent.isProcessing" @click="generate">
-                <Sparkles :size="16" />
-                立即生成
+                <Loader2 v-if="agent.isProcessing" :size="16" class="om-loading-spinner" aria-hidden="true" />
+                <Sparkles v-else :size="16" />
+                {{ agent.isProcessing ? '生成中…' : '立即生成' }}
               </button>
             </div>
           </div>
@@ -422,10 +432,16 @@ onUnmounted(() => {
   }
 
   .state {
-    display: block;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
     font-size: 11px;
     color: $text-secondary;
     margin-top: 2px;
+  }
+
+  .state-spinner {
+    flex-shrink: 0;
   }
 }
 
@@ -686,14 +702,17 @@ onUnmounted(() => {
   border-radius: $radius-sm;
   font-size: 13px;
   font-weight: 600;
-  background: linear-gradient(135deg, $accent, $accent-magic);
-  color: #fff;
+  background: $accent;
+  color: $btn-primary-text;
 
   &:disabled {
-    opacity: 0.5;
+    opacity: 1;
+    background: $btn-primary-disabled-bg;
+    color: $btn-primary-disabled-text;
   }
 
   &:not(:disabled):hover {
+    background: $btn-primary-hover-bg;
     box-shadow: $shadow-glow;
   }
 }

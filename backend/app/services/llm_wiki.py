@@ -20,6 +20,8 @@ from app.services.raw_extract import (
     is_allowed_suffix,
     normalize_text_content,
 )
+from app.services.wiki_assets import normalize_markdown_images
+from app.services.wiki_paths import wiki_root
 
 _SOURCES_RE = re.compile(r"^sources:\s*\n((?:\s+-\s+.+\n)+)", re.MULTILINE)
 _FRONTMATTER_TYPE_RE = re.compile(r"^type:\s*(\S+)\s*$", re.MULTILINE)
@@ -33,17 +35,6 @@ _WIKI_DIR_TYPE = {
     "synthesis": "synthesis",
     "queries": "query",
 }
-
-
-def wiki_root(settings: Settings | None = None) -> Path:
-    settings = settings or get_settings()
-    if settings.llm_wiki_path.strip():
-        p = Path(settings.llm_wiki_path)
-        if not p.is_absolute():
-            p = Path(__file__).resolve().parents[2] / p
-    else:
-        p = Path(__file__).resolve().parents[2].parent / "llm-wiki"
-    return p.resolve()
 
 
 def _ensure_layout(root: Path) -> None:
@@ -357,11 +348,13 @@ def read_node_content(node_id: str, settings: Settings | None = None) -> dict:
     if rel.startswith("raw/") and suffix in EXTRACTABLE_SUFFIXES:
         sidecar = root / extract_sidecar_rel(rel)
         if sidecar.is_file():
+            body = sidecar.read_text(encoding="utf-8", errors="replace")
+            body = normalize_markdown_images(body, rel, settings)
             return {
                 "id": node_id,
                 "path": rel,
                 "title": title,
-                "content": sidecar.read_text(encoding="utf-8", errors="replace"),
+                "content": body,
                 "source": "extract",
                 "note": f"二进制原件已保留，当前展示自动提取文本：{sidecar.relative_to(root).as_posix()}",
             }
@@ -384,11 +377,13 @@ def read_node_content(node_id: str, settings: Settings | None = None) -> dict:
             "note": "该文件类型暂不支持网页预览。",
         }
 
+    body = path.read_text(encoding="utf-8", errors="replace")
+    body = normalize_markdown_images(body, rel, settings)
     return {
         "id": node_id,
         "path": rel,
         "title": title,
-        "content": path.read_text(encoding="utf-8", errors="replace"),
+        "content": body,
         "source": "file",
         "note": "",
     }

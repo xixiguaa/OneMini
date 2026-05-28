@@ -12,6 +12,7 @@ import { computed } from 'vue'
 import type { WikiGraphNode } from '../api/wiki'
 import type { WikiNodeContent } from '../api/wiki'
 import { fmList, fmString, parseWikiMarkdown } from '../utils/wikiFrontmatter'
+import LoadingIndicator from './LoadingIndicator.vue'
 import MarkdownContent from './MarkdownContent.vue'
 
 const props = defineProps<{
@@ -128,7 +129,7 @@ const propertyRows = computed((): PropRow[] => {
 
 <template>
   <div class="wiki-node-detail">
-    <p v-if="loading" class="state-msg">正在读取节点文件…</p>
+    <LoadingIndicator v-if="loading" label="正在读取节点文件…" variant="block" class="state-msg" />
     <p v-else-if="error" class="state-msg error">{{ error }}</p>
     <template v-else-if="content?.content">
       <header class="note-header">

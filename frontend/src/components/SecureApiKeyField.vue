@@ -6,6 +6,7 @@ import {
   preventCopy,
   validateApiKey,
 } from '../utils/apiKey'
+import LoadingIndicator from './LoadingIndicator.vue'
 
 const props = defineProps<{
   /** 服务端是否已保存密钥 */
@@ -126,7 +127,8 @@ function disableKey() {
       <p v-else class="hint">{{ formatHint }}。点击「保存并启用」后明文不会留在本页。</p>
       <div class="actions">
         <button type="button" class="btn enable" :disabled="!canEnable || saving" @click="enableKey">
-          {{ saving ? '保存中…' : '保存并启用' }}
+          <LoadingIndicator v-if="saving" label="保存中…" variant="button" :size="13" />
+          <template v-else>保存并启用</template>
         </button>
         <button type="button" class="btn ghost" @click="cancelKey">取消</button>
       </div>

@@ -39,12 +39,20 @@ button {
   color: $btn-primary-text;
 
   &:hover:not(:disabled) {
-    background: $accent-hover;
+    background: $btn-primary-hover-bg;
+    box-shadow: $shadow-glow;
   }
 
   &:disabled {
-    opacity: 0.45;
+    opacity: 1;
+    background: $btn-primary-disabled-bg;
+    color: $btn-primary-disabled-text;
     cursor: not-allowed;
+  }
+
+  .om-loading,
+  .om-loading-label {
+    color: inherit;
   }
 }
 
@@ -141,7 +149,55 @@ textarea:not(.composer-input) {
 ::-webkit-scrollbar {
   width: 6px;
 }
+
 ::-webkit-scrollbar-thumb {
   background: var(--scrollbar-thumb);
   border-radius: 4px;
+}
+
+/* 全局加载指示：图标转圈，文案置灰（不闪动） */
+@keyframes om-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.om-loading-spinner {
+  flex-shrink: 0;
+  animation: om-spin 0.9s linear infinite;
+}
+
+.om-loading {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: $text-muted;
+
+  &--block {
+    display: flex;
+    justify-content: center;
+    width: 100%;
+    padding: 12px 8px;
+  }
+
+  &--button {
+    gap: 5px;
+    justify-content: center;
+    width: 100%;
+  }
+}
+
+.om-loading-label {
+  color: $text-muted;
+}
+
+/* 主色按钮内加载态与按钮文字同色 */
+.btn-primary,
+.btn.enable,
+.btn-confirm:not(.danger),
+.action-btn.primary {
+  .om-loading,
+  .om-loading-label {
+    color: inherit;
+  }
 }

@@ -3,6 +3,7 @@ import {
   ArrowUp,
   ChevronDown,
   Image,
+  Loader2,
   Plus,
   Sparkles,
   Video,
@@ -136,12 +137,13 @@ const canSend = () =>
           <button
             type="button"
             class="send-btn"
-            :class="{ ready: canSend() }"
-            :disabled="!canSend()"
+            :class="{ ready: canSend(), waiting: agent.isProcessing }"
+            :disabled="!canSend() && !agent.isProcessing"
             title="发送"
             @click="agent.generateFromStudio()"
           >
-            <ArrowUp :size="18" stroke-width="2.5" />
+            <Loader2 v-if="agent.isProcessing" :size="18" class="om-loading-spinner" aria-hidden="true" />
+            <ArrowUp v-else :size="18" stroke-width="2.5" />
           </button>
         </div>
 
@@ -374,8 +376,14 @@ const canSend = () =>
     color: #fff;
 
     &:hover {
-      background: $accent-hover;
+      background: $btn-primary-hover-bg;
     }
+  }
+
+  &.waiting {
+    background: $accent;
+    color: #fff;
+    cursor: wait;
   }
 
   &:disabled {
