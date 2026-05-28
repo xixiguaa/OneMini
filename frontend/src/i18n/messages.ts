@@ -9,6 +9,7 @@ export const messages = {
       models: '模型配置',
       skills: 'Agent 配置',
       knowledge: '知识库',
+      wikiGraph: '知识图谱',
     },
     sidebar: {
       collapse: '收起侧栏',
@@ -54,6 +55,7 @@ export const messages = {
       models: 'Models',
       skills: 'Agent Config',
       knowledge: 'Knowledge',
+      wikiGraph: 'Knowledge Graph',
     },
     sidebar: {
       collapse: 'Collapse sidebar',

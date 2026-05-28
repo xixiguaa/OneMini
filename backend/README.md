@@ -70,6 +70,13 @@ Attu：http://localhost:3000
 | POST | `/api/platform/knowledge/search` | 语义检索 |
 | POST | `/api/platform/chat/rag` | RAG 对话 |
 | POST | `/api/platform/chat/rag/stream` | RAG 流式 |
+| GET | `/api/platform/wiki/status` | LLM-Wiki 状态 |
+| GET | `/api/platform/wiki/graph` | 知识图谱 JSON |
+| POST | `/api/platform/wiki/graph/rebuild` | 构建知识框架（默认先 LLM ingest 未处理 raw，再重建图谱） |
+| GET | `/api/platform/wiki/ingest/status` | 批量 ingest 进度（后台队列） |
+| GET | `/api/platform/wiki/raw` | raw 文件列表 |
+| POST | `/api/platform/wiki/raw/upload` | 上传 raw（md/pdf/docx/xlsx 等） |
+| DELETE | `/api/platform/wiki/raw?path=...` | 删除 raw |
 
 ## 与前端联调
 

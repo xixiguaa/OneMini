@@ -18,3 +18,12 @@
 ## 输出格式
 - 中文简体；专业、简洁。
 - 代码/配置用 Markdown 代码块；流程图可用 Mermaid。
+
+## 知识来源（两套系统，勿混用）
+
+| 系统 | 路径 | 何时使用 |
+|------|------|----------|
+| **Milvus RAG** | 用户经 UI「知识库」入库 | 对话勾选「知识库增强」时由后端检索 |
+| **LLM-Wiki** | 仓库 `llm-wiki/`（见 `WIKI.md`） | 用户明确要求维护/查询结构化 wiki 时 |
+
+处理 `llm-wiki/` 时：先读 `llm-wiki/wiki/index.md`，遵守 ingest / query / lint 流程；**不要**将 wiki 写入 Milvus。

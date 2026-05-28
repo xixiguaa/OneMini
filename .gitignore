@@ -59,3 +59,17 @@ coverage/
 *.tmp
 *.temp
 .cache/
+
+# LLM-Wiki：本地知识库内容不入库（保留 README、WIKI.md、templates、scripts、图谱说明）
+llm-wiki/wiki/
+llm-wiki/raw/
+llm-wiki/raw/09-archive/
+llm-wiki/raw/archive/
+llm-wiki/.ingest-conflicts.json
+llm-wiki/concepts/
+llm-wiki/graph/links.json
+llm-wiki/.ingest-job.json
+llm-wiki/.trash/
+llm-wiki/.obsidian/workspace.json
+llm-wiki/.obsidian/workspace-mobile.json
+llm-wiki/.obsidian/cache

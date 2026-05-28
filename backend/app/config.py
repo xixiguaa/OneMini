@@ -32,6 +32,22 @@ class Settings(BaseSettings):
     chunk_size: int = 500
     chunk_overlap: int = 80
 
+    # LLM-Wiki（Markdown 知识图谱，与 Milvus 无关）
+    llm_wiki_path: str = ""
+    wiki_ingest_max_chars: int = 24_000
+    wiki_ingest_concurrency: int = 1
+    # 与前端内置预设 deepseek-v4-pro 对齐
+    wiki_ingest_model_config_id: str = "deepseek-v4-pro"
+    wiki_ingest_provider: str = "deepseek"
+    wiki_ingest_model: str = "deepseek-chat"
+    wiki_ingest_base_url: str = ""
+    wiki_ingest_retries: int = 3
+    wiki_ingest_retry_delay_sec: float = 2.0
+    wiki_query_top_k: int = 6
+    wiki_archive_after_ingest: bool = True
+    # ingest 冲突：ask=记入 .ingest-conflicts.json 待用户选；overwrite=自动覆盖
+    wiki_ingest_conflict_policy: str = "ask"
+
 
 @lru_cache
 def get_settings() -> Settings:

@@ -2,6 +2,7 @@ import { defineStore } from 'pinia'
 import { computed, ref, watch } from 'vue'
 import { sendChatStream, generateImage, generateVideo } from '../api/agent'
 import { sendRagChatStream } from '../api/platform'
+import { sendWikiChatStream } from '../api/wiki'
 import { queryJob, submitJob } from '../api/hunyuan'
 import { listPluginSkills } from '../config/skillRegistry'
 import {
@@ -74,7 +75,8 @@ export const useAgentStore = defineStore('agent', () => {
         conversations.setIncognitoMessages(val)
         return
       }
-      const id = conversations.ensureActive()
+      const id = conversations.activeId
+      if (!id) return
       conversations.setMessages(id, val)
     },
   })
@@ -105,9 +107,10 @@ export const useAgentStore = defineStore('agent', () => {
   }
 
   function patchMessage(messageId: string, patch: Partial<ChatMessage>) {
+    if (!conversations.isIncognito && !conversations.activeId) return
     const list = conversations.isIncognito
       ? [...conversations.getIncognitoMessages()]
-      : [...conversations.getMessages(conversations.ensureActive())]
+      : [...conversations.getMessages(conversations.activeId!)]
     const idx = list.findIndex((m) => m.id === messageId)
     if (idx < 0) return
     const next = [...list]
@@ -230,9 +233,8 @@ export const useAgentStore = defineStore('agent', () => {
     let accumulated = ''
 
     try {
-      if (platform.ragEnabled) {
-        const ragPrefix =
-          '📚 知识库检索中…\n\n'
+      if (platform.knowledgeChatMode === 'rag') {
+        const ragPrefix = '📚 Milvus RAG 检索中…\n\n'
         patchMessage(assistantId, { content: ragPrefix })
         accumulated = ragPrefix
 
@@ -254,6 +256,37 @@ export const useAgentStore = defineStore('agent', () => {
             if (!accumulated.includes('引用：')) {
               accumulated = hint + accumulated.replace(ragPrefix, '')
               accumulated = ragPrefix + accumulated
+              patchMessage(assistantId, { content: accumulated })
+            }
+          },
+          onDelta: (chunk) => {
+            accumulated += chunk
+            patchMessage(assistantId, { content: accumulated })
+          },
+        })
+      } else if (platform.knowledgeChatMode === 'wiki') {
+        const wikiPrefix = '🕸️ LLM-Wiki 检索中…\n\n'
+        patchMessage(assistantId, { content: wikiPrefix })
+        accumulated = wikiPrefix
+
+        await sendWikiChatStream({
+          question: fullContent,
+          messages: history,
+          systemExtra: runtimeHint,
+          model: model.model,
+          provider: model.provider,
+          modelConfigId: model.id,
+          baseUrl: resolveChatBaseUrl(model.provider, model.baseUrl),
+          onContexts: (ctxs) => {
+            if (!ctxs.length) return
+            const refs = ctxs
+              .slice(0, 3)
+              .map((c, i) => `[${i + 1}] ${c.title} (${(c.score * 100).toFixed(0)}%)`)
+              .join(' · ')
+            const hint = `> Wiki 页：${refs}\n\n`
+            if (!accumulated.includes('Wiki 页：')) {
+              accumulated = hint + accumulated.replace(wikiPrefix, '')
+              accumulated = wikiPrefix + accumulated
               patchMessage(assistantId, { content: accumulated })
             }
           },
@@ -467,9 +500,9 @@ export const useAgentStore = defineStore('agent', () => {
     } finally {
       isProcessing.value = false
       conversations.setPersistPaused(false)
-      if (!conversations.isIncognito) {
+      if (!conversations.isIncognito && conversations.activeId) {
         try {
-          await conversations.flushPersist(conversations.ensureActive())
+          await conversations.flushPersist(conversations.activeId)
         } catch {
           /* flushPersist 已写入 persistError */
         }
@@ -507,7 +540,8 @@ export const useAgentStore = defineStore('agent', () => {
   }
 
   function newSession() {
-    void conversations.createConversation().then(() => resetChatSurface())
+    conversations.startDraftSession()
+    resetChatSurface()
   }
 
   function newIncognitoSession() {
@@ -518,7 +552,7 @@ export const useAgentStore = defineStore('agent', () => {
   async function exitIncognito() {
     if (!conversations.isIncognito) return
     conversations.exitIncognito()
-    await conversations.ensureMessagingSession()
+    conversations.ensureActive()
     resetChatSurface()
   }
 
@@ -533,7 +567,6 @@ export const useAgentStore = defineStore('agent', () => {
 
   async function initConversations() {
     await conversations.hydrate()
-    await conversations.ensureAtLeastOneConversation()
     conversations.ensureActive()
   }
 

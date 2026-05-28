@@ -3,6 +3,7 @@ from fastapi import APIRouter
 from app.config import get_settings
 from app.services.embeddings import get_embedding_dim
 from app.services.chat_store import get_storage_info
+from app.services import llm_wiki
 from app.services.milvus_store import ping_milvus
 
 router = APIRouter(tags=["health"])
@@ -23,4 +24,5 @@ def health():
         "collection": settings.milvus_collection,
         "chat_collection": settings.milvus_chat_collection,
         "chat_storage": get_storage_info(),
+        "llm_wiki": llm_wiki.wiki_status(),
     }

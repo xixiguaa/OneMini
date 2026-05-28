@@ -90,6 +90,8 @@ async def chat_completion(
     api_key: str | None = None,
     base_url: str | None = None,
     temperature: float = 0.3,
+    timeout: float = 120.0,
+    response_format: dict[str, str] | None = None,
     settings: Settings | None = None,
 ) -> str:
     settings = settings or get_settings()
@@ -111,13 +113,15 @@ async def chat_completion(
         )
 
     url = resolved_base + "/chat/completions"
-    payload = {
+    payload: dict[str, Any] = {
         "model": model or settings.chat_model,
         "messages": messages,
         "temperature": temperature,
     }
+    if response_format:
+        payload["response_format"] = response_format
 
-    async with httpx.AsyncClient(timeout=120.0) as client:
+    async with httpx.AsyncClient(timeout=timeout) as client:
         resp = await client.post(
             url,
             headers={
@@ -129,7 +133,11 @@ async def chat_completion(
         data = resp.json()
         if resp.status_code >= 400:
             raise RuntimeError(data.get("error", {}).get("message", resp.text))
-        return data["choices"][0]["message"]["content"]
+        choice = data.get("choices") or []
+        if not choice:
+            raise RuntimeError("模型未返回 choices（可能被限流或请求超时）")
+        content = choice[0].get("message", {}).get("content")
+        return (content or "").strip()
 
 
 async def stream_chat_completion(

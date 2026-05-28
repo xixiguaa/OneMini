@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Database, FileText, FileUp, Plus, RefreshCw, Trash2 } from 'lucide-vue-next'
+import { Database, FileText, FileUp, GitBranch, Plus, RefreshCw, ShieldCheck, Trash2 } from 'lucide-vue-next'
 import { onMounted, ref } from 'vue'
 import {
   addKnowledgeText,
@@ -8,8 +8,18 @@ import {
   uploadKnowledgeFile,
   type KnowledgeDocument,
 } from '../api/platform'
+import { getWikiStatus, runWikiLint, type WikiLintResult } from '../api/wiki'
+import { useAgentStore } from '../stores/agent'
 import { usePlatformStore } from '../stores/platform'
+import KnowledgeChatModePicker from './KnowledgeChatModePicker.vue'
+
 const platform = usePlatformStore()
+const agent = useAgentStore()
+
+const panelTab = ref<'rag' | 'wiki'>('rag')
+const wikiStats = ref<{ nodes: number; edges: number; pending_ingest?: number; orphan_wiki?: number } | null>(null)
+const lintResult = ref<WikiLintResult | null>(null)
+const lintLoading = ref(false)
 
 const documents = ref<KnowledgeDocument[]>([])
 const loading = ref(false)
@@ -96,15 +106,128 @@ async function removeDoc(docId: string) {
   }
 }
 
+async function loadWikiStats() {
+  try {
+    const s = await getWikiStatus()
+    wikiStats.value = {
+      nodes: s.nodes,
+      edges: s.edges,
+      pending_ingest: s.pending_ingest,
+      orphan_wiki: s.orphan_wiki,
+    }
+  } catch {
+    wikiStats.value = null
+  }
+}
+
+async function onLintWiki() {
+  lintLoading.value = true
+  error.value = ''
+  try {
+    lintResult.value = await runWikiLint()
+  } catch (e) {
+    error.value = e instanceof Error ? e.message : 'Lint 失败'
+    lintResult.value = null
+  } finally {
+    lintLoading.value = false
+  }
+}
+
+function openWikiGraph() {
+  agent.setCurrentView('wikiGraph')
+}
+
 onMounted(async () => {
   await platform.refreshHealth()
   await loadDocs()
+  await loadWikiStats()
 })
 </script>
 
 <template>
   <div class="models-page">
-    <div class="split-layout">
+    <div class="page-head card">
+      <div class="panel-tabs">
+        <button
+          type="button"
+          class="panel-tab"
+          :class="{ active: panelTab === 'rag' }"
+          @click="panelTab = 'rag'"
+        >
+          <Database :size="16" />
+          Milvus RAG
+        </button>
+        <button
+          type="button"
+          class="panel-tab"
+          :class="{ active: panelTab === 'wiki' }"
+          @click="panelTab = 'wiki'"
+        >
+          <GitBranch :size="16" />
+          LLM-Wiki
+        </button>
+      </div>
+      <KnowledgeChatModePicker />
+    </div>
+
+    <div v-if="panelTab === 'wiki'" class="split-layout wiki-layout">
+      <aside class="model-list card">
+        <p class="group-label">LLM-Wiki 状态</p>
+        <p v-if="wikiStats" class="wiki-stat-block">
+          图谱 {{ wikiStats.nodes }} 节点 · {{ wikiStats.edges }} 边<br />
+          <template v-if="wikiStats.pending_ingest">待 ingest {{ wikiStats.pending_ingest }} · </template>
+          <template v-if="wikiStats.orphan_wiki">待补全 {{ wikiStats.orphan_wiki }}</template>
+        </p>
+        <p v-else class="list-empty">无法读取 wiki 状态，请确认后端已启动</p>
+
+        <button type="button" class="add-trigger" @click="openWikiGraph">
+          <GitBranch :size="16" />
+          打开知识图谱
+        </button>
+        <button type="button" class="add-trigger secondary" :disabled="lintLoading" @click="onLintWiki">
+          <ShieldCheck :size="16" />
+          {{ lintLoading ? '检查中…' : '运行 Lint 检查' }}
+        </button>
+        <button type="button" class="add-trigger secondary" @click="loadWikiStats">
+          <RefreshCw :size="16" />
+          刷新状态
+        </button>
+
+        <p class="group-label">架构说明</p>
+        <p class="wiki-arch-hint">
+          <strong>Ingest</strong>：在「知识图谱」上传 raw → 构建知识框架。<br />
+          <strong>Query</strong>：对话选 LLM-Wiki 模式。<br />
+          <strong>Lint</strong>：检查断链与待处理 raw。
+        </p>
+      </aside>
+
+      <section class="right-panel card">
+        <div class="detail">
+          <p v-if="error" class="error">{{ error }}</p>
+          <h3 class="wiki-detail-title">LLM-Wiki 知识库</h3>
+          <p class="wiki-detail-desc">
+            与 Milvus 向量库独立：Markdown + [[wikilink]] + 图谱。适合长期积累、跨文档综合；RAG 适合短文档快速问答。
+          </p>
+
+          <div v-if="lintResult" class="lint-report">
+            <p class="lint-summary" :class="lintResult.ok ? 'ok' : 'warn'">
+              {{ lintResult.ok ? '未发现严重问题' : '存在需关注的问题' }}
+              — {{ lintResult.summary.issues }} 条（错误 {{ lintResult.summary.errors }} · 警告
+              {{ lintResult.summary.warnings }}）
+            </p>
+            <ul v-if="lintResult.issues.length" class="lint-list">
+              <li v-for="(item, i) in lintResult.issues.slice(0, 30)" :key="i" :data-severity="item.severity">
+                <code>{{ item.page }}</code> {{ item.message }}
+              </li>
+            </ul>
+            <p v-if="lintResult.issues.length > 30" class="list-empty">… 另有 {{ lintResult.issues.length - 30 }} 条</p>
+          </div>
+          <p v-else class="list-empty">点击左侧「运行 Lint 检查」查看断链、孤儿页与待 ingest raw。</p>
+        </div>
+      </section>
+    </div>
+
+    <div v-else class="split-layout">
       <aside class="model-list card">
         <p class="group-label">
           已入库文档
@@ -176,15 +299,6 @@ onMounted(async () => {
             <input ref="fileInput" type="file" accept=".txt,.md,.markdown" hidden @change="onFileChange" />
           </div>
 
-          <label class="rag-toggle">
-            <input
-              type="checkbox"
-              :checked="platform.ragEnabled"
-              @change="platform.setRagEnabled(($event.target as HTMLInputElement).checked)"
-            />
-            对话页启用「知识库增强」（RAG）
-          </label>
-
           <a
             href="http://localhost:3000"
             target="_blank"
@@ -225,14 +339,6 @@ onMounted(async () => {
             </button>
           </div>
 
-          <label class="rag-toggle">
-            <input
-              type="checkbox"
-              :checked="platform.ragEnabled"
-              @change="platform.setRagEnabled(($event.target as HTMLInputElement).checked)"
-            />
-            对话页启用 RAG
-          </label>
         </div>
 
         <div v-else class="empty">
@@ -252,6 +358,124 @@ onMounted(async () => {
   flex-direction: column;
   min-height: 0;
   padding: 24px 28px;
+  gap: 14px;
+}
+
+.page-head {
+  padding: 14px 16px;
+  background: $bg-card;
+  border: 1px solid $glass-border;
+  border-radius: $radius-md;
+  box-shadow: $shadow-sm;
+}
+
+.panel-tabs {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.panel-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  border-radius: 8px;
+  font-size: 13px;
+  border: 1px solid $glass-border;
+  color: $text-secondary;
+  background: transparent;
+
+  &:hover {
+    background: $accent-light;
+    color: $text-primary;
+  }
+
+  &.active {
+    border-color: $accent;
+    background: $accent-light;
+    color: $accent;
+    font-weight: 600;
+  }
+}
+
+.wiki-stat-block,
+.wiki-arch-hint {
+  font-size: 12px;
+  line-height: 1.55;
+  color: $text-secondary;
+  padding: 8px 10px 12px;
+  margin: 0;
+}
+
+.wiki-arch-hint strong {
+  color: $text-primary;
+}
+
+.wiki-detail-title {
+  margin: 0 0 8px;
+  font-size: 17px;
+  color: $text-primary;
+}
+
+.wiki-detail-desc {
+  margin: 0 0 16px;
+  font-size: 13px;
+  line-height: 1.55;
+  color: $text-secondary;
+}
+
+.lint-report {
+  margin-top: 8px;
+}
+
+.lint-summary {
+  font-size: 13px;
+  margin: 0 0 10px;
+
+  &.ok {
+    color: $accent;
+  }
+
+  &.warn {
+    color: $accent-gold;
+  }
+}
+
+.lint-list {
+  margin: 0;
+  padding-left: 0;
+  list-style: none;
+  font-size: 12px;
+  line-height: 1.5;
+  max-height: 320px;
+  overflow-y: auto;
+
+  li {
+    padding: 6px 8px;
+    border-radius: 6px;
+    margin-bottom: 4px;
+    color: $text-secondary;
+
+    &[data-severity='error'] {
+      background: rgba(196, 68, 68, 0.08);
+    }
+
+    &[data-severity='warn'] {
+      background: rgba(184, 134, 11, 0.08);
+    }
+
+    code {
+      font-size: 11px;
+      margin-right: 6px;
+      color: $text-primary;
+    }
+  }
+}
+
+.wiki-layout {
+  flex: 1;
+  min-height: 0;
 }
 
 .status-ok {

@@ -118,18 +118,10 @@ export const useConversationsStore = defineStore('conversations', () => {
     }
   }
 
-  async function ensureAtLeastOneConversation(): Promise<void> {
-    if (list.value.length > 0) return
-    if (persistError.value) {
-      createConversationLocal()
-      return
-    }
-    try {
-      await createConversation()
-    } catch (e) {
-      persistError.value = e instanceof Error ? e.message : '创建对话失败'
-      createConversationLocal()
-    }
+  /** 进入空白草稿：仅展示输入区，发送首条消息后再创建会话 */
+  function startDraftSession() {
+    exitIncognito()
+    activeId.value = null
   }
 
   function startIncognito() {
@@ -154,8 +146,19 @@ export const useConversationsStore = defineStore('conversations', () => {
   async function ensureMessagingSession(): Promise<void> {
     if (incognitoActive.value) return
     if (!hydrated.value) await hydrate()
-    await ensureAtLeastOneConversation()
-    ensureActive()
+    const hasActive =
+      activeId.value != null && list.value.some((c) => c.id === activeId.value)
+    if (hasActive) return
+    if (persistError.value) {
+      createConversationLocal()
+      return
+    }
+    try {
+      await createConversation()
+    } catch (e) {
+      persistError.value = e instanceof Error ? e.message : '创建对话失败'
+      createConversationLocal()
+    }
   }
 
   async function createConversation(): Promise<Conversation> {
@@ -207,8 +210,7 @@ export const useConversationsStore = defineStore('conversations', () => {
       activeId.value = list.value[0]?.id ?? null
     }
     if (list.value.length === 0) {
-      await ensureAtLeastOneConversation()
-      ensureActive()
+      activeId.value = null
     }
     const timer = persistTimers.get(id)
     if (timer) {
@@ -217,14 +219,15 @@ export const useConversationsStore = defineStore('conversations', () => {
     }
   }
 
-  function ensureActive(): string {
+  function ensureActive(): string | null {
     if (list.value.length === 0) {
-      return createConversationLocal().id
+      activeId.value = null
+      return null
     }
     if (!activeId.value || !list.value.some((c) => c.id === activeId.value)) {
       activeId.value = list.value[0].id
     }
-    return activeId.value!
+    return activeId.value
   }
 
   /** 同步创建占位会话（hydrate 失败时的降级） */
@@ -263,8 +266,8 @@ export const useConversationsStore = defineStore('conversations', () => {
     getMessages,
     setMessages,
     deleteConversation,
+    startDraftSession,
     ensureActive,
-    ensureAtLeastOneConversation,
     ensureMessagingSession,
     setPersistPaused,
     flushPersist,

@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import { Plus, Trash2 } from 'lucide-vue-next'
 import { computed, ref } from 'vue'
+import { useConfirmDialog } from '../composables/useConfirmDialog'
 import { CAPABILITY_LABELS } from '../config/defaults'
+import ConfirmDialog from './ConfirmDialog.vue'
 import ModelAddPanel from './ModelAddPanel.vue'
 import ModelDetailPanel from './ModelDetailPanel.vue'
 import { useSettingsStore } from '../stores/settings'
@@ -9,6 +11,22 @@ import ModelLogo from './ModelLogo.vue'
 import type { ModelCapability, ModelConfig } from '../types/agent'
 
 const settings = useSettingsStore()
+const {
+  open: confirmOpen,
+  loading: confirmLoading,
+  title: confirmTitle,
+  message: confirmMessage,
+  confirmLabel: confirmConfirmLabel,
+  cancelLabel: confirmCancelLabel,
+  danger: confirmDanger,
+  confirm: showConfirm,
+  setLoading: setConfirmLoading,
+  close: closeConfirm,
+  onCancel: onConfirmCancel,
+  onOpenUpdate: onConfirmOpenUpdate,
+} = useConfirmDialog()
+
+const deleteTarget = ref<ModelConfig | null>(null)
 const selectedId = ref<string | null>('deepseek-v4-pro')
 const rightMode = ref<'detail' | 'add'>('detail')
 
@@ -53,18 +71,39 @@ function pickSelectionAfterDelete(removedId: string, capability: ModelCapability
   rightMode.value = 'detail'
 }
 
-async function onQuickDelete(m: ModelConfig, e: MouseEvent) {
-  e.stopPropagation()
+function requestDeleteModel(m: ModelConfig, e?: MouseEvent) {
+  e?.stopPropagation()
   if (!settings.canDeleteModel(m.id)) return
-  const ok = window.confirm(`确定删除「${m.name}」？`)
-  if (!ok) return
-  const cap = m.capability
-  const removed = await settings.removeModel(m.id)
-  if (removed) pickSelectionAfterDelete(m.id, cap)
+  deleteTarget.value = m
+  void showConfirm({
+    title: '删除模型',
+    message: `确定删除「${m.name}」？\n\n将从列表移除，服务端 API Key 一并清除，且无法恢复。`,
+    confirmLabel: '删除',
+    cancelLabel: '取消',
+    danger: true,
+  })
 }
 
-function onModelDeleted(payload: { id: string; capability: ModelCapability }) {
-  pickSelectionAfterDelete(payload.id, payload.capability)
+async function onConfirmDelete() {
+  const m = deleteTarget.value
+  if (!m) {
+    closeConfirm(false)
+    return
+  }
+  setConfirmLoading(true)
+  try {
+    const removed = await settings.removeModel(m.id)
+    if (removed) pickSelectionAfterDelete(m.id, m.capability)
+    deleteTarget.value = null
+    closeConfirm(true)
+  } finally {
+    setConfirmLoading(false)
+  }
+}
+
+function onCancelDelete() {
+  deleteTarget.value = null
+  onConfirmCancel()
 }
 
 function modelState(m: ModelConfig) {
@@ -109,7 +148,7 @@ function modelState(m: ModelConfig) {
               type="button"
               class="item-delete"
               title="删除模型"
-              @click="onQuickDelete(m, $event)"
+              @click="requestDeleteModel(m, $event)"
             >
               <Trash2 :size="14" />
             </button>
@@ -124,9 +163,22 @@ function modelState(m: ModelConfig) {
 
       <section class="right-panel card">
         <ModelAddPanel v-if="rightMode === 'add'" @saved="onSaved" />
-        <ModelDetailPanel v-else :model="selectedModel" @deleted="onModelDeleted" />
+        <ModelDetailPanel v-else :model="selectedModel" />
       </section>
     </div>
+
+    <ConfirmDialog
+      v-model:open="confirmOpen"
+      :loading="confirmLoading"
+      :title="confirmTitle"
+      :message="confirmMessage"
+      :confirm-label="confirmConfirmLabel"
+      :cancel-label="confirmCancelLabel"
+      :danger="confirmDanger"
+      @update:open="onConfirmOpenUpdate"
+      @confirm="onConfirmDelete"
+      @cancel="onCancelDelete"
+    />
   </div>
 </template>
 

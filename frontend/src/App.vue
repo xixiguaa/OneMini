@@ -4,6 +4,7 @@ import ChatView from './components/ChatView.vue'
 import CreateStudio from './components/CreateStudio.vue'
 import ModelsView from './components/ModelsView.vue'
 import KnowledgeView from './components/KnowledgeView.vue'
+import WikiGraphView from './components/WikiGraphView.vue'
 import SkillsView from './components/SkillsView.vue'
 import WorldStudio from './components/WorldStudio.vue'
 import { useAgentStore } from './stores/agent'
@@ -22,6 +23,7 @@ const agent = useAgentStore()
       <ModelsView v-else-if="agent.currentView === 'models'" />
       <SkillsView v-else-if="agent.currentView === 'skills'" />
       <KnowledgeView v-else-if="agent.currentView === 'knowledge'" />
+      <WikiGraphView v-else-if="agent.currentView === 'wikiGraph'" />
     </main>
   </div>
 </template>

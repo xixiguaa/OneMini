@@ -70,7 +70,8 @@ flowchart TB
 | 世界 | `WorldStudio` | 文生/图生 3D 场景、Three.js 预览、任务轮询 | Node `/api/submit`、`/api/query`（腾讯云 ai3d） |
 | 模型配置 | `ModelsView` | 手动添加模型、API Key、能力类型（chat/image/video/world） | 仅前端 `localStorage` |
 | 技能配置 | `SkillsView` | 启用技能、绑定模型、System Prompt、多 Agent 骨架 | `agent-config/` + `localStorage` |
-| 知识库 | `KnowledgeView` | 文本/文件入库、文档列表、删除 | Python `/api/platform/knowledge/*` |
+| 知识库 | `KnowledgeView` | 文本/文件入库、文档列表、删除（Milvus RAG） | Python `/api/platform/knowledge/*` |
+| 知识图谱 | `WikiGraphView` | 上传 `raw/`、力导向图谱浏览、重建链接 | Python `/api/platform/wiki/*` |
 
 ### 对话路由逻辑（简要）
 
@@ -104,6 +105,14 @@ flowchart TB
   拼接上下文 + 历史 → OpenAI 兼容 LLM 流式输出
 ```
 
+### LLM-Wiki 结构化知识库（与 Milvus 分离）
+
+仓库根目录 [`llm-wiki/`](llm-wiki/) 实现 [Karpathy LLM-Wiki](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f) 范式：**原始资料 `raw/`** + **Agent 维护的 Markdown wiki** + **`WIKI.md` 模式说明**。通过 `[[wikilink]]` 与 `scripts/build_graph.py` 生成 `graph/links.json`，可用 Obsidian 图谱浏览。
+
+- **不是**侧栏「知识库」的 Milvus 管道；请勿把 wiki 页面向量入库。
+- `raw/` 当前为空，后续可放入 gist 等资料并由 Agent 执行 ingest。
+- 详见 [`llm-wiki/README.md`](llm-wiki/README.md)。
+
 ### 创作与世界生成
 
 - **创作页**：`createMode` 为 `agent` | `image` | `video`；图片走腾讯云 aiart（或演示占位）；视频为任务式接口（可扩展真实 API）。
@@ -117,6 +126,11 @@ flowchart TB
 个人平台/
 ├── README.md                 # 本文件 · 整体架构
 ├── .gitignore
+├── llm-wiki/                 # LLM-Wiki 结构化知识库（非 Milvus）
+│   ├── raw/                  # 原始资料（只读）
+│   ├── wiki/                 # LLM 维护的合成页
+│   ├── graph/links.json      # wikilink 图谱导出
+│   └── WIKI.md               # Agent 维护规范
 │
 ├── OneMini/                  # 前端 + Node 代理
 │   ├── src/

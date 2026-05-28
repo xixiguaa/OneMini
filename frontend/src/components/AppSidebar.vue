@@ -3,6 +3,7 @@ import {
   Box,
   Database,
   ExternalLink,
+  GitBranch,
   EyeOff,
   Globe,
   MessageSquare,
@@ -36,6 +37,7 @@ const navItems = computed(() => [
   { id: 'models' as ViewId, label: t('nav.models'), icon: Box },
   { id: 'skills' as ViewId, label: t('nav.skills'), icon: Sparkles },
   { id: 'knowledge' as ViewId, label: t('nav.knowledge'), icon: Database },
+  { id: 'wikiGraph' as ViewId, label: t('nav.wikiGraph'), icon: GitBranch },
 ])
 
 function selectView(id: ViewId) {

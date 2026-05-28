@@ -2,7 +2,14 @@ import type { ModelProvider } from '../config/providers'
 
 export type { ModelProvider }
 export type SkillId = 'chat' | 'image' | 'video' | 'world'
-export type ViewId = 'chat' | 'create' | 'world' | 'models' | 'skills' | 'knowledge'
+export type ViewId =
+  | 'chat'
+  | 'create'
+  | 'world'
+  | 'models'
+  | 'skills'
+  | 'knowledge'
+  | 'wikiGraph'
 export type CreateMode = 'agent' | 'image' | 'video'
 export type ModelCapability = 'chat' | 'image' | 'video' | 'world'
 

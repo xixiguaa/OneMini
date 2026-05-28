@@ -1,7 +1,6 @@
 <script setup lang="ts">
-import { Trash2 } from 'lucide-vue-next'
-import { computed, ref } from 'vue'
-import type { ModelCapability, ModelConfig } from '../types/agent'
+import { computed } from 'vue'
+import type { ModelConfig } from '../types/agent'
 import { CAPABILITY_LABELS, PROVIDER_LABELS } from '../config/defaults'
 import { getProviderLogo } from '../config/providers'
 import { findModelOption } from '../config/providerModels'
@@ -13,16 +12,7 @@ const props = defineProps<{
   model: ModelConfig | null
 }>()
 
-const emit = defineEmits<{
-  deleted: [payload: { id: string; capability: ModelCapability }]
-}>()
-
 const settings = useSettingsStore()
-const deleting = ref(false)
-
-const canDelete = computed(
-  () => !!props.model && settings.canDeleteModel(props.model.id),
-)
 
 async function onConfigureModel(
   payload: { apiKey?: string; enable: boolean },
@@ -39,22 +29,6 @@ const modelOptionLabel = computed(() => {
   const opt = findModelOption(props.model.provider, props.model.capability, props.model.model)
   return opt?.label ?? props.model.model
 })
-
-async function onDeleteModel() {
-  const m = props.model
-  if (!m || !canDelete.value) return
-  const ok = window.confirm(
-    `确定删除模型「${m.name}」？\n\n将同时清除服务端保存的 API Key，且无法恢复。`,
-  )
-  if (!ok) return
-  deleting.value = true
-  try {
-    const removed = await settings.removeModel(m.id)
-    if (removed) emit('deleted', { id: m.id, capability: m.capability })
-  } finally {
-    deleting.value = false
-  }
-}
 </script>
 
 <template>
@@ -114,22 +88,6 @@ async function onDeleteModel() {
         @input="settings.updateModel(model.id, { baseUrl: ($event.target as HTMLInputElement).value })"
       />
     </label>
-
-    <section v-if="canDelete" class="danger-zone">
-      <h4 class="danger-title">危险操作</h4>
-      <p class="danger-hint">删除后将从列表移除，服务端密钥一并清除。</p>
-      <button
-        type="button"
-        class="btn-delete"
-        :disabled="deleting"
-        @click="onDeleteModel"
-      >
-        <Trash2 :size="16" />
-        {{ deleting ? '删除中…' : '删除此模型' }}
-      </button>
-    </section>
-
-    <p v-else-if="model.preset" class="preset-note">内置模型不可删除，可在上方停用或更换 API Key。</p>
   </div>
 
   <div v-else class="empty">
@@ -251,58 +209,6 @@ async function onDeleteModel() {
   padding: 3px;
   flex-shrink: 0;
   box-sizing: border-box;
-}
-
-.danger-zone {
-  margin-top: 28px;
-  padding-top: 20px;
-  border-top: 1px solid $border-light;
-}
-
-.danger-title {
-  font-size: 12px;
-  font-weight: 600;
-  color: $color-danger;
-  margin-bottom: 6px;
-}
-
-.danger-hint {
-  font-size: 11px;
-  color: $text-muted;
-  line-height: 1.45;
-  margin-bottom: 12px;
-}
-
-.btn-delete {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  padding: 9px 14px;
-  font-size: 13px;
-  color: $color-danger;
-  background: $color-danger-soft;
-  border: 1px solid rgba(196, 68, 68, 0.35);
-  border-radius: 8px;
-  transition: background 0.15s, opacity 0.15s;
-
-  &:hover:not(:disabled) {
-    background: rgba(196, 68, 68, 0.2);
-  }
-
-  &:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
-  }
-}
-
-.preset-note {
-  margin-top: 24px;
-  padding: 10px 12px;
-  font-size: 12px;
-  color: $text-muted;
-  background: $bg-input;
-  border-radius: 8px;
-  line-height: 1.45;
 }
 
 .empty {

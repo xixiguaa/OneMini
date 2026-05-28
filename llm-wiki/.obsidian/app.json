@@ -1,0 +1,12 @@
+{
+  "legacyEditor": false,
+  "livePreview": true,
+  "defaultViewMode": "source",
+  "attachmentFolderPath": "raw/assets",
+  "newLinkFormat": "shortest",
+  "useMarkdownLinks": false,
+  "alwaysUpdateLinks": true,
+  "showFrontmatter": true,
+  "strictLineBreaks": false,
+  "readableLineLength": true
+}
