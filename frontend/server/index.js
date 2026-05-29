@@ -24,8 +24,6 @@ app.use(express.json({ limit: '20mb' }))
 const SECRET_ID = process.env.TENCENT_SECRET_ID
 const SECRET_KEY = process.env.TENCENT_SECRET_KEY
 const REGION = process.env.TENCENT_REGION || 'ap-guangzhou'
-const OPENAI_API_KEY = process.env.OPENAI_API_KEY
-const OPENAI_BASE_URL = process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1'
 
 function requireCredentials(res) {
   if (!SECRET_ID || !SECRET_KEY) {
@@ -57,156 +55,6 @@ async function callTencentApi(action, payload, service = 'ai3d') {
   }
   return data
 }
-
-/** OpenAI 兼容对话（非流式） */
-async function callOpenAIChat(messages, model, baseUrl, apiKey, temperature = 0.2) {
-  const key = apiKey || OPENAI_API_KEY
-  if (!key) throw new Error('未配置 OPENAI_API_KEY')
-
-  const response = await fetch(`${baseUrl || OPENAI_BASE_URL}/chat/completions`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${key}`,
-    },
-    body: JSON.stringify({
-      model: model || 'gpt-4o-mini',
-      messages,
-      temperature: temperature ?? 0.2,
-    }),
-  })
-
-  const data = await response.json()
-  if (!response.ok) throw new Error(data.error?.message || 'OpenAI 请求失败')
-  return data.choices[0].message.content
-}
-
-/** OpenAI 兼容流式对话，通过 SSE 转发 delta */
-async function streamOpenAIChat(res, messages, model, baseUrl, apiKey, temperature = 0.2) {
-  const key = apiKey || OPENAI_API_KEY
-  if (!key) throw new Error('未配置 API Key')
-
-  const response = await fetch(`${baseUrl || OPENAI_BASE_URL}/chat/completions`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${key}`,
-    },
-    body: JSON.stringify({
-      model: model || 'gpt-4o-mini',
-      messages,
-      temperature: temperature ?? 0.2,
-      stream: true,
-    }),
-  })
-
-  if (!response.ok) {
-    const err = await response.json().catch(() => ({}))
-    throw new Error(err.error?.message || `请求失败 (${response.status})`)
-  }
-
-  res.setHeader('Content-Type', 'text/event-stream; charset=utf-8')
-  res.setHeader('Cache-Control', 'no-cache, no-transform')
-  res.setHeader('Connection', 'keep-alive')
-  res.flushHeaders?.()
-
-  const reader = response.body.getReader()
-  const decoder = new TextDecoder()
-  let buffer = ''
-
-  while (true) {
-    const { done, value } = await reader.read()
-    if (done) break
-
-    buffer += decoder.decode(value, { stream: true })
-    const lines = buffer.split('\n')
-    buffer = lines.pop() || ''
-
-    for (const line of lines) {
-      const trimmed = line.trim()
-      if (!trimmed.startsWith('data:')) continue
-      const payload = trimmed.slice(5).trim()
-      if (payload === '[DONE]') {
-        res.write('data: [DONE]\n\n')
-        continue
-      }
-      try {
-        const json = JSON.parse(payload)
-        const delta = json.choices?.[0]?.delta?.content
-        if (delta) {
-          res.write(`data: ${JSON.stringify({ delta })}\n\n`)
-        }
-      } catch {
-        /* 忽略无法解析的行 */
-      }
-    }
-  }
-
-  res.write('data: [DONE]\n\n')
-  res.end()
-}
-
-/** 混元对话（hunyuanlite 产品） */
-async function callHunyuanChat(messages, model) {
-  if (!SECRET_ID || !SECRET_KEY) {
-    return mockChatReply(messages)
-  }
-
-  const msgs = messages
-    .filter((m) => m.role !== 'system')
-    .map((m) => ({ Role: m.role === 'assistant' ? 'assistant' : 'user', Content: m.content }))
-
-  const system = messages.find((m) => m.role === 'system')?.content
-
-  const payload = {
-    Model: model || 'hunyuan-lite',
-    Messages: msgs,
-  }
-  if (system) payload.System = system
-
-  try {
-    const data = await callTencentApi('ChatCompletions', payload, 'hunyuan')
-    return data.Response.Choices[0].Message.Content
-  } catch (e) {
-    return mockChatReply(messages)
-  }
-}
-
-function mockChatReply(messages) {
-  const last = messages.filter((m) => m.role === 'user').pop()?.content || ''
-  return `【演示模式】收到：「${last.slice(0, 100)}」\n\n请在「模型配置」中填写对应模型的 API Key，或为腾讯云模型配置 .env 密钥。`
-}
-
-const PROVIDER_BASE_URLS = {
-  openai: 'https://api.openai.com/v1',
-  deepseek: 'https://api.deepseek.com/v1',
-  anthropic: 'https://api.anthropic.com/v1',
-  zhipu: 'https://open.bigmodel.cn/api/paas/v4',
-  qwen: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
-  bailian: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
-  doubao: 'https://ark.cn-beijing.volces.com/api/v3',
-  bytedance: 'https://ark.cn-beijing.volces.com/api/v3',
-  minimax: 'https://api.minimax.chat/v1',
-}
-
-const OPENAI_COMPATIBLE_PROVIDERS = new Set([
-  'openai',
-  'deepseek',
-  'anthropic',
-  'zhipu',
-  'custom',
-  'qwen',
-  'bailian',
-  'doubao',
-  'bytedance',
-  'yuanbao',
-  'gemini',
-  'grok',
-  'meta',
-  'minimax',
-  'nanobanana',
-  'kling',
-])
 
 /** 对话已迁移至 Python 平台 API（密钥仅存服务端） */
 app.post('/api/chat', (_req, res) => {
@@ -354,7 +202,6 @@ app.get('/api/health', (_req, res) => {
   res.json({
     ok: true,
     configured: Boolean(SECRET_ID && SECRET_KEY),
-    openai: Boolean(OPENAI_API_KEY),
     region: REGION,
   })
 })

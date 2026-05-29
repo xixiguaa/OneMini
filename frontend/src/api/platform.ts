@@ -63,14 +63,6 @@ export async function deleteKnowledgeDocument(docId: string) {
   await api.delete(`/knowledge/documents/${docId}`)
 }
 
-export async function searchKnowledge(query: string, topK = 5) {
-  const { data } = await api.post<{ hits: RagContext[] }>('/knowledge/search', {
-    query,
-    top_k: topK,
-  })
-  return data.hits
-}
-
 export interface RagStreamOptions {
   question: string
   messages?: { role: string; content: string }[]

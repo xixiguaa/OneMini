@@ -48,13 +48,3 @@ export async function importConversationsApi(conversations: Conversation[]): Pro
   })
   return data
 }
-
-export async function fetchChatStorageInfo() {
-  const { data } = await api.get('/storage/info')
-  return data
-}
-
-/** @deprecated 使用 getClientUserId() 自动附带请求头 */
-export function setConversationUserId(_userId: string) {
-  /* 保留 API 兼容；实际由拦截器注入 */
-}

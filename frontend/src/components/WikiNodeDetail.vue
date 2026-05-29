@@ -22,18 +22,6 @@ const props = defineProps<{
   error?: string
 }>()
 
-const TYPE_LABELS: Record<string, string> = {
-  raw: '原始',
-  raw_extract: '提取文本',
-  entity: '实体',
-  concept: '概念',
-  source: '来源摘要',
-  synthesis: '综合',
-  query: '查询',
-  meta: '目录页',
-  unknown: '未知',
-}
-
 const parsed = computed(() => {
   const raw = props.content?.content || ''
   if (!raw.trim()) return null

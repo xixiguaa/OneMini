@@ -475,10 +475,6 @@ def import_conversations(user_id: str, conversations: list[dict[str, Any]]) -> d
     return {"imported": imported, "total": total}
 
 
-def count_conversations(user_id: str) -> int:
-    return len(list_conversations(user_id))
-
-
 def search_messages(
     user_id: str,
     query: str,
