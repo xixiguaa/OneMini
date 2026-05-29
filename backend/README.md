@@ -1,6 +1,6 @@
 # OneMini Platform · Python 后端
 
-基于 **FastAPI + Milvus + RAG** 的 AI 平台核心服务，与 OneMini 前端配合使用。
+基于 **FastAPI + Milvus + LangChain RAG** 的 AI 平台核心服务，与 OneMini 前端配合使用。
 
 ## 架构
 
@@ -15,8 +15,8 @@ OneMini 前端 (5173)
 
 ## 完整流程
 
-1. **入库**：在侧栏「知识库」粘贴文本或上传 `.txt/.md` → 分块 → 本地嵌入 (bge-small-zh) → 写入 Milvus
-2. **检索**：用户提问 → 向量相似度检索 Top-K 片段
+1. **入库**：在侧栏「知识库」粘贴文本或上传 `.txt/.md` → 分块 → 本地嵌入 (bge-small-zh) → 经 **langchain-milvus** 写入 Milvus
+2. **检索**：用户提问 → LangChain 向量检索 Top-K 片段
 3. **生成**：检索结果 + 对话历史 → OpenAI 兼容 LLM 流式回答
 4. **对话**：勾选「知识库增强」后，对话页走 RAG 接口
 5. **历史**：会话与消息写入 Milvus 集合 `onemini_chat`（Attu 可查看），详见 [docs/milvus-chat-schema.md](docs/milvus-chat-schema.md)

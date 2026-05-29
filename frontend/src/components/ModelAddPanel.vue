@@ -261,7 +261,7 @@ async function onConfigurePending(payload: { apiKey?: string; enable: boolean })
   }
 
   em {
-    color: #c44;
+    color: $color-danger;
     font-style: normal;
   }
 }

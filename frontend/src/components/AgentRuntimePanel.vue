@@ -262,7 +262,7 @@ function patchModels(patch: Partial<typeof agentConfig.skeleton.models>) {
   margin-top: 8px;
 
   &:hover {
-    color: #c44;
+    color: $color-danger;
   }
 }
 </style>

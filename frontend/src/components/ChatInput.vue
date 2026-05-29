@@ -2,6 +2,7 @@
 import { ArrowUp, ChevronDown, FileText, Loader2, Plus, X } from 'lucide-vue-next'
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { ACCEPT_CHAT_FILES } from '../config/constants'
+import ChatKnowledgeModeToggle from './ChatKnowledgeModeToggle.vue'
 import ModelLogo from './ModelLogo.vue'
 import { useAgentStore } from '../stores/agent'
 import { useSettingsStore } from '../stores/settings'
@@ -28,9 +29,17 @@ const selectedModel = computed(() => {
   return chatModels.value[0] ?? null
 })
 
+const canSend = () =>
+  !agent.isProcessing &&
+  (agent.inputText.trim().length > 0 || agent.pendingAttachments.length > 0)
+
+const hasInput = () =>
+  agent.inputText.trim().length > 0 || agent.pendingAttachments.length > 0
+
 function onKeydown(e: KeyboardEvent) {
   if (e.key === 'Enter' && !e.shiftKey) {
     e.preventDefault()
+    if (agent.isProcessing || !hasInput()) return
     agent.sendMessage('chat')
   }
 }
@@ -40,10 +49,6 @@ async function onFiles(e: Event) {
   if (files?.length) await agent.addAttachments(files)
   if (fileInput.value) fileInput.value.value = ''
 }
-
-const canSend = () =>
-  !agent.isProcessing &&
-  (agent.inputText.trim().length > 0 || agent.pendingAttachments.length > 0)
 
 function selectModel(id: string) {
   settings.updateSkill('chat', { defaultModelId: id })
@@ -108,18 +113,22 @@ onUnmounted(() => {
           class="composer-input"
           placeholder="输入消息…"
           rows="1"
+          :disabled="agent.isProcessing"
           @keydown="onKeydown"
         />
 
         <div class="composer-footer">
-          <button
-            type="button"
-            class="attach-plus"
-            title="上传图片、Word、PDF、Markdown 等"
-            @click="fileInput?.click()"
-          >
-            <Plus :size="20" stroke-width="1.75" />
-          </button>
+          <div class="footer-left">
+            <button
+              type="button"
+              class="attach-plus"
+              title="上传图片、Word、PDF、Markdown 等"
+              @click="fileInput?.click()"
+            >
+              <Plus :size="20" stroke-width="1.75" />
+            </button>
+            <ChatKnowledgeModeToggle v-if="!agent.isIncognito" />
+          </div>
 
           <div class="footer-right">
             <div ref="pickerRef" class="model-picker-wrap">
@@ -148,7 +157,7 @@ onUnmounted(() => {
               type="button"
               class="send-btn"
               :class="{ ready: canSend(), waiting: agent.isProcessing }"
-              :disabled="!canSend() && !agent.isProcessing"
+              :disabled="!canSend()"
               title="发送"
               @click="agent.sendMessage('chat')"
             >
@@ -232,7 +241,7 @@ $column-max: 48rem;
     padding: 2px;
 
     &:hover {
-      color: #c44;
+      color: $color-danger;
     }
   }
 }
@@ -284,6 +293,11 @@ $column-max: 48rem;
   &::placeholder {
     color: var(--composer-placeholder);
   }
+
+  &:disabled {
+    opacity: 0.65;
+    cursor: not-allowed;
+  }
 }
 
 .composer-footer {
@@ -293,6 +307,13 @@ $column-max: 48rem;
   gap: 12px;
   flex-shrink: 0;
   height: 32px;
+}
+
+.footer-left {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
 }
 
 .attach-plus {
@@ -415,22 +436,22 @@ $column-max: 48rem;
   width: 32px;
   height: 32px;
   border-radius: 50%;
-  background: rgba(45, 138, 78, 0.18);
-  color: rgba(45, 138, 78, 0.45);
+  background: $accent-light;
+  color: $text-muted;
   transition: background 0.15s, color 0.15s;
 
   &.ready {
-    background: $accent;
-    color: #fff;
+    background: var(--btn-primary-gradient, $accent);
+    color: $btn-primary-text;
 
     &:hover {
-      background: $btn-primary-hover-bg;
+      filter: brightness(1.08);
     }
   }
 
   &.waiting {
-    background: $accent;
-    color: #fff;
+    background: var(--btn-primary-gradient, $accent);
+    color: $btn-primary-text;
     cursor: wait;
   }
 

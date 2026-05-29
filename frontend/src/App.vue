@@ -14,7 +14,7 @@ const agent = useAgentStore()
 
 <template>
   <div class="app">
-    <div class="forest-bg" aria-hidden="true" />
+    <div class="aurora-bg" aria-hidden="true" />
     <AppSidebar />
     <main class="main">
       <ChatView v-if="agent.currentView === 'chat'" />
@@ -39,14 +39,14 @@ const agent = useAgentStore()
   position: relative;
 }
 
-.forest-bg {
+.aurora-bg {
   position: fixed;
   inset: 0;
   pointer-events: none;
   z-index: 0;
   background:
-    radial-gradient(ellipse 70% 45% at 15% 5%, var(--forest-glow-1), transparent),
-    radial-gradient(ellipse 50% 35% at 85% 90%, var(--forest-glow-2), transparent),
+    radial-gradient(ellipse 65% 50% at 10% 0%, var(--aurora-glow-1), transparent),
+    radial-gradient(ellipse 55% 40% at 90% 100%, var(--aurora-glow-2), transparent),
     $bg-page-gradient;
 }
 

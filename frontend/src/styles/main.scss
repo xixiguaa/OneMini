@@ -35,11 +35,12 @@ button {
   border-radius: 8px;
   font-size: 13px;
   font-weight: 500;
-  background: $accent;
+  background: var(--btn-primary-gradient, $accent);
   color: $btn-primary-text;
 
   &:hover:not(:disabled) {
-    background: $btn-primary-hover-bg;
+    background: var(--btn-primary-gradient, $accent);
+    filter: brightness(1.08);
     box-shadow: $shadow-glow;
   }
 

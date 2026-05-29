@@ -266,7 +266,7 @@ onUnmounted(() => {
   }
 
   &.active {
-    border-color: rgba(45, 138, 78, 0.35);
+    border-color: $border-light;
     background: $accent-light;
     color: $accent;
   }
@@ -287,13 +287,13 @@ onUnmounted(() => {
   text-align: center;
 
   &.warn {
-    color: #8a6a12;
-    background: rgba(184, 134, 11, 0.2);
+    color: color-mix(in srgb, $color-warning 70%, $text-primary);
+    background: color-mix(in srgb, $color-warning 20%, transparent);
   }
 
   &.danger {
-    color: #a05050;
-    background: rgba(180, 60, 60, 0.15);
+    color: $color-danger;
+    background: $color-danger-soft;
   }
 }
 
@@ -359,8 +359,8 @@ onUnmounted(() => {
     margin: 0 -8px;
     padding: 12px 8px;
     border-radius: 8px;
-    background: rgba(45, 138, 78, 0.08);
-    border: 1px solid rgba(45, 138, 78, 0.28);
+    background: $accent-light;
+    border: 1px solid $border-light;
   }
 
   &.is-waiting {
@@ -441,7 +441,7 @@ onUnmounted(() => {
     padding: 8px 0;
     border-top: 1px solid rgba(180, 60, 60, 0.12);
     font-size: 12px;
-    color: #a05050;
+    color: $color-danger;
   }
 
   .err-file {

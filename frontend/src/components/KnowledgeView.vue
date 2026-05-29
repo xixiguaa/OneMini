@@ -11,7 +11,6 @@ import {
 import { getWikiStatus, runWikiLint, type WikiLintResult } from '../api/wiki'
 import { useAgentStore } from '../stores/agent'
 import { usePlatformStore } from '../stores/platform'
-import KnowledgeChatModePicker from './KnowledgeChatModePicker.vue'
 import LoadingIndicator from './LoadingIndicator.vue'
 
 const platform = usePlatformStore()
@@ -168,7 +167,6 @@ onMounted(async () => {
           LLM-Wiki
         </button>
       </div>
-      <KnowledgeChatModePicker />
     </div>
 
     <div v-if="panelTab === 'wiki'" class="split-layout wiki-layout">
@@ -189,7 +187,7 @@ onMounted(async () => {
           <LoadingIndicator v-if="lintLoading" label="检查中…" variant="button" :size="14" />
           <template v-else>
             <ShieldCheck :size="16" />
-            运行 Lint 检查
+            健康检查
           </template>
         </button>
         <button type="button" class="add-trigger secondary" @click="loadWikiStats">
@@ -200,8 +198,8 @@ onMounted(async () => {
         <p class="group-label">架构说明</p>
         <p class="wiki-arch-hint">
           <strong>Ingest</strong>：在「知识图谱」上传 raw → 构建知识框架。<br />
-          <strong>Query</strong>：对话选 LLM-Wiki 模式。<br />
-          <strong>Lint</strong>：检查断链与待处理 raw。
+          <strong>Query</strong>：在对话页切换 LLM-Wiki 模式。<br />
+          <strong>健康检查</strong>：构建完成后仍可扫描断链、待补全页与未 ingest 的 raw（不影响已构建内容）。
         </p>
       </aside>
 
@@ -226,7 +224,7 @@ onMounted(async () => {
             </ul>
             <p v-if="lintResult.issues.length > 30" class="list-empty">… 另有 {{ lintResult.issues.length - 30 }} 条</p>
           </div>
-          <p v-else class="list-empty">点击左侧「运行 Lint 检查」查看断链、孤儿页与待 ingest raw。</p>
+          <p v-else class="list-empty">点击左侧「健康检查」扫描断链、待补全页与未 ingest 的 raw（与构建是否成功无关）。</p>
         </div>
       </section>
     </div>
@@ -723,7 +721,7 @@ onMounted(async () => {
 .btn-danger {
   background: rgba(232, 93, 93, 0.12);
   border: 1px solid rgba(232, 93, 93, 0.35);
-  color: #c44;
+  color: $color-danger;
 
   &:hover:not(:disabled) {
     background: rgba(232, 93, 93, 0.2);
@@ -747,7 +745,7 @@ onMounted(async () => {
 }
 
 .error {
-  color: #e85d5d;
+  color: $color-danger;
   font-size: 13px;
   margin-bottom: 12px;
 }

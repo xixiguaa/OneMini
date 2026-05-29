@@ -19,9 +19,12 @@ withDefaults(
 </template>
 
 <style scoped lang="scss">
+@use '../styles/variables.scss' as *;
+
 .brand-logo {
   object-fit: contain;
   display: block;
   flex-shrink: 0;
+  border-radius: $radius-md;
 }
 </style>

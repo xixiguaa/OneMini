@@ -132,7 +132,7 @@ const current = () => WORKSPACE_FILES.find((f) => f.key === activeFile.value)!
   color: $text-muted;
 
   &:hover {
-    color: #c44;
+    color: $color-danger;
   }
 }
 </style>

@@ -250,11 +250,11 @@ $sidebar-collapsed: 56px;
 
 .new-chat-btn {
   padding: 11px;
-  background: $accent;
+  background: var(--btn-primary-gradient, $accent);
   color: $btn-primary-text;
 
   &:hover {
-    background: $btn-primary-hover-bg;
+    filter: brightness(1.08);
     box-shadow: $shadow-glow;
   }
 
@@ -266,20 +266,20 @@ $sidebar-collapsed: 56px;
 
 .incognito-btn {
   padding: 9px 11px;
-  color: #5a4a78;
-  background: rgba(90, 70, 140, 0.1);
-  border: 1px solid rgba(90, 70, 140, 0.28);
+  color: $accent-emphasis;
+  background: $accent-light;
+  border: 1px solid $border-light;
 
   &:hover {
-    background: rgba(90, 70, 140, 0.16);
-    border-color: rgba(90, 70, 140, 0.4);
+    background: color-mix(in srgb, $accent-light 80%, $accent);
+    border-color: color-mix(in srgb, $border-light 60%, $accent);
   }
 
   &.active {
     color: #fff;
-    background: linear-gradient(135deg, #6b5b95, #5a4a78);
+    background: var(--btn-primary-gradient, $accent);
     border-color: transparent;
-    box-shadow: 0 2px 10px rgba(90, 70, 140, 0.35);
+    box-shadow: $shadow-glow;
   }
 }
 

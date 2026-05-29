@@ -30,6 +30,6 @@ const hasChatModel = computed(() => settings.chatModels.length > 0)
   border: 1px solid rgba(184, 134, 11, 0.28);
   border-radius: $radius-sm;
   font-size: 12px;
-  color: #92600a;
+  color: color-mix(in srgb, $color-warning 75%, $text-primary);
 }
 </style>

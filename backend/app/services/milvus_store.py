@@ -38,6 +38,12 @@ def connect_milvus(settings: Settings | None = None) -> None:
 
 def disconnect_milvus() -> None:
     global _connected, _collection
+    try:
+        from app.services.langchain_store import reset_vector_store
+
+        reset_vector_store()
+    except ImportError:
+        pass
     if connections.has_connection(_alias()):
         connections.disconnect(_alias())
     _connected = False
@@ -107,20 +113,15 @@ def _get_collection(settings: Settings) -> Collection:
     return col
 
 
-def insert_chunks(
+def _insert_chunks_pymilvus(
     doc_id: str,
     source: str,
     chunks: list[str],
-    settings: Settings | None = None,
+    settings: Settings,
 ) -> int:
-    if not chunks:
-        return 0
-
-    settings = settings or get_settings()
     col = _get_collection(settings)
     vectors = embed_texts(chunks)
     now = int(time.time() * 1000)
-
     data = [
         {
             "id": f"{doc_id}_{i}",
@@ -133,10 +134,59 @@ def insert_chunks(
         }
         for i in range(len(chunks))
     ]
-
     col.insert(data)
     col.flush()
     return len(chunks)
+
+
+def _search_similar_pymilvus(
+    query: str,
+    top_k: int,
+    settings: Settings,
+) -> list[dict[str, Any]]:
+    col = _get_collection(settings)
+    vec = embed_texts([query])[0]
+    results = col.search(
+        data=[vec],
+        anns_field="embedding",
+        param={"metric_type": "COSINE"},
+        limit=top_k,
+        output_fields=["doc_id", "chunk_index", "source", "text"],
+    )
+    hits: list[dict[str, Any]] = []
+    for group in results:
+        for hit in group:
+            hits.append(
+                {
+                    "id": hit.id,
+                    "score": float(hit.score),
+                    "doc_id": hit.entity.get("doc_id"),
+                    "chunk_index": hit.entity.get("chunk_index"),
+                    "source": hit.entity.get("source"),
+                    "text": hit.entity.get("text"),
+                }
+            )
+    return hits
+
+
+def insert_chunks(
+    doc_id: str,
+    source: str,
+    chunks: list[str],
+    settings: Settings | None = None,
+) -> int:
+    if not chunks:
+        return 0
+
+    settings = settings or get_settings()
+    _get_collection(settings)
+
+    try:
+        from app.services.langchain_store import langchain_insert_chunks
+
+        return langchain_insert_chunks(doc_id, source, chunks, settings)
+    except Exception:
+        return _insert_chunks_pymilvus(doc_id, source, chunks, settings)
 
 
 def delete_document(doc_id: str, settings: Settings | None = None) -> int:
@@ -154,32 +204,15 @@ def search_similar(
     settings: Settings | None = None,
 ) -> list[dict[str, Any]]:
     settings = settings or get_settings()
-    col = _get_collection(settings)
     k = top_k or settings.rag_top_k
+    _get_collection(settings)
 
-    vec = embed_texts([query])[0]
-    results = col.search(
-        data=[vec],
-        anns_field="embedding",
-        param={"metric_type": "COSINE"},
-        limit=k,
-        output_fields=["doc_id", "chunk_index", "source", "text"],
-    )
+    try:
+        from app.services.langchain_store import langchain_search_similar
 
-    hits: list[dict[str, Any]] = []
-    for group in results:
-        for hit in group:
-            hits.append(
-                {
-                    "id": hit.id,
-                    "score": float(hit.score),
-                    "doc_id": hit.entity.get("doc_id"),
-                    "chunk_index": hit.entity.get("chunk_index"),
-                    "source": hit.entity.get("source"),
-                    "text": hit.entity.get("text"),
-                }
-            )
-    return hits
+        return langchain_search_similar(query, k, settings)
+    except Exception:
+        return _search_similar_pymilvus(query, k, settings)
 
 
 def list_documents(settings: Settings | None = None) -> list[dict[str, Any]]:

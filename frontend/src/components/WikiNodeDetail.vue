@@ -157,44 +157,51 @@ const propertyRows = computed((): PropRow[] => {
 </template>
 
 <style scoped lang="scss">
+@use '../styles/variables.scss' as *;
+
 .wiki-node-detail {
-  color: #dcdee1;
+  color: $text-secondary;
   font-size: 13px;
+  line-height: 1.65;
 }
 
 .note-header {
   padding: 0 0 14px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  border-bottom: 1px solid $border-light;
   margin-bottom: 12px;
 }
 
 .note-title {
   margin: 0 0 8px;
   font-size: 1.35rem;
-  font-weight: 600;
+  font-weight: 700;
   line-height: 1.35;
-  color: #e8eaed;
+  color: $text-primary;
+  letter-spacing: 0.01em;
 }
 
 .note-banner {
   margin: 0 0 8px;
   font-size: 12px;
-  color: #9aa3ad;
+  color: $text-secondary;
   line-height: 1.5;
 }
 
 .note-path {
   display: block;
   font-size: 11px;
-  color: #6b7280;
+  color: $text-muted;
   word-break: break-all;
+  opacity: 0.95;
 }
 
 .props-heading {
   margin: 0 0 10px;
   font-size: 12px;
   font-weight: 600;
-  color: #8b9298;
+  color: $text-secondary;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
 }
 
 .note-props {
@@ -207,7 +214,7 @@ const propertyRows = computed((): PropRow[] => {
   gap: 8px 10px;
   align-items: start;
   padding: 6px 0;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  border-bottom: 1px solid $border-light;
 
   &:last-child {
     border-bottom: none;
@@ -215,14 +222,15 @@ const propertyRows = computed((): PropRow[] => {
 }
 
 .prop-icon {
-  color: #6b7280;
+  color: $text-muted;
   margin-top: 2px;
 }
 
 .prop-key {
   font-size: 12px;
-  color: #9aa3ad;
+  color: $text-muted;
   padding-top: 2px;
+  font-weight: 500;
 }
 
 .prop-value {
@@ -233,7 +241,7 @@ const propertyRows = computed((): PropRow[] => {
 }
 
 .prop-text {
-  color: #e8eaed;
+  color: $text-primary;
   word-break: break-word;
 }
 
@@ -242,15 +250,15 @@ const propertyRows = computed((): PropRow[] => {
   padding: 2px 8px;
   border-radius: 4px;
   font-size: 12px;
-  background: rgba(167, 139, 250, 0.22);
-  color: #d4c4fd;
-  border: 1px solid rgba(167, 139, 250, 0.35);
+  background: rgba(123, 95, 255, 0.18);
+  color: #ddd6ff;
+  border: 1px solid rgba(123, 95, 255, 0.32);
   word-break: break-all;
 
   &.path {
-    background: rgba(99, 167, 255, 0.15);
-    color: #a8c7ff;
-    border-color: rgba(99, 167, 255, 0.28);
+    background: rgba(74, 58, 232, 0.16);
+    color: #c8c0ff;
+    border-color: rgba(74, 58, 232, 0.3);
     font-family: ui-monospace, monospace;
     font-size: 11px;
   }
@@ -260,38 +268,76 @@ const propertyRows = computed((): PropRow[] => {
   padding-top: 4px;
 
   :deep(.markdown-body) {
-    color: #dcdee1;
+    color: $text-secondary;
     font-size: 14px;
+    line-height: 1.75;
+  }
+
+  :deep(p),
+  :deep(li) {
+    color: $text-secondary;
   }
 
   :deep(h1) {
     display: none;
   }
 
+  :deep(h2),
+  :deep(h3),
+  :deep(h4) {
+    color: $text-primary;
+    font-weight: 700;
+  }
+
   :deep(h2) {
     font-size: 1.1rem;
-    color: #e8eaed;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    border-bottom: 1px solid $border-light;
     padding-bottom: 6px;
+    margin-top: 1.25em;
+  }
+
+  :deep(h3) {
+    font-size: 1.02rem;
+    margin-top: 1em;
+  }
+
+  :deep(strong) {
+    color: $text-primary;
+    font-weight: 600;
   }
 
   :deep(a) {
-    color: #7eb8ff;
+    color: $accent-emphasis;
+    text-decoration: underline;
+    text-underline-offset: 2px;
   }
 
   :deep(code) {
-    background: rgba(255, 255, 255, 0.08);
-    color: #f0c674;
+    background: rgba(31, 255, 212, 0.1);
+    color: #6dffe8;
+    border: 1px solid rgba(31, 255, 212, 0.18);
+    font-size: 0.88em;
+  }
+
+  :deep(pre) {
+    background: #1a1a35;
+    border: 1px solid $border-light;
+  }
+
+  :deep(pre code) {
+    background: transparent;
+    color: #ececf8;
+    border: none;
   }
 }
 
 .state-msg {
   margin: 0;
   padding: 12px 0;
-  color: #9aa3ad;
+  color: $text-secondary;
 
   &.error {
-    color: #e88a8a;
+    color: $color-danger;
   }
 
   &.dim {

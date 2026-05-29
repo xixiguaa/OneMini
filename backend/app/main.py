@@ -29,7 +29,7 @@ async def lifespan(_app: FastAPI):
 
 app = FastAPI(
     title="OneMini Platform API",
-    description="Python 后端：Milvus 向量库 + RAG 知识问答",
+    description="Python 后端：Milvus 向量库 + LangChain RAG 知识问答",
     version="0.1.0",
     lifespan=lifespan,
 )

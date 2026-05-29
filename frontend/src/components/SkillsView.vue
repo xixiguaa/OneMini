@@ -159,7 +159,7 @@ const sectionIcon = {
 .badge-on {
   font-size: 9px;
   padding: 1px 5px;
-  background: $accent;
+  background: var(--btn-primary-gradient, $accent);
   color: #fff;
   border-radius: 4px;
   font-weight: 600;
@@ -178,9 +178,9 @@ const sectionIcon = {
   color: $text-secondary;
 
   &:hover {
-    border-color: #c44;
-    color: #c44;
-    background: rgba(200, 68, 68, 0.06);
+    border-color: $color-danger;
+    color: $color-danger;
+    background: $color-danger-soft;
   }
 }
 

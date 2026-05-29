@@ -15,7 +15,7 @@ export interface PresetTemplate {
 export const MODEL_CATALOG: PresetTemplate[] = [
   {
     id: 'deepseek-v4-pro',
-    name: 'DeepSeek',
+    name: 'DeepSeek V4',
     provider: 'deepseek',
     model: 'deepseek-chat',
     capability: 'chat',

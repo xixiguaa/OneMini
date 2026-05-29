@@ -127,7 +127,7 @@ const settings = useSettingsStore()
   .slider {
     width: 36px;
     height: 20px;
-    background: #c5d9c8;
+    background: $accent-light;
     border-radius: 10px;
     position: relative;
     &::after {

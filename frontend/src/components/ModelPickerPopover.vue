@@ -467,7 +467,7 @@ onUnmounted(() => document.removeEventListener('click', onDocClick))
   }
 
   &.info {
-    background: rgba(45, 138, 78, 0.12);
+    background: $accent-light;
     color: $accent;
   }
 }

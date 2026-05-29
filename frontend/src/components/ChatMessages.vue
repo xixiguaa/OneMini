@@ -2,16 +2,49 @@
 import { Download, FileText, Loader2 } from 'lucide-vue-next'
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { useAgentStore } from '../stores/agent'
+import type { ChatMessage } from '../types/agent'
+import LoadingIndicator from './LoadingIndicator.vue'
 import MarkdownContent from './MarkdownContent.vue'
 
 const agent = useAgentStore()
 const scrollRef = ref<HTMLElement | null>(null)
 const stickToBottom = ref(true)
 
-const showTypingIndicator = computed(() => {
-  if (!agent.isProcessing || agent.isStreaming) return false
+const STATUS_PREFIXES = [
+  '📚 Milvus RAG 检索中…',
+  '🕸️ LLM-Wiki 检索中…',
+  '🦞 多智能体协作中',
+]
+
+function isAwaitingReply(content: string): boolean {
+  const c = content.trim()
+  if (!c) return true
+  for (const prefix of STATUS_PREFIXES) {
+    if (!c.startsWith(prefix)) continue
+    const afterStatus = c
+      .replace(/^[^\n]+\n+/, '')
+      .replace(/^> 引用：[^\n]*\n\n?/, '')
+      .trim()
+    if (!afterStatus) return true
+  }
+  return false
+}
+
+function isLastMessage(id: string): boolean {
+  const msgs = agent.messages
+  return msgs.length > 0 && msgs[msgs.length - 1]?.id === id
+}
+
+function shouldShowThinking(msg: ChatMessage): boolean {
+  if (!agent.isProcessing || !isLastMessage(msg.id)) return false
+  if (msg.role !== 'assistant' || msg.type !== 'text') return false
+  return isAwaitingReply(msg.content)
+}
+
+const showThinkingForUserTurn = computed(() => {
+  if (!agent.isProcessing) return false
   const last = agent.messages[agent.messages.length - 1]
-  return !(last?.role === 'assistant' && last.type === 'text')
+  return last?.role === 'user'
 })
 
 const lastAssistantContent = computed(() => {
@@ -86,12 +119,17 @@ onMounted(() => {
         </div>
 
         <div v-else class="assistant-body">
+          <LoadingIndicator
+            v-if="shouldShowThinking(msg)"
+            label="思考中..."
+            :size="16"
+          />
           <MarkdownContent
-            v-if="msg.type === 'text' && msg.content"
+            v-else-if="msg.type === 'text' && msg.content"
             class="content"
             :content="msg.content"
           />
-          <p v-else class="content" :class="{ error: msg.type === 'error' }">{{ msg.content }}</p>
+          <p v-else-if="msg.content" class="content" :class="{ error: msg.type === 'error' }">{{ msg.content }}</p>
 
           <div v-if="msg.attachments?.uploadedFiles?.length" class="file-list">
             <span v-for="f in msg.attachments.uploadedFiles" :key="f.id" class="file-chip">
@@ -143,9 +181,9 @@ onMounted(() => {
         </div>
       </article>
 
-      <article v-if="showTypingIndicator" class="turn assistant">
-        <div class="assistant-body typing">
-          <span class="dot" /><span class="dot" /><span class="dot" />
+      <article v-if="showThinkingForUserTurn" class="turn assistant">
+        <div class="assistant-body">
+          <LoadingIndicator label="思考中..." :size="16" />
         </div>
       </article>
     </div>
@@ -192,8 +230,8 @@ $messages-max: 48rem;
 .user-bubble {
   max-width: min(85%, 32rem);
   padding: 12px 18px;
-  background: rgba(45, 138, 78, 0.1);
-  border: 1px solid rgba(45, 138, 78, 0.14);
+  background: $accent-light;
+  border: 1px solid $border-light;
   border-radius: 20px 20px 6px 20px;
 }
 
@@ -204,7 +242,7 @@ $messages-max: 48rem;
 
 .content {
   &.error {
-    color: #b45309;
+    color: $color-warning;
   }
 }
 
@@ -291,41 +329,5 @@ p.content {
   color: $text-muted;
   border-radius: 10px;
   font-size: 11px;
-}
-
-.typing {
-  display: flex;
-  gap: 6px;
-  padding: 4px 0;
-}
-
-.dot {
-  width: 7px;
-  height: 7px;
-  background: $text-muted;
-  border-radius: 50%;
-  animation: bounce 1.2s infinite;
-  will-change: transform;
-
-  &:nth-child(2) {
-    animation-delay: 0.15s;
-  }
-
-  &:nth-child(3) {
-    animation-delay: 0.3s;
-  }
-}
-
-@keyframes bounce {
-  0%,
-  80%,
-  100% {
-    transform: translateY(0);
-    opacity: 0.45;
-  }
-  40% {
-    transform: translateY(-4px);
-    opacity: 1;
-  }
 }
 </style>

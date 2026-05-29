@@ -16,26 +16,26 @@ const emit = defineEmits<{
 const containerRef = ref<HTMLDivElement | null>(null)
 const svgRef = ref<SVGSVGElement | null>(null)
 
-/** Obsidian Graph 近似色板 */
+/** 深空极光图谱色板 */
 const TYPE_COLORS: Record<string, string> = {
-  raw: '#6e6a62',
-  raw_extract: '#5c5a56',
-  entity: '#c084fc',
-  concept: '#6ecf7d',
-  source: '#e8a04a',
-  synthesis: '#b794f6',
-  query: '#f472b6',
-  meta: '#9aa3ad',
-  unknown: '#5c656d',
+  raw: '#6b6b8a',
+  raw_extract: '#5a5a78',
+  entity: '#7b5fff',
+  concept: '#1fffd4',
+  source: '#ffb830',
+  synthesis: '#826afb',
+  query: '#ff5c7a',
+  meta: '#a0a0c0',
+  unknown: '#6b6b8a',
 }
 
-const BG_GRAPH = '#0a0c0f'
+const BG_GRAPH = '#0d0d1a'
 /** 默认连线/箭头（无 hover） */
-const DIM_LINK = '#6d7785'
+const DIM_LINK = '#2a2a4a'
 const LINK_IDLE_OPACITY = 0.38
 const ARROW_IDLE_OPACITY = 0.34
-/** Obsidian 图谱聚焦/悬停高亮色（连线） */
-const OBSIDIAN_FOCUS = '#a882ff'
+/** 图谱聚焦/悬停高亮色（连线） */
+const OBSIDIAN_FOCUS = '#7b5fff'
 /** Obsidian 图谱悬停/聚焦过渡（偏慢、ease-out） */
 const HOVER_ANIM_MS = 280
 const HOVER_EASE = d3.easeCubicOut
@@ -129,6 +129,9 @@ let zoomScale = 1
 let labelsWereVisible = true
 let width = 0
 let height = 0
+let tickRaf = 0
+let idleStopTimer: ReturnType<typeof setTimeout> | null = null
+let simulationPaused = false
 /** 箭头长度；底边半宽按 45° 顶角（tan(22.5°)）计算 */
 const ARROW_LEN = 2
 const ARROW_HALF_WIDTH = ARROW_LEN * Math.tan(Math.PI / 8)
@@ -155,6 +158,7 @@ function syncZoomScaleFromSvg() {
 
 function setHoverHighlight(nodeId: string) {
   if (dragHoverLocked || hoverId === nodeId) return
+  if (simulationPaused) wakeSimulation()
   hoverId = nodeId
   updateFocus(true)
 }
@@ -244,11 +248,35 @@ function zeroNodeVelocities(keepHub = true) {
   }
 }
 
+function clearIdleStopTimer() {
+  if (idleStopTimer) {
+    clearTimeout(idleStopTimer)
+    idleStopTimer = null
+  }
+}
+
+function pauseSimulationWhenIdle() {
+  clearIdleStopTimer()
+  idleStopTimer = setTimeout(() => {
+    if (!simulation || dragFocusId || hoverId) return
+    simulation.alphaTarget(0)
+    simulation.stop()
+    simulationPaused = true
+  }, 1800)
+}
+
+function wakeSimulation() {
+  if (!simulation) return
+  simulationPaused = false
+  simulation.alphaTarget(LIVING_ALPHA_TARGET)
+  if (simulation.alpha() < 0.02) simulation.alpha(0.08).restart()
+  pauseSimulationWhenIdle()
+}
+
 function enableLivingMotion() {
   if (!simulation) return
   layoutSettled = true
-  simulation.alphaTarget(LIVING_ALPHA_TARGET)
-  if (simulation.alpha() < 0.06) simulation.alpha(0.1).restart()
+  wakeSimulation()
 }
 
 function rippleNeighbors(node: SimNode, strength: number) {
@@ -515,6 +543,7 @@ function updateLivingForces() {
 
 function updateNodePulseVisuals() {
   const aid = focusId()
+  if (!aid && simulationPaused) return
   nodeSel?.select('circle.halo').attr('r', (d) => d.r * pulseScale(d) * 1.75)
   nodeSel?.select('circle.core').attr('r', (d) => d.r * pulseScale(d))
   if (nodeSel) {
@@ -544,9 +573,14 @@ function syncGraphVisuals(lite = false) {
 }
 
 function ticked() {
-  updateLivingForces()
-  syncGraphVisuals()
-  clampNodeVelocities()
+  if (tickRaf) return
+  tickRaf = requestAnimationFrame(() => {
+    tickRaf = 0
+    if (!simulation) return
+    updateLivingForces()
+    syncGraphVisuals()
+    clampNodeVelocities()
+  })
 }
 
 function isNodeNearFocus(nodeId: string) {
@@ -696,6 +730,12 @@ function renderGraph() {
   rebuildNeighborIndex()
 
   if (simulation) simulation.stop()
+  clearIdleStopTimer()
+  if (tickRaf) {
+    cancelAnimationFrame(tickRaf)
+    tickRaf = 0
+  }
+  simulationPaused = false
 
   const svgSel = d3.select(svg)
   svgSel.selectAll('*').remove()
@@ -772,6 +812,8 @@ function renderGraph() {
         .drag<SVGGElement, SimNode>()
         .on('start', (event, d) => {
           if (event.sourceEvent) event.sourceEvent.stopPropagation()
+          clearIdleStopTimer()
+          simulationPaused = false
           pointerDownX = event.x
           pointerDownY = event.y
           pointerMoved = false
@@ -943,6 +985,7 @@ function renderGraph() {
     .on('zoom', (event) => {
       gMain?.attr('transform', event.transform)
       zoomScale = event.transform.k
+      if (simulationPaused) wakeSimulation()
       const visible = zoomShowsLabels()
       if (visible !== labelsWereVisible) {
         labelsWereVisible = visible
@@ -1019,20 +1062,23 @@ function fitView() {
 }
 
 watch(
-  () => [props.nodes, props.edges],
+  () => [props.nodes, props.edges] as const,
   () => renderGraph(),
-  { deep: true },
 )
 
 watch(
   () => props.selectedId,
-  () => updateFocus(true),
+  () => {
+    if (simulationPaused) wakeSimulation()
+    updateFocus(true)
+  },
 )
 
 let resizeObserver: ResizeObserver | null = null
 
 onMounted(() => {
   renderGraph()
+  containerRef.value?.addEventListener('mouseenter', wakeSimulation)
   resizeObserver = new ResizeObserver(() => {
     const c = containerRef.value
     if (!c) return
@@ -1060,6 +1106,9 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
+  containerRef.value?.removeEventListener('mouseenter', wakeSimulation)
+  clearIdleStopTimer()
+  if (tickRaf) cancelAnimationFrame(tickRaf)
   simulation?.stop()
   resizeObserver?.disconnect()
 })
@@ -1084,7 +1133,7 @@ defineExpose({ fitView })
   flex: 1;
   min-height: 0;
   overflow: hidden;
-  background: #0a0c0f;
+  background: #0d0d1a;
   box-shadow: inset 0 0 100px rgba(0, 0, 0, 0.38);
 }
 

@@ -13,10 +13,28 @@ router = APIRouter(tags=["health"])
 def health():
     settings = get_settings()
     milvus = ping_milvus(settings)
+    langchain_ok = False
+    langchain_error: str | None = None
+    if milvus.get("ok"):
+        try:
+            from app.services.langchain_store import get_vector_store
+
+            get_vector_store(settings)
+            langchain_ok = True
+        except Exception as exc:
+            langchain_error = str(exc)
+    else:
+        langchain_error = "Milvus 未连接"
+
     return {
         "ok": True,
         "service": "onemini-platform",
         "milvus": milvus,
+        "langchain": {
+            "ok": langchain_ok,
+            "milvus_integration": "langchain-milvus",
+            "error": langchain_error,
+        },
         "embedding_model": settings.embedding_model,
         "embedding_dim": get_embedding_dim() if milvus.get("ok") else None,
         "llm_configured": bool(settings.openai_api_key),

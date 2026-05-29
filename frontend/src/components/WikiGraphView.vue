@@ -165,9 +165,6 @@ const TYPE_LABELS: Record<string, string> = {
 }
 
 const CATEGORY_ORDER = ['source', 'concept', 'entity', 'synthesis', 'query', 'meta']
-/** 超过该数量的 wiki 页默认折叠分类（Obsidian / VS Code 文件树思路） */
-const WIKI_LIST_COLLAPSE_THRESHOLD = 10
-const RAW_LIST_COLLAPSE_THRESHOLD = 4
 
 const sidebarSearch = ref('')
 const sidebarCollapseInited = ref(false)
@@ -336,6 +333,14 @@ function sectionKey(kind: 'wiki' | 'raw' | 'orphan', type?: string) {
   return kind
 }
 
+function getAllSectionKeys(): string[] {
+  const keys: string[] = []
+  if (rawFiles.value.length) keys.push(sectionKey('raw'))
+  for (const g of wikiCategoryGroups.value) keys.push(sectionKey('wiki', g.type))
+  if (orphanWikiNodes.value.length) keys.push(sectionKey('orphan'))
+  return keys
+}
+
 function isSectionCollapsed(key: string) {
   if (sidebarSearchActive.value) return false
   return collapsedSections.value.has(key)
@@ -348,22 +353,32 @@ function toggleSection(key: string) {
   collapsedSections.value = next
 }
 
-function initSidebarCollapse() {
-  const next = new Set<string>()
-  const listedWiki = wikiCategoryGroups.value.reduce((s, g) => s + g.nodes.length, 0)
-  if (listedWiki > WIKI_LIST_COLLAPSE_THRESHOLD) {
-    for (const g of wikiCategoryGroups.value) {
-      next.add(sectionKey('wiki', g.type))
+function applyDefaultCollapsedSections() {
+  collapsedSections.value = new Set(getAllSectionKeys())
+}
+
+/** 数据刷新后仅将新出现的分组默认折叠，不重置用户已展开的分组 */
+function mergeNewSectionsCollapsed() {
+  const next = new Set(collapsedSections.value)
+  let changed = false
+  for (const key of getAllSectionKeys()) {
+    if (!next.has(key)) {
+      next.add(key)
+      changed = true
     }
   }
-  if (rawFiles.value.length > RAW_LIST_COLLAPSE_THRESHOLD) {
-    next.add(sectionKey('raw'))
-  }
-  if (orphanWikiNodes.value.length > 0) {
-    next.add(sectionKey('orphan'))
-  }
-  collapsedSections.value = next
+  if (changed) collapsedSections.value = next
+}
+
+function initSidebarCollapse() {
+  applyDefaultCollapsedSections()
   sidebarCollapseInited.value = true
+}
+
+function syncSidebarCollapseAfterLoad() {
+  if (!sidebarCollapseInited.value) initSidebarCollapse()
+  else mergeNewSectionsCollapsed()
+  expandSectionForNode(selectedNodeId.value)
 }
 
 async function focusSidebarOnRaw(rawPath: string) {
@@ -427,6 +442,8 @@ function stopIngestPoll() {
 
 async function handleIngestJobFinished(status: WikiIngestStatus) {
   await refreshAll()
+  applyDefaultCollapsedSections()
+  expandSectionForNode(selectedNodeId.value)
   canvasRef.value?.fitView()
   await loadIngestConflicts()
   if (status.cancelled) {
@@ -546,6 +563,7 @@ async function refreshAll() {
     graphEdges.value = []
   } finally {
     loading.value = false
+    syncSidebarCollapseAfterLoad()
   }
 }
 
@@ -793,16 +811,6 @@ onUnmounted(() => {
 })
 watch(selectedNodeId, (id) => loadNodeContent(id), { immediate: false })
 
-watch(
-  () => [wikiNodes.value.length, rawFiles.value.length] as const,
-  () => {
-    if (!sidebarCollapseInited.value && (wikiNodes.value.length || rawFiles.value.length)) {
-      initSidebarCollapse()
-    }
-  },
-  { immediate: true },
-)
-
 watch(selectedNodeId, (id) => expandSectionForNode(id))
 </script>
 
@@ -881,6 +889,70 @@ watch(selectedNodeId, (id) => expandSectionForNode(id))
 
     <div class="split-layout">
       <aside class="side card">
+        <div class="side-toolbar">
+          <button
+            type="button"
+            class="action-btn primary"
+            :disabled="loading || ingestRunning"
+            @click="fileInput?.click()"
+          >
+            <FileUp :size="16" />
+            上传 raw
+          </button>
+          <input
+            ref="fileInput"
+            type="file"
+            :accept="WIKI_RAW_ACCEPT"
+            multiple
+            hidden
+            @change="onUpload"
+          />
+
+          <button
+            type="button"
+            class="action-btn primary-outline"
+            :disabled="ingestRunning"
+            @click="onRebuild"
+          >
+            <Loader2 v-if="ingestRunning" :size="16" class="om-loading-spinner" aria-hidden="true" />
+            <Network v-else :size="16" aria-hidden="true" />
+            构建知识框架
+          </button>
+          <button
+            v-if="ingestErrorCount && !ingestJob?.running"
+            type="button"
+            class="action-btn"
+            :disabled="ingestActive"
+            @click="onRetryFailed"
+          >
+            <RefreshCw :size="16" />
+            重试失败项 ({{ ingestErrorCount }})
+          </button>
+          <button
+            type="button"
+            class="action-btn"
+            :class="{ 'is-busy': loading }"
+            :disabled="loading"
+            @click="refreshAll"
+          >
+            <RefreshCw :size="16" aria-hidden="true" />
+            刷新
+          </button>
+          <button
+            type="button"
+            class="action-btn"
+            :disabled="loading || openingObsidian"
+            title="在本地 Obsidian 中打开 llm-wiki 仓库或当前笔记"
+            @click="openInObsidian"
+          >
+            <LoadingIndicator v-if="openingObsidian" label="正在打开…" variant="button" :size="14" />
+            <template v-else>
+              <ExternalLink :size="16" />
+              Obsidian
+            </template>
+          </button>
+        </div>
+
         <div class="side-scroll">
         <section class="side-section">
           <div ref="flowInfoWrapRef" class="flow-section-head">
@@ -1128,70 +1200,6 @@ watch(selectedNodeId, (id) => expandSectionForNode(id))
           </div>
         </section>
 
-        <div class="side-actions">
-          <button
-            type="button"
-            class="action-btn primary"
-            :disabled="loading || ingestRunning"
-            @click="fileInput?.click()"
-          >
-            <FileUp :size="16" />
-            上传 raw
-          </button>
-          <input
-            ref="fileInput"
-            type="file"
-            :accept="WIKI_RAW_ACCEPT"
-            multiple
-            hidden
-            @change="onUpload"
-          />
-
-          <button
-            type="button"
-            class="action-btn primary-outline"
-            :disabled="ingestRunning"
-            @click="onRebuild"
-          >
-            <Loader2 v-if="ingestRunning" :size="16" class="om-loading-spinner" aria-hidden="true" />
-            <Network v-else :size="16" aria-hidden="true" />
-            构建知识框架
-          </button>
-          <button
-            v-if="ingestErrorCount && !ingestJob?.running"
-            type="button"
-            class="action-btn"
-            :disabled="ingestActive"
-            @click="onRetryFailed"
-          >
-            <RefreshCw :size="16" />
-            重试失败项 ({{ ingestErrorCount }})
-          </button>
-          <button
-            type="button"
-            class="action-btn"
-            :class="{ 'is-busy': loading }"
-            :disabled="loading"
-            @click="refreshAll"
-          >
-            <RefreshCw :size="16" aria-hidden="true" />
-            刷新
-          </button>
-          <button
-            type="button"
-            class="action-btn"
-            :disabled="loading || openingObsidian"
-            title="在本地 Obsidian 中打开 llm-wiki 仓库或当前笔记"
-            @click="openInObsidian"
-          >
-            <LoadingIndicator v-if="openingObsidian" label="正在打开…" variant="button" :size="14" />
-            <template v-else>
-              <ExternalLink :size="16" />
-              在 Obsidian 中打开
-            </template>
-          </button>
-        </div>
-
         <div v-if="legend.length" class="legend">
           <p class="group-label">图例</p>
           <div v-for="[type, count] in legend" :key="type" class="legend-row">
@@ -1345,8 +1353,8 @@ watch(selectedNodeId, (id) => expandSectionForNode(id))
   margin: 0;
   padding: 10px 14px;
   border-radius: $radius-md;
-  background: rgba(180, 60, 60, 0.12);
-  color: #c45c5c;
+  background: $color-danger-soft;
+  color: $color-danger;
   font-size: 13px;
 }
 
@@ -1354,8 +1362,8 @@ watch(selectedNodeId, (id) => expandSectionForNode(id))
   margin: 0;
   padding: 10px 14px;
   border-radius: $radius-md;
-  background: rgba(45, 138, 78, 0.1);
-  border: 1px solid rgba(45, 138, 78, 0.22);
+  background: $accent-light;
+  border: 1px solid $border-light;
   color: $text-secondary;
   font-size: 13px;
   line-height: 1.5;
@@ -1364,8 +1372,8 @@ watch(selectedNodeId, (id) => expandSectionForNode(id))
 .ingest-banner {
   padding: 10px 14px;
   border-radius: $radius-md;
-  background: rgba(45, 138, 78, 0.1);
-  border: 1px solid rgba(45, 138, 78, 0.25);
+  background: $accent-light;
+  border: 1px solid $border-light;
 }
 
 .ingest-banner-head {
@@ -1389,7 +1397,7 @@ watch(selectedNodeId, (id) => expandSectionForNode(id))
 .ingest-banner-divider {
   width: 1px;
   height: 14px;
-  background: rgba(45, 138, 78, 0.28);
+  background: $border-light;
 }
 
 .ingest-stop-btn {
@@ -1480,12 +1488,12 @@ watch(selectedNodeId, (id) => expandSectionForNode(id))
   font-size: 12px;
   font-weight: 600;
   border-radius: 999px;
-  border: 1px solid rgba(184, 134, 11, 0.45);
-  background: rgba(184, 134, 11, 0.12);
-  color: #8a6a12;
+  border: 1px solid color-mix(in srgb, $color-warning 45%, transparent);
+  background: color-mix(in srgb, $color-warning 12%, transparent);
+  color: color-mix(in srgb, $color-warning 70%, $text-primary);
 
   &:hover {
-    background: rgba(184, 134, 11, 0.2);
+    background: color-mix(in srgb, $color-warning 20%, transparent);
   }
 }
 
@@ -1495,7 +1503,7 @@ watch(selectedNodeId, (id) => expandSectionForNode(id))
   align-items: center;
   gap: 6px 10px;
   font-size: 12px;
-  color: #a05050;
+  color: $color-danger;
 }
 
 .issues-errors-text {
@@ -1615,7 +1623,7 @@ watch(selectedNodeId, (id) => expandSectionForNode(id))
     flex-direction: column;
     gap: 2px;
     padding: 6px 0;
-    border-top: 1px solid rgba(120, 165, 130, 0.15);
+    border-top: 1px solid $border-light;
 
     &:first-child {
       border-top: none;
@@ -1656,6 +1664,31 @@ watch(selectedNodeId, (id) => expandSectionForNode(id))
   padding: 0;
   overflow: hidden;
   min-height: 0;
+}
+
+.side-toolbar {
+  flex-shrink: 0;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  padding: 10px 12px;
+  border-bottom: 1px solid $glass-border;
+  background: $bg-card;
+
+  .action-btn {
+    justify-content: center;
+    min-height: 34px;
+    padding: 7px 10px;
+    font-size: 12px;
+  }
+
+  .action-btn.primary {
+    grid-column: 1 / -1;
+  }
+
+  .action-btn.primary-outline {
+    grid-column: 1 / -1;
+  }
 }
 
 .side-scroll {
@@ -1702,14 +1735,14 @@ watch(selectedNodeId, (id) => expandSectionForNode(id))
   padding: 9px 8px;
   border-radius: 10px;
   border: 1px solid $glass-border;
-  background: rgba(45, 138, 78, 0.06);
+  background: $accent-light;
 
   &[data-step='wiki'] {
-    background: rgba(92, 184, 122, 0.1);
+    background: color-mix(in srgb, $accent-cyan 12%, transparent);
   }
 
   &[data-step='output'] {
-    background: rgba(167, 139, 250, 0.1);
+    background: color-mix(in srgb, $accent-emphasis 12%, transparent);
   }
 }
 
@@ -1848,7 +1881,7 @@ watch(selectedNodeId, (id) => expandSectionForNode(id))
 }
 
 .orphan-item .item-icon {
-  color: #708090;
+  color: $text-muted;
 }
 
 .category-row {
@@ -2014,19 +2047,13 @@ watch(selectedNodeId, (id) => expandSectionForNode(id))
   }
 
   &.danger {
-    color: #c45c5c;
+    color: $color-danger;
     border-color: rgba(180, 60, 60, 0.35);
     width: auto;
     margin-top: 8px;
   }
 }
 
-.side-actions {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  padding-top: 4px;
-}
 
 .legend {
   margin-top: 12px;
@@ -2050,22 +2077,22 @@ watch(selectedNodeId, (id) => expandSectionForNode(id))
   background: $text-muted;
 
   &[data-type='raw'] {
-    background: #d4a574;
+    background: #6b6b8a;
   }
   &[data-type='entity'] {
-    background: #6b9bd1;
+    background: #7b5fff;
   }
   &[data-type='concept'] {
-    background: #5cb87a;
+    background: #1fffd4;
   }
   &[data-type='source'] {
-    background: #e8a54b;
+    background: #ffb830;
   }
   &[data-type='synthesis'] {
-    background: #a78bfa;
+    background: #826afb;
   }
   &[data-type='raw_extract'] {
-    background: #c9a227;
+    background: #a0a0c0;
   }
 }
 
@@ -2096,8 +2123,8 @@ watch(selectedNodeId, (id) => expandSectionForNode(id))
 
   &:not(.is-fullscreen) {
     border-radius: $radius-md;
-    border: 1px solid rgba(120, 165, 130, 0.24);
-    background: #101216;
+    border: 1px solid $border-light;
+    background: #13132a;
     box-shadow: $shadow-sm;
   }
 
@@ -2108,7 +2135,7 @@ watch(selectedNodeId, (id) => expandSectionForNode(id))
     width: 100vw;
     height: 100vh;
     flex: none;
-    background: #0a0c0f;
+    background: #0d0d1a;
   }
 
   &.has-detail .graph-canvas-slot {
@@ -2186,7 +2213,7 @@ watch(selectedNodeId, (id) => expandSectionForNode(id))
   &:focus-visible {
     box-shadow:
       0 2px 8px rgba(0, 0, 0, 0.28),
-      0 0 0 2px rgba(110, 207, 125, 0.35);
+      0 0 0 2px color-mix(in srgb, $accent 35%, transparent);
   }
 }
 
@@ -2197,16 +2224,16 @@ watch(selectedNodeId, (id) => expandSectionForNode(id))
   margin-bottom: 4px;
   padding: 0 6px 0 0;
   border-radius: 10px;
-  border: 1px solid rgba(120, 165, 130, 0.38);
-  background: rgba(232, 245, 233, 0.72);
+  border: 1px solid $border-light;
+  background: $bg-elevated;
   transition:
     border-color 0.15s ease,
     background 0.15s ease,
     box-shadow 0.15s ease;
 
   &:hover {
-    border-color: rgba(76, 140, 74, 0.45);
-    background: rgba(228, 242, 230, 0.95);
+    border-color: color-mix(in srgb, $accent 45%, transparent);
+    background: color-mix(in srgb, $accent-light 80%, $bg-elevated);
 
     .raw-delete-btn {
       opacity: 1;
@@ -2215,7 +2242,7 @@ watch(selectedNodeId, (id) => expandSectionForNode(id))
 
   &.active {
     border-color: $accent;
-    background: rgba(45, 138, 78, 0.1);
+    background: $accent-light;
     box-shadow: inset $active-indicator 0 0 $accent;
   }
 }
@@ -2247,8 +2274,8 @@ watch(selectedNodeId, (id) => expandSectionForNode(id))
     background 0.15s ease;
 
   &:hover:not(:disabled) {
-    color: #c44;
-    background: rgba(200, 68, 68, 0.1);
+    color: $color-danger;
+    background: $color-danger-soft;
   }
 
   &:disabled {
@@ -2263,13 +2290,27 @@ watch(selectedNodeId, (id) => expandSectionForNode(id))
   min-width: 280px;
   max-width: 480px;
   height: 100%;
-  background: #181c20;
+  /* 固定深色阅读面：避免浅色主题下深底+深字 */
+  --text-primary: #f4f4ff;
+  --text-secondary: #d0d0e8;
+  --text-muted: #a8a8c8;
+  --bg-elevated: #222244;
+  --bg-input: #1a1a35;
+  --bg-card: #13132a;
+  --border-light: rgba(58, 58, 96, 0.72);
+  --accent: #7b5fff;
+  --accent-emphasis: #b0a0ff;
+  --accent-light: rgba(123, 95, 255, 0.16);
+  --color-warning: #ffd06a;
+  --color-danger: #ff8a9e;
+  color: var(--text-secondary);
+  background: #13132a;
   display: flex;
   flex-direction: column;
   overflow: hidden;
   isolation: isolate;
   z-index: 25;
-  border-left: 1px solid rgba(255, 255, 255, 0.07);
+  border-left: 1px solid $border-light;
 }
 
 .graph-viewport.is-fullscreen .detail-panel {
@@ -2285,8 +2326,8 @@ watch(selectedNodeId, (id) => expandSectionForNode(id))
   gap: 12px;
   min-height: 44px;
   padding: 0 12px 0 14px;
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.04) 0%, transparent 100%);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.05) 0%, transparent 100%);
+  border-bottom: 1px solid var(--border-light);
 }
 
 .detail-head-title {
@@ -2295,7 +2336,7 @@ watch(selectedNodeId, (id) => expandSectionForNode(id))
   font-size: 13px;
   font-weight: 600;
   letter-spacing: 0.01em;
-  color: #eceff1;
+  color: $text-primary;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -2310,9 +2351,9 @@ watch(selectedNodeId, (id) => expandSectionForNode(id))
   height: 28px;
   padding: 0;
   border-radius: 7px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  color: #a8b0b8;
-  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid $border-light;
+  color: $text-secondary;
+  background: $bg-elevated;
   outline: none;
   transition:
     color 0.15s ease,
@@ -2320,13 +2361,13 @@ watch(selectedNodeId, (id) => expandSectionForNode(id))
     border-color 0.15s ease;
 
   &:hover {
-    color: #f0f2f4;
-    background: rgba(255, 255, 255, 0.1);
-    border-color: rgba(255, 255, 255, 0.14);
+    color: $text-primary;
+    background: $accent-light;
+    border-color: color-mix(in srgb, $accent 35%, transparent);
   }
 
   &:focus-visible {
-    box-shadow: 0 0 0 2px rgba(110, 207, 125, 0.35);
+    box-shadow: $shadow-focus;
   }
 }
 

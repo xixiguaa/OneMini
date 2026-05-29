@@ -477,6 +477,10 @@ export const useAgentStore = defineStore('agent', () => {
       },
     })
 
+    if (!conversations.isIncognito && conversations.activeId) {
+      conversations.updateTitleFromText(conversations.activeId, displayContent)
+    }
+
     inputText.value = ''
 
     try {

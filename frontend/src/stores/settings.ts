@@ -35,11 +35,13 @@ function mergeModelsWithCatalog(saved?: ModelConfig[]): ModelConfig[] {
     .map((def) => {
       const s = savedMap.get(def.id)
       if (s) {
+        const name =
+          def.preset && s.name === 'DeepSeek' ? def.name : s.name || def.name
         return {
           ...def,
           baseUrl: s.baseUrl ?? def.baseUrl,
           enabled: s.enabled ?? false,
-          name: s.name || def.name,
+          name,
           secretConfigured: s.secretConfigured ?? false,
           secretHint: s.secretHint,
         }
@@ -58,8 +60,16 @@ function mergeModelsWithCatalog(saved?: ModelConfig[]): ModelConfig[] {
 
 function mergeSkills(saved?: SkillConfig[], modelIds?: Set<string>): SkillConfig[] {
   const map = new Map(DEFAULT_SKILLS.map((s) => [s.id, { ...s }]))
+  const legacyChatPrompt =
+    '你是 OneMini，一位来自森林的 AI 助手。请结合用户上传的文件内容回答问题。'
   saved?.forEach((s) => {
-    if (map.has(s.id)) map.set(s.id, { ...map.get(s.id)!, ...s })
+    if (map.has(s.id)) {
+      const merged = { ...map.get(s.id)!, ...s }
+      if (s.id === 'chat' && s.systemPrompt?.trim() === legacyChatPrompt) {
+        merged.systemPrompt = DEFAULT_SKILLS.find((x) => x.id === 'chat')!.systemPrompt
+      }
+      map.set(s.id, merged)
+    }
   })
   const skills = Array.from(map.values())
   if (modelIds) {

@@ -8,7 +8,8 @@ export const DEFAULT_SKILLS: SkillConfig[] = [
     icon: 'MessageSquare',
     enabled: true,
     defaultModelId: 'deepseek-v4-pro',
-    systemPrompt: '你是 OneMini，一位来自森林的 AI 助手。请结合用户上传的文件内容回答问题。',
+    systemPrompt:
+      '你是 OneMini 智能助手，多模态 AI 创作搭档。请结合用户上传的文件内容，用简洁专业的中文回答问题；自称 OneMini，不要使用「森林小助手」等别称。',
   },
   {
     id: 'image',

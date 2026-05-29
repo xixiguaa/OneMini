@@ -205,7 +205,7 @@ const ma = () => agentConfig.skeleton.multiAgent
     display: block;
     width: 42px;
     height: 24px;
-    background: #c5d9c8;
+    background: $accent-light;
     border-radius: 12px;
     position: relative;
     &::after {

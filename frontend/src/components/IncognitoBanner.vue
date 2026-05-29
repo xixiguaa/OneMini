@@ -70,7 +70,7 @@ const { t } = useLocale()
 }
 
 .banner-icon {
-  color: #6b5b95;
+  color: $accent-emphasis;
   display: block;
 }
 
@@ -111,7 +111,7 @@ const { t } = useLocale()
   font-weight: 500;
   line-height: 1;
   white-space: nowrap;
-  color: #5a4a78;
+  color: $accent-emphasis;
   background: rgba(255, 255, 255, 0.72);
   border: 1px solid rgba(90, 70, 140, 0.28);
   align-self: center;

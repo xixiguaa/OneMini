@@ -108,7 +108,7 @@ function pick(id: string) {
 
   &.active {
     background: $accent-light;
-    border: 1px solid rgba(45, 138, 78, 0.3);
+    border: 1px solid $border-light;
   }
 
   svg {

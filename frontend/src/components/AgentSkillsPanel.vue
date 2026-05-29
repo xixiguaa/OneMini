@@ -239,7 +239,7 @@ function coreSkillConfig(id: SkillId) {
   margin-top: 8px;
 
   &:hover {
-    color: #c44;
+    color: $color-danger;
   }
 }
 
@@ -252,7 +252,7 @@ function coreSkillConfig(id: SkillId) {
     display: block;
     width: 38px;
     height: 22px;
-    background: #c5d9c8;
+    background: $accent-light;
     border-radius: 11px;
     position: relative;
     &::after {

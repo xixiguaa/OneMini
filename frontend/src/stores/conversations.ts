@@ -13,6 +13,18 @@ import { randomUUID } from '../utils/uuid'
 
 const LEGACY_STORAGE_KEY = 'aji-conversations'
 const PERSIST_DEBOUNCE_MS = 600
+const TITLE_MAX_LEN = 28
+
+/** 从首条用户消息生成侧栏标题（过长省略） */
+export function deriveConversationTitle(
+  messages: ChatMessage[],
+  maxLen = TITLE_MAX_LEN,
+): string {
+  const first = messages.find((m) => m.role === 'user' && m.content.replace(/\n/g, ' ').trim())
+  if (!first) return '新对话'
+  const t = first.content.replace(/\n/g, ' ').trim()
+  return t.length > maxLen ? `${t.slice(0, maxLen)}…` : t
+}
 
 function loadLegacyConversations(): Conversation[] {
   try {
@@ -81,7 +93,8 @@ export const useConversationsStore = defineStore('conversations', () => {
     try {
       persistError.value = null
       const saved = await replaceConversationMessages(conversationId, conv.messages)
-      conv.title = saved.title
+      const localTitle = deriveConversationTitle(conv.messages)
+      conv.title = localTitle !== '新对话' ? localTitle : saved.title || conv.title
       conv.updatedAt = saved.updatedAt
     } catch (e) {
       persistError.value = e instanceof Error ? e.message : '保存对话失败'
@@ -190,12 +203,19 @@ export const useConversationsStore = defineStore('conversations', () => {
     if (!conv) return
     conv.messages = messages
     conv.updatedAt = Date.now()
-    const first = messages.find((m) => m.role === 'user')
-    if (first) {
-      const t = first.content.replace(/\n/g, ' ').trim()
-      conv.title = t.length > 24 ? `${t.slice(0, 24)}…` : t || conv.title
-    }
+    const derived = deriveConversationTitle(messages)
+    if (derived !== '新对话') conv.title = derived
     schedulePersist(id)
+  }
+
+  /** 发送首问后立即更新侧栏标题（不等待持久化） */
+  function updateTitleFromText(id: string, text: string) {
+    const conv = list.value.find((c) => c.id === id)
+    if (!conv) return
+    const t = text.replace(/\n/g, ' ').trim()
+    if (!t) return
+    conv.title = t.length > TITLE_MAX_LEN ? `${t.slice(0, TITLE_MAX_LEN)}…` : t
+    conv.updatedAt = Date.now()
   }
 
   async function deleteConversation(id: string) {
@@ -265,6 +285,8 @@ export const useConversationsStore = defineStore('conversations', () => {
     selectConversation,
     getMessages,
     setMessages,
+    updateTitleFromText,
+    deriveConversationTitle,
     deleteConversation,
     startDraftSession,
     ensureActive,

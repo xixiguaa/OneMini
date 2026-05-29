@@ -491,7 +491,7 @@ onUnmounted(() => {
   max-height: min(52vh, 480px);
   border-radius: $radius-sm;
   overflow: hidden;
-  background: #1a1f1c;
+  background: #13132a;
   border: 1px solid $border-light;
   margin-bottom: 16px;
 
@@ -506,7 +506,7 @@ onUnmounted(() => {
     margin: 0;
     border: none;
     border-radius: 0;
-    background: #0f1410;
+    background: #0d0d1a;
   }
 }
 
@@ -537,12 +537,12 @@ onUnmounted(() => {
   align-items: center;
   justify-content: center;
   border-radius: 8px;
-  background: rgba(15, 18, 16, 0.82);
+  background: rgba(13, 13, 26, 0.88);
   border: 1px solid rgba(255, 255, 255, 0.14);
   color: rgba(255, 255, 255, 0.88);
 
   &:hover {
-    background: rgba(30, 36, 32, 0.95);
+    background: rgba(26, 26, 53, 0.95);
     color: #fff;
     border-color: rgba(255, 255, 255, 0.28);
   }
@@ -559,7 +559,7 @@ onUnmounted(() => {
   gap: 6px 10px;
   max-width: calc(100% - 20px);
   padding: 6px 10px;
-  background: rgba(15, 18, 16, 0.82);
+  background: rgba(13, 13, 26, 0.88);
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 8px;
   font-size: 10px;
@@ -639,7 +639,7 @@ onUnmounted(() => {
   }
 
   &:hover:not(.active) {
-    border-color: rgba(45, 138, 78, 0.35);
+    border-color: $border-light;
     color: $text-primary;
   }
 }

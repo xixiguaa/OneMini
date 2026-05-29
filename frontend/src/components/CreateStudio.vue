@@ -367,22 +367,22 @@ const canSend = () =>
   width: 32px;
   height: 32px;
   border-radius: 50%;
-  background: rgba(45, 138, 78, 0.18);
-  color: rgba(45, 138, 78, 0.45);
+  background: $accent-light;
+  color: $text-muted;
   transition: background 0.15s, color 0.15s;
 
   &.ready {
-    background: $accent;
-    color: #fff;
+    background: var(--btn-primary-gradient, $accent);
+    color: $btn-primary-text;
 
     &:hover {
-      background: $btn-primary-hover-bg;
+      filter: brightness(1.08);
     }
   }
 
   &.waiting {
-    background: $accent;
-    color: #fff;
+    background: var(--btn-primary-gradient, $accent);
+    color: $btn-primary-text;
     cursor: wait;
   }
 

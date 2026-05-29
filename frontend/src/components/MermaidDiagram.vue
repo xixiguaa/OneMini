@@ -523,7 +523,7 @@ onUnmounted(() => {
 
 .chart-error {
   padding: 16px;
-  color: #b45309;
+  color: $color-warning;
   font-size: 13px;
 }
 

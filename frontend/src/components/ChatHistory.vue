@@ -87,7 +87,7 @@ const { t } = useLocale()
   font-size: 11px;
   font-weight: 600;
   line-height: 1.2;
-  color: #5a4a78;
+  color: $accent-emphasis;
   background: rgba(90, 70, 140, 0.12);
   border: 1px solid rgba(90, 70, 140, 0.28);
 
@@ -131,7 +131,7 @@ const { t } = useLocale()
 
   &.active {
     background: $accent-light;
-    border-color: rgba(45, 138, 78, 0.35);
+    border-color: $border-light;
     box-shadow: inset $active-indicator 0 0 $accent;
 
     .item-title {
@@ -172,7 +172,7 @@ const { t } = useLocale()
   flex-shrink: 0;
 
   &:hover {
-    color: #c44;
+    color: $color-danger;
     background: rgba(200, 68, 68, 0.1);
   }
 }

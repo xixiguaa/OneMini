@@ -107,9 +107,9 @@ watch(
   :deep(blockquote) {
     margin: 0 0 0.75em;
     padding: 0.35em 0.9em;
-    border-left: 3px solid rgba(45, 138, 78, 0.35);
+    border-left: 3px solid $accent;
     color: $text-secondary;
-    background: rgba(45, 138, 78, 0.04);
+    background: $accent-light;
     border-radius: 0 8px 8px 0;
   }
 
