@@ -1,4 +1,5 @@
 import { getClientUserId } from '../utils/userId'
+import { parseApiError } from '../utils/parseApiError'
 
 export interface ChatMessagePayload {
   role: string
@@ -115,8 +116,9 @@ export async function generateImage(params: {
   modelConfigId?: string
   baseUrl?: string
   aspectRatio?: string
+  imageUrl?: string
 }): Promise<{ url?: string; message: string }> {
-  const res = await fetch('/api/image', {
+  const res = await fetch('/api/platform/agent/image', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'X-User-Id': getClientUserId() },
     body: JSON.stringify({
@@ -124,12 +126,13 @@ export async function generateImage(params: {
       model: params.model,
       provider: params.provider,
       model_config_id: params.modelConfigId,
-      baseUrl: params.baseUrl,
-      aspectRatio: params.aspectRatio,
+      base_url: params.baseUrl,
+      aspect_ratio: params.aspectRatio,
+      image_url: params.imageUrl,
     }),
   })
-  const data = await res.json()
-  if (!res.ok) throw new Error(data.error || '图片生成失败')
+  const data = await res.json().catch(() => ({}))
+  if (!res.ok) throw new Error(parseApiError(data, '图片生成失败'))
   return data
 }
 
@@ -139,6 +142,10 @@ export async function generateVideo(params: {
   model?: string
   provider?: string
   modelConfigId?: string
+  aspectRatio?: string
+  resolution?: string
+  width?: number
+  height?: number
 }): Promise<{ url?: string; jobId?: string; status?: string; message: string }> {
   const res = await fetch('/api/video', {
     method: 'POST',
@@ -149,6 +156,10 @@ export async function generateVideo(params: {
       model: params.model,
       provider: params.provider,
       model_config_id: params.modelConfigId,
+      aspect_ratio: params.aspectRatio,
+      resolution: params.resolution,
+      width: params.width,
+      height: params.height,
     }),
   })
   const data = await res.json()

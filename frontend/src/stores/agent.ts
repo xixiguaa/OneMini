@@ -29,13 +29,22 @@ import {
   truncateHistory,
 } from '../utils/promptComposer'
 import { resolveChatBaseUrl } from '../config/providers'
-import { resolveModelForChat } from '../utils/resolveModel'
+import { resolveChatModel } from '../utils/resolveModel'
 import { randomUUID } from '../utils/uuid'
+import { resolveVideoDimensions } from '../utils/videoSize'
+import { formatUserError } from '../utils/formatUserError'
 import { useAgentConfigStore } from './agentConfig'
 import { useConversationsStore } from './conversations'
+import { useCreateHistoryStore } from './createHistory'
+import type { CreateHistoryItem } from './createHistory'
 import { useSettingsStore } from './settings'
 import { usePlatformStore } from './platform'
+import { useToastStore } from './toast'
 import { useWorldHistoryStore } from './worldHistory'
+
+function notifyError(err: unknown, fallback: string) {
+  useToastStore().showError(formatUserError(err, fallback))
+}
 
 export const useAgentStore = defineStore('agent', () => {
   const settings = useSettingsStore()
@@ -48,7 +57,12 @@ export const useAgentStore = defineStore('agent', () => {
   const createMode = ref<CreateMode>('image')
   const activeSkill = ref<SkillId>('chat')
   const inputText = ref('')
-  const isProcessing = ref(false)
+  type ProcessingScope = 'chat' | 'create' | 'world'
+  const processingScope = ref<ProcessingScope | null>(null)
+  const isProcessing = computed(() => processingScope.value !== null)
+  const isChatProcessing = computed(() => processingScope.value === 'chat')
+  const isCreateProcessing = computed(() => processingScope.value === 'create')
+  const isWorldProcessing = computed(() => processingScope.value === 'world')
   const isStreaming = ref(false)
   const pendingAttachments = ref<ParsedAttachment[]>([])
   const selectedCreativeSkillId = ref<string | null>(null)
@@ -58,6 +72,11 @@ export const useAgentStore = defineStore('agent', () => {
   const worldJobId = ref<string | null>(null)
   const worldStatus = ref<string | null>(null)
   const worldPreviewUrl = ref<string | null>(null)
+
+  const imageEditSessionId = ref<string | null>(null)
+  const imageEditActiveId = ref<string | null>(null)
+  const imageEditProcessingSessionId = ref<string | null>(null)
+  const imageEditInput = ref('')
 
   let pollTimer: ReturnType<typeof setInterval> | null = null
 
@@ -86,6 +105,27 @@ export const useAgentStore = defineStore('agent', () => {
     if (!id || !agentConfig.isPluginEnabled(id)) return undefined
     return listPluginSkills().find((s) => s.id === id)
   })
+
+  const imageEditOpen = computed(() => imageEditSessionId.value != null)
+
+  const imageEditVersions = computed(() => {
+    const sid = imageEditSessionId.value
+    if (!sid) return [] as CreateHistoryItem[]
+    return useCreateHistoryStore().sessionItems(sid)
+  })
+
+  const imageEditActive = computed(() => {
+    const versions = imageEditVersions.value
+    if (!versions.length) return null
+    const picked = versions.find((v) => v.id === imageEditActiveId.value)
+    if (picked) return picked
+    for (let i = versions.length - 1; i >= 0; i--) {
+      if (versions[i].status === 'DONE') return versions[i]
+    }
+    return versions[versions.length - 1]
+  })
+
+  const imageEditLoading = computed(() => imageEditActive.value?.status === 'RUNNING')
 
   watch(
     () => conversations.activeId,
@@ -167,12 +207,11 @@ export const useAgentStore = defineStore('agent', () => {
 
   async function handleChat(content: string) {
     const skill = settings.getSkill('chat')
-    const model =
-      resolveModelForChat(agentConfig.skeleton, settings) ??
-      requireModelForSkill('chat')
-    if (!model) {
-      throw new Error('请在「模型配置」填写对话模型 API Key，或在「Agent 配置 → 运行时」设置主模型')
+    const resolved = resolveChatModel(agentConfig.skeleton, settings)
+    if (!resolved.ok) {
+      throw new Error(resolved.error)
     }
+    const model = resolved.model
 
     const fullContent = buildUserContent(content)
     const runtimeHint = formatRuntimeModelHint(model)
@@ -343,18 +382,30 @@ export const useAgentStore = defineStore('agent', () => {
     void imageAtt
   }
 
+  function videoGenParams(prompt: string, imageBase64?: string, model?: ModelConfig) {
+    const prefs = settings.settings.generationPrefs
+    const { width, height } = resolveVideoDimensions(prefs.videoResolution, prefs.videoAspectRatio)
+    return {
+      prompt,
+      imageBase64,
+      model: model?.model,
+      provider: model?.provider,
+      modelConfigId: model?.id,
+      aspectRatio: prefs.videoAspectRatio,
+      resolution: prefs.videoResolution,
+      width,
+      height,
+    }
+  }
+
   async function handleVideoGen(content: string) {
     const model = requireModelForSkill('video')
     if (!model) throw new Error('请配置视频生成模型 API Key')
     const prompt = buildUserContent(content)
     const imageAtt = pendingAttachments.value.find((a) => a.base64)
-    const result = await generateVideo({
-      prompt,
-      imageBase64: imageAtt?.base64,
-      model: model.model,
-      provider: model.provider,
-      modelConfigId: model.id,
-    })
+    const result = await generateVideo(
+      videoGenParams(prompt, imageAtt?.base64, model),
+    )
     addMessage({
       role: 'assistant',
       type: 'video',
@@ -433,7 +484,7 @@ export const useAgentStore = defineStore('agent', () => {
   async function sendMessage(skillOverride?: SkillId) {
     const content = inputText.value.trim()
     if (!content && !pendingAttachments.value.length) return
-    if (isProcessing.value) return
+    if (processingScope.value) return
 
     await conversations.ensureMessagingSession()
     const skill = skillOverride ?? activeSkill.value
@@ -462,7 +513,7 @@ export const useAgentStore = defineStore('agent', () => {
       })
       return
     }
-    isProcessing.value = true
+    processingScope.value = 'chat'
     conversations.setPersistPaused(true)
     const displayContent = content || '（含附件）'
 
@@ -499,10 +550,13 @@ export const useAgentStore = defineStore('agent', () => {
           break
       }
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : '处理失败'
+      const msg = formatUserError(err, '处理失败')
       addMessage({ role: 'assistant', type: 'error', content: msg, skillId: skill })
+      if (skill === 'image' || skill === 'video') {
+        notifyError(err, skill === 'image' ? '图片生成失败' : '视频生成失败')
+      }
     } finally {
-      isProcessing.value = false
+      processingScope.value = null
       conversations.setPersistPaused(false)
       if (!conversations.isIncognito && conversations.activeId) {
         try {
@@ -522,14 +576,207 @@ export const useAgentStore = defineStore('agent', () => {
     return 'chat'
   }
 
+  async function generateCreateMedia(skill: 'image' | 'video') {
+    const content = inputText.value.trim()
+    if (!content && !pendingAttachments.value.length) return
+    if (processingScope.value) return
+
+    processingScope.value = 'create'
+    const displayContent = content || '（含附件）'
+    const prompt = buildUserContent(content)
+    const createHistory = useCreateHistoryStore()
+    const model = requireModelForSkill(skill)
+
+    const entry = createHistory.add({
+      prompt: displayContent,
+      type: skill,
+      status: 'RUNNING',
+      modelId: model?.id,
+      modelName: model?.name,
+    })
+
+    inputText.value = ''
+
+    try {
+      if (!model) {
+        throw new Error(
+          skill === 'image'
+            ? '请在「模型配置」添加图片生成模型并填写 API Key，或在技能配置中绑定'
+            : '请配置视频生成模型 API Key',
+        )
+      }
+
+      if (skill === 'image') {
+        const result = await generateImage({
+          prompt,
+          model: model.model,
+          provider: model.provider,
+          modelConfigId: model.id,
+          baseUrl: model.baseUrl,
+          aspectRatio: settings.settings.generationPrefs.aspectRatio,
+        })
+        await createHistory.complete(entry.id, {
+          url: result.url,
+          previewUrl: result.url,
+          status: 'DONE',
+          sessionId: entry.id,
+        })
+      } else {
+        const imageAtt = pendingAttachments.value.find((a) => a.base64)
+        const result = await generateVideo(
+          videoGenParams(prompt, imageAtt?.base64, model),
+        )
+        await createHistory.complete(entry.id, {
+          url: result.url,
+          previewUrl: result.url,
+          jobId: result.jobId,
+          status: 'DONE',
+        })
+      }
+    } catch (err: unknown) {
+      await createHistory.discard(entry.id)
+      notifyError(err, skill === 'image' ? '图片生成失败' : '视频生成失败')
+      throw err
+    } finally {
+      processingScope.value = null
+      clearAttachments()
+      selectedCreativeSkillId.value = null
+    }
+  }
+
+  function openImageEdit(item: CreateHistoryItem) {
+    if (item.type !== 'image' || item.status !== 'DONE' || !item.url) return
+    const sessionId = item.sessionId || item.id
+    imageEditSessionId.value = sessionId
+    imageEditActiveId.value = item.id
+    imageEditInput.value = ''
+    createMode.value = 'image'
+  }
+
+  function closeImageEdit() {
+    imageEditSessionId.value = null
+    imageEditActiveId.value = null
+    imageEditInput.value = ''
+  }
+
+  function selectImageEditVersion(id: string) {
+    imageEditActiveId.value = id
+  }
+
+  async function deleteGallerySession(sessionId: string) {
+    const createHistory = useCreateHistoryStore()
+    if (imageEditSessionId.value === sessionId) {
+      closeImageEdit()
+    }
+    await createHistory.removeSession(sessionId)
+  }
+
+  async function deleteImageEditSession() {
+    const sessionId = imageEditSessionId.value
+    if (!sessionId) return
+    await deleteGallerySession(sessionId)
+  }
+
+  async function deleteImageEditVersion(versionId: string) {
+    const createHistory = useCreateHistoryStore()
+    const sessionId = imageEditSessionId.value
+    if (!sessionId || !createHistory.isVersionLeaf(versionId)) return false
+
+    const wasActive = imageEditActiveId.value === versionId
+    const ok = await createHistory.removeVersion(versionId)
+    if (!ok) return false
+
+    const remaining = createHistory.sessionItems(sessionId)
+    if (!remaining.length) {
+      closeImageEdit()
+      return true
+    }
+
+    if (wasActive) {
+      const next =
+        [...remaining].reverse().find((v) => v.status === 'DONE') ??
+        remaining[remaining.length - 1]
+      imageEditActiveId.value = next.id
+    }
+    return true
+  }
+
+  function canDeleteImageEditVersion(versionId: string) {
+    return useCreateHistoryStore().isVersionLeaf(versionId)
+  }
+
+  async function submitImageEdit() {
+    const prompt = imageEditInput.value.trim()
+    const active = imageEditActive.value
+    const sessionId = imageEditSessionId.value
+    if (!prompt || !active?.url || !sessionId) return
+
+    const createHistory = useCreateHistoryStore()
+    if (createHistory.sessionItems(sessionId).some((v) => v.status === 'RUNNING')) return
+    if (imageEditProcessingSessionId.value === sessionId) return
+
+    imageEditProcessingSessionId.value = sessionId
+    const model =
+      (active.modelId ? settings.getModel(active.modelId) : null) ??
+      requireModelForSkill('image')
+
+    const entry = createHistory.add({
+      prompt,
+      type: 'image',
+      status: 'RUNNING',
+      parentId: active.id,
+      sessionId,
+      modelId: model?.id,
+      modelName: model?.name,
+    })
+    imageEditActiveId.value = entry.id
+    imageEditInput.value = ''
+
+    try {
+      if (!model) throw new Error('请在「模型配置」添加图片生成模型并填写 API Key')
+      const result = await generateImage({
+        prompt,
+        imageUrl: active.url,
+        model: model.model,
+        provider: model.provider,
+        modelConfigId: model.id,
+        baseUrl: model.baseUrl,
+        aspectRatio: settings.settings.generationPrefs.aspectRatio,
+      })
+      await createHistory.complete(entry.id, {
+        url: result.url,
+        previewUrl: result.url,
+        status: 'DONE',
+      })
+    } catch (err: unknown) {
+      await createHistory.discard(entry.id)
+      imageEditActiveId.value = active.id
+      notifyError(err, '图片编辑失败')
+      console.error('[image-edit]', err)
+    } finally {
+      imageEditProcessingSessionId.value = null
+    }
+  }
+
   async function generateFromStudio() {
     const skill = skillFromCreateMode(createMode.value)
-    currentView.value = 'chat'
-    conversations.ensureMessagingSession()
+    if (skill === 'chat') {
+      currentView.value = 'chat'
+      await conversations.ensureMessagingSession()
+      try {
+        await sendMessage('chat')
+      } finally {
+        activeSkill.value = 'chat'
+      }
+      return
+    }
+
+    if (skill !== 'image' && skill !== 'video') return
+
     try {
-      await sendMessage(skill)
-    } finally {
-      activeSkill.value = 'chat'
+      await generateCreateMedia(skill)
+    } catch (err: unknown) {
+      console.error('[create]', err)
     }
   }
 
@@ -565,12 +812,15 @@ export const useAgentStore = defineStore('agent', () => {
     resetChatSurface()
   }
 
-  function deleteConversation(id: string) {
-    conversations.deleteConversation(id)
+  async function deleteConversation(id: string) {
+    await conversations.deleteConversation(id)
   }
 
   async function initConversations() {
     await conversations.hydrate()
+    const createHistory = useCreateHistoryStore()
+    await createHistory.hydrate()
+    await createHistory.migrateFromConversations(conversations.list)
     conversations.ensureActive()
   }
 
@@ -582,6 +832,9 @@ export const useAgentStore = defineStore('agent', () => {
       activeSkill.value = 'chat'
     }
     currentView.value = id
+    if (id === 'create') {
+      void useCreateHistoryStore().hydrate(true)
+    }
   }
 
   function exitWorld() {
@@ -592,8 +845,8 @@ export const useAgentStore = defineStore('agent', () => {
     content: string,
     opts?: { imageBase64?: string; previewUrl?: string },
   ) {
-    if (isProcessing.value) return
-    isProcessing.value = true
+    if (processingScope.value) return
+    processingScope.value = 'world'
     clearAttachments()
     if (opts?.imageBase64) {
       pendingAttachments.value.push({
@@ -609,7 +862,7 @@ export const useAgentStore = defineStore('agent', () => {
     try {
       await handleWorldGen(content)
     } finally {
-      isProcessing.value = false
+      processingScope.value = null
       clearAttachments()
     }
   }
@@ -624,6 +877,9 @@ export const useAgentStore = defineStore('agent', () => {
     messages,
     inputText,
     isProcessing,
+    isChatProcessing,
+    isCreateProcessing,
+    isWorldProcessing,
     isStreaming,
     pendingAttachments,
     selectedCreativeSkillId,
@@ -633,6 +889,19 @@ export const useAgentStore = defineStore('agent', () => {
     worldJobId,
     worldStatus,
     worldPreviewUrl,
+    imageEditOpen,
+    imageEditVersions,
+    imageEditActive,
+    imageEditLoading,
+    imageEditInput,
+    openImageEdit,
+    closeImageEdit,
+    selectImageEditVersion,
+    deleteGallerySession,
+    deleteImageEditSession,
+    deleteImageEditVersion,
+    canDeleteImageEditVersion,
+    submitImageEdit,
     addAttachments,
     removeAttachment,
     clearAttachments,

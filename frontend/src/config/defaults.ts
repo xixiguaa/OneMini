@@ -1,4 +1,4 @@
-import type { SkillConfig } from '../types/agent'
+import type { ModelCapability, SkillConfig } from '../types/agent'
 
 export const DEFAULT_SKILLS: SkillConfig[] = [
   {
@@ -45,6 +45,48 @@ export const CAPABILITY_LABELS: Record<string, string> = {
   image: '图片生成',
   video: '视频生成',
   world: '世界生成',
+}
+
+/** 模型配置页侧栏分组 */
+export type ModelConfigGroupId = 'language' | 'vision' | 'embodied'
+
+export const VISION_MEDIA_TYPES: { value: 'image' | 'video'; label: string }[] = [
+  { value: 'image', label: '图片' },
+  { value: 'video', label: '视频' },
+]
+
+export const MODEL_CONFIG_GROUPS: {
+  id: ModelConfigGroupId
+  label: string
+  capabilities: ModelCapability[]
+  defaultCapability: ModelCapability
+}[] = [
+  { id: 'language', label: '语言模型', capabilities: ['chat'], defaultCapability: 'chat' },
+  { id: 'vision', label: '视觉模型', capabilities: ['image', 'video'], defaultCapability: 'image' },
+  { id: 'embodied', label: '物理 / 具身', capabilities: ['world'], defaultCapability: 'world' },
+]
+
+export function getModelConfigGroup(cap: ModelCapability) {
+  return MODEL_CONFIG_GROUPS.find((g) => g.capabilities.includes(cap))
+}
+
+export function getModelConfigGroupById(id: ModelConfigGroupId) {
+  return MODEL_CONFIG_GROUPS.find((g) => g.id === id)
+}
+
+/** 模型配置中的能力展示名（技能页仍用 CAPABILITY_LABELS） */
+export function getModelCapabilityLabel(cap: ModelCapability): string {
+  const group = getModelConfigGroup(cap)
+  if (!group) return cap
+  if (group.id === 'vision') {
+    const media = VISION_MEDIA_TYPES.find((m) => m.value === cap)
+    return media ? `${group.label} · ${media.label}` : group.label
+  }
+  return group.label
+}
+
+export function getVisionMediaLabel(cap: 'image' | 'video'): string {
+  return VISION_MEDIA_TYPES.find((m) => m.value === cap)?.label ?? cap
 }
 
 export { PROVIDER_LABELS } from './providers'

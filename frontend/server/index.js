@@ -101,17 +101,42 @@ app.post('/api/image', async (req, res) => {
   }
 })
 
+function resolveVideoSize(resolution, aspectRatio) {
+  const heightPx = { 480: 480, 720: 720, 1080: 1080 }
+  const base = heightPx[Number(resolution)] || heightPx[resolution] || 720
+  const ratioId = aspectRatio === 'smart' || !aspectRatio ? '16:9' : aspectRatio
+  const parts = String(ratioId).split(':').map((n) => parseInt(n, 10))
+  if (parts.length !== 2 || parts.some((n) => !n)) return { width: 1280, height: 720 }
+  const [wR, hR] = parts
+  const align = (n) => Math.max(2, Math.round(n / 2) * 2)
+  if (wR >= hR) {
+    const height = base
+    return { width: align((height * wR) / hR), height }
+  }
+  const width = base
+  return { width, height: align((width * hR) / wR) }
+}
+
 /** 视频生成（任务占位） */
 app.post('/api/video', async (req, res) => {
   try {
-    const { prompt } = req.body
+    const { prompt, aspect_ratio, resolution, width, height } = req.body
     if (!prompt) return res.status(400).json({ error: '缺少 prompt' })
+
+    const size =
+      width && height
+        ? { width: Number(width), height: Number(height) }
+        : resolveVideoSize(resolution, aspect_ratio)
 
     const jobId = `video-${Date.now()}`
     res.json({
       jobId,
       status: 'WAIT',
-      message: `【演示】视频生成任务已创建：「${prompt.slice(0, 60)}…」\n接入混元/可灵等视频 API 后将返回真实视频地址。`,
+      width: size.width,
+      height: size.height,
+      aspectRatio: aspect_ratio || '16:9',
+      resolution: resolution || '720',
+      message: `【演示】视频生成任务已创建（${size.width}×${size.height}）：「${prompt.slice(0, 60)}…」\n接入混元/可灵等视频 API 后将返回真实视频地址。`,
     })
   } catch (err) {
     console.error('[video]', err)

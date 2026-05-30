@@ -40,12 +40,15 @@ export function truncateHistory<T>(items: T[], max: number): T[] {
 }
 
 /** 标明本条回复实际调用的模型（注入 system，勿复述给用户） */
-export function formatRuntimeModelHint(model: Pick<ModelConfig, 'name' | 'provider' | 'model'>): string {
+export function formatRuntimeModelHint(model: Pick<ModelConfig, 'name' | 'provider' | 'model' | 'baseUrl'>): string {
   const display = model.name?.trim() || model.model
   return (
     '【内部·运行时模型】实际调用：' +
-    `${display}。` +
-    '输入框所选模型优先于 Agent 骨架 primary/fallback。' +
-    '若用户询问当前模型，仅用上述名称简短回答（如 DeepSeek V4），不要加括号、不要补充 provider、API 型号等技术细节，也不要逐字复述本段。'
+    `${display}（${model.model}）。` +
+    'Base URL：' +
+    `${model.baseUrl?.trim() || '服务商默认'}。` +
+    '输入框所选模型即为实际调用，不可改用其它模型。' +
+    '若用户询问当前模型，必须仅依据本段「实际调用」名称回答，' +
+    '忽略对话历史中此前关于模型的说法；仅用上述名称简短回答，不要加括号、不要补充 provider 等技术细节。'
   )
 }

@@ -1,11 +1,28 @@
 <script setup lang="ts">
 import { Settings2 } from 'lucide-vue-next'
-import { ASPECT_RATIOS } from '../config/constants'
+import { ASPECT_RATIOS, VIDEO_ASPECT_RATIOS, VIDEO_RESOLUTIONS } from '../config/constants'
 import { useAgentStore } from '../stores/agent'
 import { useSettingsStore } from '../stores/settings'
+import { applyAspectRatioToPrompt, applyVideoPrefsToPrompt } from '../utils/aspectRatioPrompt'
 
 const agent = useAgentStore()
 const settings = useSettingsStore()
+const prefs = () => settings.settings.generationPrefs
+
+function pickImageRatio(id: string) {
+  settings.updateGenerationPrefs({ aspectRatio: id })
+  agent.inputText = applyAspectRatioToPrompt(agent.inputText, id)
+}
+
+function pickVideoRatio(id: string) {
+  settings.updateGenerationPrefs({ videoAspectRatio: id })
+  agent.inputText = applyVideoPrefsToPrompt(agent.inputText, id, prefs().videoResolution)
+}
+
+function pickVideoResolution(id: string) {
+  settings.updateGenerationPrefs({ videoResolution: id })
+  agent.inputText = applyVideoPrefsToPrompt(agent.inputText, prefs().videoAspectRatio, id)
+}
 </script>
 
 <template>
@@ -46,18 +63,51 @@ const settings = useSettingsStore()
         </button>
       </div>
 
-      <p class="label">选择比例</p>
-      <div class="ratio-grid">
-        <button
-          v-for="r in ASPECT_RATIOS"
-          :key="r.id"
-          class="ratio-btn"
-          :class="{ active: settings.settings.generationPrefs.aspectRatio === r.id }"
-          @click="settings.updateGenerationPrefs({ aspectRatio: r.id })"
-        >
-          {{ r.label }}
-        </button>
-      </div>
+      <template v-if="agent.createMode !== 'video'">
+        <p class="label">选择比例</p>
+        <div class="ratio-grid">
+          <button
+            v-for="r in ASPECT_RATIOS"
+            :key="r.id"
+            class="ratio-btn"
+            :class="{ active: prefs().aspectRatio === r.id }"
+            @click="pickImageRatio(r.id)"
+          >
+            {{ r.label }}
+          </button>
+        </div>
+      </template>
+
+      <template v-else>
+        <p class="label">画面比例</p>
+        <div class="ratio-grid">
+          <button
+            v-for="r in VIDEO_ASPECT_RATIOS"
+            :key="r.id"
+            type="button"
+            class="ratio-btn"
+            :class="{ active: prefs().videoAspectRatio === r.id }"
+            @click="pickVideoRatio(r.id)"
+          >
+            {{ r.label }}
+          </button>
+        </div>
+
+        <p class="label">分辨率</p>
+        <div class="ratio-grid resolution-grid">
+          <button
+            v-for="res in VIDEO_RESOLUTIONS"
+            :key="res.id"
+            type="button"
+            class="ratio-btn"
+            :class="{ active: prefs().videoResolution === res.id }"
+            :title="res.hint"
+            @click="pickVideoResolution(res.id)"
+          >
+            {{ res.label }}
+          </button>
+        </div>
+      </template>
 
       <p class="label">绑定模型</p>
       <p class="hint">在「模型配置」中添加图片/视频模型并填写密钥</p>
@@ -202,5 +252,9 @@ const settings = useSettingsStore()
 .hint {
   font-size: 11px;
   color: $text-muted;
+}
+
+.resolution-grid .ratio-btn {
+  min-width: 52px;
 }
 </style>

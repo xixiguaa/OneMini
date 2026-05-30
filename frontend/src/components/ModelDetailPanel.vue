@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import type { ModelConfig } from '../types/agent'
-import { CAPABILITY_LABELS, PROVIDER_LABELS } from '../config/defaults'
+import { getModelCapabilityLabel, PROVIDER_LABELS } from '../config/defaults'
 import { getProviderLogo } from '../config/providers'
 import { findModelOption } from '../config/providerModels'
 import { useSettingsStore } from '../stores/settings'
@@ -21,7 +21,28 @@ async function onConfigureModel(
   if (payload.apiKey) {
     await settings.saveModelSecret(props.model.id, payload.apiKey)
   }
-  if (payload.enable) settings.enableModel(props.model.id)
+  if (payload.enable) {
+    settings.enableModel(props.model.id)
+    settings.bindModelToSkill(props.model.id)
+  }
+}
+
+const isActiveForSkill = computed(() => {
+  if (!props.model) return false
+  const skillMap = {
+    chat: 'chat',
+    image: 'image',
+    video: 'video',
+    world: 'world',
+  } as const
+  const skillId = skillMap[props.model.capability as keyof typeof skillMap]
+  if (!skillId) return false
+  return settings.getSkill(skillId)?.defaultModelId === props.model.id
+})
+
+function useThisModel() {
+  if (!props.model) return
+  settings.bindModelToSkill(props.model.id)
 }
 
 const modelOptionLabel = computed(() => {
@@ -44,7 +65,7 @@ const modelOptionLabel = computed(() => {
             @input="settings.updateModel(model.id, { name: ($event.target as HTMLInputElement).value })"
           />
         </label>
-        <p>{{ PROVIDER_LABELS[model.provider] }} · {{ CAPABILITY_LABELS[model.capability] }}</p>
+        <p>{{ PROVIDER_LABELS[model.provider] }} · {{ getModelCapabilityLabel(model.capability) }}</p>
       </div>
     </div>
 
@@ -88,6 +109,11 @@ const modelOptionLabel = computed(() => {
         @input="settings.updateModel(model.id, { baseUrl: ($event.target as HTMLInputElement).value })"
       />
     </label>
+
+    <div v-if="model.enabled && ['chat', 'image', 'video', 'world'].includes(model.capability)" class="use-model-row">
+      <p v-if="isActiveForSkill" class="use-hint active">当前已在对话/创作中使用此模型</p>
+      <button v-else type="button" class="use-btn" @click="useThisModel">设为当前使用模型</button>
+    </div>
   </div>
 
   <div v-else class="empty">
@@ -209,6 +235,35 @@ const modelOptionLabel = computed(() => {
   padding: 3px;
   flex-shrink: 0;
   box-sizing: border-box;
+}
+
+.use-model-row {
+  margin-top: 4px;
+}
+
+.use-hint {
+  font-size: 12px;
+  color: $text-secondary;
+
+  &.active {
+    color: $accent;
+    font-weight: 500;
+  }
+}
+
+.use-btn {
+  padding: 8px 14px;
+  border: 1px solid $border-light;
+  border-radius: 8px;
+  font-size: 12px;
+  color: $text-secondary;
+  background: $btn-ghost-bg;
+
+  &:hover {
+    border-color: $accent;
+    color: $accent;
+    background: $accent-light;
+  }
 }
 
 .empty {

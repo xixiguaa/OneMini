@@ -2,13 +2,19 @@
 import { Plus, Trash2 } from 'lucide-vue-next'
 import { computed, ref } from 'vue'
 import { useConfirmDialog } from '../composables/useConfirmDialog'
-import { CAPABILITY_LABELS } from '../config/defaults'
+import {
+  getModelConfigGroup,
+  getVisionMediaLabel,
+  MODEL_CONFIG_GROUPS,
+  type ModelConfigGroupId,
+} from '../config/defaults'
+import { isModelReady } from '../utils/resolveModel'
 import ConfirmDialog from './ConfirmDialog.vue'
 import ModelAddPanel from './ModelAddPanel.vue'
 import ModelDetailPanel from './ModelDetailPanel.vue'
 import { useSettingsStore } from '../stores/settings'
 import ModelLogo from './ModelLogo.vue'
-import type { ModelCapability, ModelConfig } from '../types/agent'
+import type { ModelConfig } from '../types/agent'
 
 const settings = useSettingsStore()
 const {
@@ -29,14 +35,12 @@ const {
 const deleteTarget = ref<ModelConfig | null>(null)
 const selectedId = ref<string | null>('deepseek-v4-pro')
 const rightMode = ref<'detail' | 'add'>('detail')
-
-const caps: ModelCapability[] = ['chat', 'image', 'video', 'world']
+const addGroupId = ref<ModelConfigGroupId>('language')
 
 const grouped = computed(() =>
-  caps.map((cap) => ({
-    cap,
-    label: CAPABILITY_LABELS[cap],
-    models: settings.settings.models.filter((m) => m.capability === cap),
+  MODEL_CONFIG_GROUPS.map((group) => ({
+    ...group,
+    models: settings.settings.models.filter((m) => group.capabilities.includes(m.capability)),
   })),
 )
 
@@ -47,9 +51,15 @@ const selectedModel = computed(() =>
 function selectModel(m: ModelConfig) {
   selectedId.value = m.id
   rightMode.value = 'detail'
+  const group = getModelConfigGroup(m.capability)
+  if (group) addGroupId.value = group.id
+  if (isModelReady(m)) {
+    settings.bindModelToSkill(m.id)
+  }
 }
 
-function openAdd() {
+function openAdd(groupId: ModelConfigGroupId) {
+  addGroupId.value = groupId
   rightMode.value = 'add'
 }
 
@@ -58,7 +68,7 @@ function onSaved(id: string) {
   rightMode.value = 'add'
 }
 
-function pickSelectionAfterDelete(removedId: string, capability: ModelCapability) {
+function pickSelectionAfterDelete(removedId: string, capability: ModelConfig['capability']) {
   const remaining = settings.settings.models.filter(
     (m) => m.capability === capability && m.id !== removedId,
   )
@@ -111,6 +121,29 @@ function modelState(m: ModelConfig) {
   if (m.secretConfigured || m.provider === 'tencent') return '待启用'
   return '未配置'
 }
+
+function modelMeta(m: ModelConfig) {
+  const state = modelState(m)
+  const tags: string[] = []
+  if (m.capability === 'image' || m.capability === 'video') {
+    tags.push(getVisionMediaLabel(m.capability))
+  }
+  const skillId =
+    m.capability === 'chat'
+      ? 'chat'
+      : m.capability === 'image'
+        ? 'image'
+        : m.capability === 'video'
+          ? 'video'
+          : m.capability === 'world'
+            ? 'world'
+            : null
+  if (skillId && settings.getSkill(skillId)?.defaultModelId === m.id) {
+    tags.push('使用中')
+  }
+  tags.push(state)
+  return tags.join(' · ')
+}
 </script>
 
 <template>
@@ -119,10 +152,21 @@ function modelState(m: ModelConfig) {
       <aside class="model-list card">
         <div
           v-for="group in grouped"
-          :key="group.cap"
+          :key="group.id"
           class="group"
+          :class="{ 'group-active': rightMode === 'add' && addGroupId === group.id }"
         >
-          <p class="group-label">{{ group.label }}</p>
+          <div class="group-head">
+            <p class="group-label">{{ group.label }}</p>
+            <button
+              type="button"
+              class="group-add"
+              :title="`添加${group.label}`"
+              @click="openAdd(group.id)"
+            >
+              <Plus :size="14" />
+            </button>
+          </div>
           <div
             v-for="m in group.models"
             :key="m.id"
@@ -131,7 +175,7 @@ function modelState(m: ModelConfig) {
             <button
               class="model-item"
               :class="{
-                active: selectedId === m.id,
+                active: rightMode === 'detail' && selectedId === m.id,
                 enabled: m.enabled,
                 pending: !m.enabled && !!(m.secretConfigured || m.provider === 'tencent'),
               }"
@@ -140,7 +184,7 @@ function modelState(m: ModelConfig) {
               <ModelLogo :model="m" :size="36" />
               <div class="item-text">
                 <span class="name">{{ m.name }}</span>
-                <span class="state">{{ modelState(m) }}</span>
+                <span class="state">{{ modelMeta(m) }}</span>
               </div>
             </button>
             <button
@@ -153,16 +197,17 @@ function modelState(m: ModelConfig) {
               <Trash2 :size="14" />
             </button>
           </div>
+          <p v-if="!group.models.length" class="group-empty">暂无模型</p>
         </div>
-
-        <button class="add-trigger" @click="openAdd">
-          <Plus :size="16" />
-          添加自定义模型
-        </button>
       </aside>
 
       <section class="right-panel card">
-        <ModelAddPanel v-if="rightMode === 'add'" @saved="onSaved" />
+        <ModelAddPanel
+          v-if="rightMode === 'add'"
+          :key="addGroupId"
+          :group-id="addGroupId"
+          @saved="onSaved"
+        />
         <ModelDetailPanel v-else :model="selectedModel" />
       </section>
     </div>
@@ -215,6 +260,24 @@ function modelState(m: ModelConfig) {
   flex-direction: column;
   padding: 12px;
   overflow-y: auto;
+  gap: 8px;
+}
+
+.group {
+  padding-bottom: 4px;
+
+  &.group-active {
+    .group-head {
+      color: $accent;
+    }
+  }
+}
+
+.group-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 8px 6px;
 }
 
 .group-label {
@@ -223,7 +286,28 @@ function modelState(m: ModelConfig) {
   color: $text-muted;
   text-transform: uppercase;
   letter-spacing: 0.05em;
-  padding: 8px 8px 6px;
+}
+
+.group-add {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  color: $text-muted;
+  transition: color 0.15s, background 0.15s;
+
+  &:hover {
+    color: $accent;
+    background: $accent-light;
+  }
+}
+
+.group-empty {
+  padding: 4px 10px 8px;
+  font-size: 12px;
+  color: $text-muted;
 }
 
 .model-item-wrap {
@@ -316,25 +400,6 @@ function modelState(m: ModelConfig) {
     font-size: 11px;
     color: $text-secondary;
     margin-top: 2px;
-  }
-}
-
-.add-trigger {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  margin-top: auto;
-  padding: 12px;
-  border: 1px dashed $border-light;
-  border-radius: 10px;
-  font-size: 13px;
-  color: $text-secondary;
-
-  &:hover {
-    border-color: $accent;
-    color: $accent;
-    background: $accent-light;
   }
 }
 

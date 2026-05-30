@@ -67,6 +67,18 @@ export interface ChatMessage {
   }
 }
 
+export type ConversationTimeGroup =
+  | 'today'
+  | 'yesterday'
+  | 'last7days'
+  | 'last30days'
+  | 'older'
+
+export interface ConversationGroup {
+  key: ConversationTimeGroup
+  conversations: Conversation[]
+}
+
 export interface Conversation {
   id: string
   title: string
@@ -76,7 +88,12 @@ export interface Conversation {
 }
 
 export interface GenerationPrefs {
+  /** 图片宽高比 */
   aspectRatio: string
+  /** 视频宽高比 */
+  videoAspectRatio: string
+  /** 视频分辨率：480 | 720 | 1080 */
+  videoResolution: string
   autoMode: boolean
 }
 
@@ -89,6 +106,8 @@ export interface AgentSettings {
 export const APP_VERSION = 'V1.0.0'
 
 export const DEFAULT_GENERATION_PREFS: GenerationPrefs = {
-  aspectRatio: 'smart',
+  aspectRatio: '1:1',
+  videoAspectRatio: '16:9',
+  videoResolution: '720',
   autoMode: true,
 }

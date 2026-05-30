@@ -14,6 +14,32 @@ export interface ProviderModelOption {
 
 const MANUAL: ProviderModelOption = { model: '', label: '手动填写 model 标识' }
 
+const ARK_BASE = 'https://ark.cn-beijing.volces.com/api/plan/v3'
+const DEEPSEEK_BASE = 'https://api.deepseek.com/v1'
+const ZHIPU_BASE = 'https://open.bigmodel.cn/api/paas/v4'
+const MINIMAX_BASE = 'https://api.minimax.chat/v1'
+const MOONSHOT_BASE = 'https://api.moonshot.cn/v1'
+const DOUBAO_SEEDREAM_5_LITE: ProviderModelOption = {
+  model: 'doubao-seedream-5.0-lite',
+  label: 'Doubao-Seedream-5.0-lite',
+  baseUrl: ARK_BASE,
+}
+const DOUBAO_SEEDANCE_2: ProviderModelOption = {
+  model: 'doubao-seedance-2.0',
+  label: 'Doubao-Seedance-2.0',
+  baseUrl: ARK_BASE,
+}
+const DOUBAO_SEEDANCE_2_FAST: ProviderModelOption = {
+  model: 'doubao-seedance-2.0-fast',
+  label: 'Doubao-Seedance-2.0-fast',
+  baseUrl: ARK_BASE,
+}
+const DOUBAO_SEEDANCE_1_5_PRO: ProviderModelOption = {
+  model: 'doubao-seedance-1.5-pro',
+  label: 'Doubao-Seedance-1.5-pro',
+  baseUrl: ARK_BASE,
+}
+
 /** 各服务商在对应能力下可选的具体模型（用于 API 路由） */
 export const PROVIDER_MODEL_OPTIONS: Record<
   ModelProvider,
@@ -21,8 +47,11 @@ export const PROVIDER_MODEL_OPTIONS: Record<
 > = {
   deepseek: {
     chat: [
-      { model: 'deepseek-chat', label: 'DeepSeek Chat', baseUrl: 'https://api.deepseek.com/v1' },
-      { model: 'deepseek-reasoner', label: 'DeepSeek Reasoner', baseUrl: 'https://api.deepseek.com/v1' },
+      { model: 'deepseek-v4-pro', label: 'DeepSeek V4 Pro', baseUrl: DEEPSEEK_BASE },
+      { model: 'deepseek-v4-flash', label: 'DeepSeek V4 Flash', baseUrl: DEEPSEEK_BASE },
+      { model: 'deepseek-v3.2', label: 'DeepSeek V3.2', baseUrl: DEEPSEEK_BASE },
+      { model: 'deepseek-chat', label: 'DeepSeek Chat', baseUrl: DEEPSEEK_BASE },
+      { model: 'deepseek-reasoner', label: 'DeepSeek Reasoner', baseUrl: DEEPSEEK_BASE },
     ],
   },
   openai: {
@@ -41,10 +70,7 @@ export const PROVIDER_MODEL_OPTIONS: Record<
     ],
   },
   zhipu: {
-    chat: [
-      { model: 'glm-4-plus', label: 'GLM-4 Plus', baseUrl: 'https://open.bigmodel.cn/api/paas/v4' },
-      { model: 'glm-4-flash', label: 'GLM-4 Flash', baseUrl: 'https://open.bigmodel.cn/api/paas/v4' },
-    ],
+    chat: [{ model: 'glm-5.1', label: 'GLM-5.1', baseUrl: ZHIPU_BASE }],
     image: [{ model: 'cogview-3-plus', label: 'CogView 3 Plus', baseUrl: 'https://open.bigmodel.cn/api/paas/v4' }],
   },
   qwen: {
@@ -62,15 +88,24 @@ export const PROVIDER_MODEL_OPTIONS: Record<
   },
   doubao: {
     chat: [
-      { model: 'doubao-pro-32k', label: '豆包 Pro', baseUrl: 'https://ark.cn-beijing.volces.com/api/v3' },
+      { model: 'doubao-seed-2.0-pro', label: 'Doubao Seed 2.0 Pro', baseUrl: ARK_BASE },
+      { model: 'doubao-seed-2.0-code', label: 'Doubao Seed 2.0 Code', baseUrl: ARK_BASE },
+      { model: 'doubao-seed-2.0-lite', label: 'Doubao Seed 2.0 Lite', baseUrl: ARK_BASE },
+      { model: 'doubao-seed-2.0-mini', label: 'Doubao Seed 2.0 Mini', baseUrl: ARK_BASE },
+      { model: 'doubao-pro-32k', label: '豆包 Pro', baseUrl: ARK_BASE },
     ],
-    image: [MANUAL],
-    video: [MANUAL],
+    image: [DOUBAO_SEEDREAM_5_LITE],
+    video: [DOUBAO_SEEDANCE_2, DOUBAO_SEEDANCE_2_FAST, DOUBAO_SEEDANCE_1_5_PRO],
   },
   bytedance: {
-    chat: [MANUAL],
-    image: [MANUAL],
-    video: [MANUAL],
+    chat: [
+      { model: 'doubao-seed-2.0-pro', label: 'Doubao Seed 2.0 Pro', baseUrl: ARK_BASE },
+      { model: 'doubao-seed-2.0-code', label: 'Doubao Seed 2.0 Code', baseUrl: ARK_BASE },
+      { model: 'doubao-seed-2.0-lite', label: 'Doubao Seed 2.0 Lite', baseUrl: ARK_BASE },
+      { model: 'doubao-seed-2.0-mini', label: 'Doubao Seed 2.0 Mini', baseUrl: ARK_BASE },
+    ],
+    image: [DOUBAO_SEEDREAM_5_LITE],
+    video: [DOUBAO_SEEDANCE_2, DOUBAO_SEEDANCE_2_FAST, DOUBAO_SEEDANCE_1_5_PRO],
   },
   tencent: {
     world: [
@@ -93,9 +128,10 @@ export const PROVIDER_MODEL_OPTIONS: Record<
     video: [MANUAL],
   },
   minimax: {
-    chat: [
-      { model: 'abab6.5s-chat', label: 'MiniMax 对话', baseUrl: 'https://api.minimax.chat/v1' },
-    ],
+    chat: [{ model: 'minimax-m2.7', label: 'MiniMax M2.7', baseUrl: MINIMAX_BASE }],
+  },
+  moonshot: {
+    chat: [{ model: 'kimi-k2.6', label: 'Kimi K2.6', baseUrl: MOONSHOT_BASE }],
   },
   grok: {
     chat: [MANUAL],

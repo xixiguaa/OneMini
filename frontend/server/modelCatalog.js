@@ -3,13 +3,41 @@
  * 分类、标签、中文名由产品维护；model 字段为 API 调用标识（Ark 等需替换为接入点 ID 时在 description 说明）
  */
 
-const ARK_BASE = 'https://ark.cn-beijing.volces.com/api/v3'
+const ARK_BASE = 'https://ark.cn-beijing.volces.com/api/plan/v3'
+
+/** 豆包视觉模型（预设选择与兜底列表共用同一 model 标识） */
+const DOUBAO_SEEDREAM_5_LITE = {
+  model: 'doubao-seedream-5.0-lite',
+  label: 'Doubao-Seedream-5.0-lite',
+  baseUrl: ARK_BASE,
+}
+const DOUBAO_SEEDANCE_2 = {
+  model: 'doubao-seedance-2.0',
+  label: 'Doubao-Seedance-2.0',
+  baseUrl: ARK_BASE,
+}
+const DOUBAO_SEEDANCE_2_FAST = {
+  model: 'doubao-seedance-2.0-fast',
+  label: 'Doubao-Seedance-2.0-fast',
+  baseUrl: ARK_BASE,
+}
+const DOUBAO_SEEDANCE_1_5_PRO = {
+  model: 'doubao-seedance-1.5-pro',
+  label: 'Doubao-Seedance-1.5-pro',
+  baseUrl: ARK_BASE,
+}
 const DEEPSEEK_BASE = 'https://api.deepseek.com/v1'
 const OPENAI_BASE = 'https://api.openai.com/v1'
 const ANTHROPIC_BASE = 'https://api.anthropic.com/v1'
 const ZHIPU_BASE = 'https://open.bigmodel.cn/api/paas/v4'
 const QWEN_BASE = 'https://dashscope.aliyuncs.com/compatible-mode/v1'
 const MINIMAX_BASE = 'https://api.minimax.chat/v1'
+const MOONSHOT_BASE = 'https://api.moonshot.cn/v1'
+
+/** 语言模型预设（model 字段与 API 调用标识一致） */
+function langModel(id, label, baseUrl, extra = {}) {
+  return { id, model: id, label, baseUrl, ...extra }
+}
 
 /** @typedef {{ text: string, variant?: 'beta'|'preview'|'featured'|'info' }} CatalogTag */
 /** @typedef {{ id: string, model: string, label: string, description?: string, baseUrl?: string, tags?: CatalogTag[] }} CatalogModel */
@@ -24,20 +52,19 @@ export const MODEL_CATALOG = {
           id: 'language',
           label: '语言对话',
           models: [
-            {
-              id: 'deepseek-chat',
-              model: 'deepseek-chat',
-              label: 'DeepSeek Chat',
-              baseUrl: DEEPSEEK_BASE,
+            langModel('deepseek-v4-pro', 'DeepSeek V4 Pro', DEEPSEEK_BASE, {
+              tags: [{ text: '旗舰', variant: 'featured' }],
+            }),
+            langModel('deepseek-v4-flash', 'DeepSeek V4 Flash', DEEPSEEK_BASE, {
+              tags: [{ text: '快速', variant: 'info' }],
+            }),
+            langModel('deepseek-v3.2', 'DeepSeek V3.2', DEEPSEEK_BASE),
+            langModel('deepseek-chat', 'DeepSeek Chat', DEEPSEEK_BASE, {
               tags: [{ text: '通用对话', variant: 'info' }],
-            },
-            {
-              id: 'deepseek-reasoner',
-              model: 'deepseek-reasoner',
-              label: 'DeepSeek Reasoner',
-              baseUrl: DEEPSEEK_BASE,
+            }),
+            langModel('deepseek-reasoner', 'DeepSeek Reasoner', DEEPSEEK_BASE, {
               tags: [{ text: '深度推理', variant: 'featured' }],
-            },
+            }),
           ],
         },
       ],
@@ -126,9 +153,9 @@ export const MODEL_CATALOG = {
           id: 'language',
           label: '语言对话',
           models: [
-            { id: 'glm-4-plus', model: 'glm-4-plus', label: 'GLM-4 Plus', baseUrl: ZHIPU_BASE },
-            { id: 'glm-4-flash', model: 'glm-4-flash', label: 'GLM-4 Flash', baseUrl: ZHIPU_BASE },
-            { id: 'glm-4-air', model: 'glm-4-air', label: 'GLM-4 Air', baseUrl: ZHIPU_BASE, tags: [{ text: '高性价比', variant: 'info' }] },
+            langModel('glm-5.1', 'GLM-5.1', ZHIPU_BASE, {
+              tags: [{ text: '最新', variant: 'featured' }],
+            }),
           ],
         },
       ],
@@ -192,6 +219,18 @@ export const MODEL_CATALOG = {
           id: 'language',
           label: '语言对话',
           models: [
+            langModel('doubao-seed-2.0-pro', 'Doubao Seed 2.0 Pro', ARK_BASE, {
+              tags: [{ text: '旗舰', variant: 'featured' }],
+            }),
+            langModel('doubao-seed-2.0-code', 'Doubao Seed 2.0 Code', ARK_BASE, {
+              tags: [{ text: '代码', variant: 'info' }],
+            }),
+            langModel('doubao-seed-2.0-lite', 'Doubao Seed 2.0 Lite', ARK_BASE, {
+              tags: [{ text: '轻量', variant: 'info' }],
+            }),
+            langModel('doubao-seed-2.0-mini', 'Doubao Seed 2.0 Mini', ARK_BASE, {
+              tags: [{ text: '高性价比', variant: 'info' }],
+            }),
             {
               id: 'doubao-pro-32k',
               model: 'doubao-pro-32k',
@@ -216,6 +255,13 @@ export const MODEL_CATALOG = {
           id: 'image',
           label: '图片生成',
           models: [
+            {
+              id: 'seedream-5-lite',
+              model: DOUBAO_SEEDREAM_5_LITE.model,
+              label: DOUBAO_SEEDREAM_5_LITE.label,
+              baseUrl: ARK_BASE,
+              tags: [{ text: '轻量', variant: 'info' }],
+            },
             {
               id: 'seedream-5-preview',
               model: 'doubao-seedream-5-0-preview',
@@ -242,15 +288,22 @@ export const MODEL_CATALOG = {
           models: [
             {
               id: 'seedance-2',
-              model: 'doubao-seedance-2-0',
-              label: 'Doubao-Seedance-2.0',
+              model: DOUBAO_SEEDANCE_2.model,
+              label: DOUBAO_SEEDANCE_2.label,
               baseUrl: ARK_BASE,
-              tags: [{ text: '仅供体验', variant: 'beta' }],
+              tags: [{ text: '最新', variant: 'featured' }],
+            },
+            {
+              id: 'seedance-2-fast',
+              model: DOUBAO_SEEDANCE_2_FAST.model,
+              label: DOUBAO_SEEDANCE_2_FAST.label,
+              baseUrl: ARK_BASE,
+              tags: [{ text: '快速', variant: 'info' }],
             },
             {
               id: 'seedance-1-5-pro',
-              model: 'doubao-seedance-1-5-pro',
-              label: 'Doubao-Seedance-1.5-pro',
+              model: DOUBAO_SEEDANCE_1_5_PRO.model,
+              label: DOUBAO_SEEDANCE_1_5_PRO.label,
               baseUrl: ARK_BASE,
               tags: [{ text: '更强能力', variant: 'featured' }],
             },
@@ -272,25 +325,7 @@ export const MODEL_CATALOG = {
       ],
     },
   },
-  bytedance: {
-    chat: {
-      categories: [
-        {
-          id: 'language',
-          label: '语言对话',
-          models: [
-            {
-              id: 'doubao-pro',
-              model: 'doubao-pro-32k',
-              label: '豆包 Pro（字节）',
-              baseUrl: ARK_BASE,
-              description: '与豆包共用 Ark，请填写接入点 ID',
-            },
-          ],
-        },
-      ],
-    },
-  },
+  bytedance: {},
   tencent: {
     world: {
       categories: [
@@ -354,7 +389,24 @@ export const MODEL_CATALOG = {
           id: 'language',
           label: '语言对话',
           models: [
-            { id: 'abab6-5s', model: 'abab6.5s-chat', label: 'MiniMax 对话', baseUrl: MINIMAX_BASE },
+            langModel('minimax-m2.7', 'MiniMax M2.7', MINIMAX_BASE, {
+              tags: [{ text: '最新', variant: 'featured' }],
+            }),
+          ],
+        },
+      ],
+    },
+  },
+  moonshot: {
+    chat: {
+      categories: [
+        {
+          id: 'language',
+          label: '语言对话',
+          models: [
+            langModel('kimi-k2.6', 'Kimi K2.6', MOONSHOT_BASE, {
+              tags: [{ text: '最新', variant: 'featured' }],
+            }),
           ],
         },
       ],
@@ -362,7 +414,8 @@ export const MODEL_CATALOG = {
   },
 }
 
-// bytedance 复用 doubao 的 image/video（需在 doubao 定义之后赋值）
+// bytedance 复用 doubao 的 chat/image/video（需在 doubao 定义之后赋值）
+MODEL_CATALOG.bytedance.chat = { categories: MODEL_CATALOG.doubao.chat.categories }
 MODEL_CATALOG.bytedance.image = { categories: MODEL_CATALOG.doubao.image.categories }
 MODEL_CATALOG.bytedance.video = { categories: MODEL_CATALOG.doubao.video.categories }
 

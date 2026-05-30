@@ -343,6 +343,7 @@ function getAllSectionKeys(): string[] {
 
 function isSectionCollapsed(key: string) {
   if (sidebarSearchActive.value) return false
+  if (!sidebarCollapseInited.value) return true
   return collapsedSections.value.has(key)
 }
 
@@ -562,8 +563,8 @@ async function refreshAll() {
     graphNodes.value = []
     graphEdges.value = []
   } finally {
-    loading.value = false
     syncSidebarCollapseAfterLoad()
+    loading.value = false
   }
 }
 

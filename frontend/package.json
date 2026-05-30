@@ -4,9 +4,9 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "concurrently -n api,web -c blue,green \"node server/index.js\" \"vite --host\"",
+    "dev": "concurrently -n api,web -c blue,green \"node --watch server/index.js\" \"vite --host\"",
     "dev:web": "vite --host",
-    "dev:api": "node server/index.js",
+    "dev:api": "node --watch server/index.js",
     "build": "vue-tsc -b && vite build",
     "preview": "vite preview"
   },

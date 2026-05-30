@@ -15,6 +15,7 @@ export type ModelProvider =
   | 'gemini'
   | 'kling'
   | 'minimax'
+  | 'moonshot'
   | 'grok'
   | 'meta'
   | 'nanobanana'
@@ -84,7 +85,7 @@ export const PROVIDER_DEFINITIONS: ProviderDefinition[] = [
     label: '豆包',
     logo: '/logos/doubao-color.svg',
     capabilities: ['chat', 'image', 'video'],
-    defaultBaseUrl: 'https://ark.cn-beijing.volces.com/api/v3',
+    defaultBaseUrl: 'https://ark.cn-beijing.volces.com/api/plan/v3',
     routeFamily: 'openai',
   },
   {
@@ -92,7 +93,7 @@ export const PROVIDER_DEFINITIONS: ProviderDefinition[] = [
     label: '字节跳动',
     logo: '/logos/bytedance-color.svg',
     capabilities: ['chat', 'image', 'video'],
-    defaultBaseUrl: 'https://ark.cn-beijing.volces.com/api/v3',
+    defaultBaseUrl: 'https://ark.cn-beijing.volces.com/api/plan/v3',
     routeFamily: 'openai',
   },
   {
@@ -129,6 +130,14 @@ export const PROVIDER_DEFINITIONS: ProviderDefinition[] = [
     logo: '/logos/minimax-color.svg',
     capabilities: ['chat'],
     defaultBaseUrl: 'https://api.minimax.chat/v1',
+    routeFamily: 'openai',
+  },
+  {
+    id: 'moonshot',
+    label: 'Kimi',
+    logo: '/logos/kimi-color.svg',
+    capabilities: ['chat'],
+    defaultBaseUrl: 'https://api.moonshot.cn/v1',
     routeFamily: 'openai',
   },
   {

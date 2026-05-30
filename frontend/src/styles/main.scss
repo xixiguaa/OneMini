@@ -195,7 +195,7 @@ textarea:not(.composer-input) {
 /* 主色按钮内加载态与按钮文字同色 */
 .btn-primary,
 .btn.enable,
-.btn-confirm:not(.danger),
+.btn-confirm:not(.btn-confirm--danger),
 .action-btn.primary {
   .om-loading,
   .om-loading-label {

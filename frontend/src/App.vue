@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import AppSidebar from './components/AppSidebar.vue'
+import AppToast from './components/AppToast.vue'
 import ChatView from './components/ChatView.vue'
 import CreateStudio from './components/CreateStudio.vue'
 import ModelsView from './components/ModelsView.vue'
@@ -24,6 +25,7 @@ const agent = useAgentStore()
       <SkillsView v-else-if="agent.currentView === 'skills'" />
       <KnowledgeView v-else-if="agent.currentView === 'knowledge'" />
       <WikiGraphView v-else-if="agent.currentView === 'wikiGraph'" />
+      <AppToast />
     </main>
   </div>
 </template>

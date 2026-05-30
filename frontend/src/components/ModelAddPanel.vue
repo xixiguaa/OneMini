@@ -1,6 +1,10 @@
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from 'vue'
-import { CAPABILITY_LABELS } from '../config/defaults'
+import {
+  getModelConfigGroupById,
+  VISION_MEDIA_TYPES,
+  type ModelConfigGroupId,
+} from '../config/defaults'
 import { getProviderDefinition } from '../config/providers'
 import {
   getModelOptions,
@@ -15,12 +19,19 @@ import { useSettingsStore } from '../stores/settings'
 import SecureApiKeyField from './SecureApiKeyField.vue'
 import type { ModelCapability, ModelProvider } from '../types/agent'
 
+const props = defineProps<{
+  groupId: ModelConfigGroupId
+}>()
+
 const emit = defineEmits<{ saved: [id: string] }>()
 
 const settings = useSettingsStore()
 const savedModelId = ref<string | null>(null)
 /** 从预设列表点选时的展示名（自定义填写模型 ID 时不强制绑定） */
 const presetLabel = ref('')
+
+const group = computed(() => getModelConfigGroupById(props.groupId)!)
+const isVisionGroup = computed(() => props.groupId === 'vision')
 
 const form = reactive({
   name: '',
@@ -35,9 +46,38 @@ const providers = computed(() => getProvidersForCapability(form.capability))
 
 const modelOptions = computed(() => getModelOptions(form.provider, form.capability))
 
+const topHint = computed(() => {
+  if (props.groupId === 'language') {
+    return '语言模型内置 DeepSeek；其它模型（MiniMax、GPT、Claude 等）可在此添加并填写 API Key。'
+  }
+  if (props.groupId === 'vision') {
+    return '视觉模型用于图片与视频生成，请先选择输出类型，再配置服务商与模型 ID。'
+  }
+  return '物理 / 具身模型用于 3D 场景、具身智能与物理仿真，需配置对应服务商与 API Key。'
+})
+
 function firstRealOption(opts: ProviderModelOption[]) {
   return opts.find((o) => o.model?.trim())
 }
+
+function syncGroupDefaults() {
+  form.capability = group.value.defaultCapability
+  const list = getProvidersForCapability(form.capability)
+  form.provider = list[0] ?? 'openai'
+  presetLabel.value = ''
+  form.name = ''
+  form.modelId = ''
+  form.baseUrl = ''
+  form.description = ''
+}
+
+watch(
+  () => props.groupId,
+  () => {
+    syncGroupDefaults()
+  },
+  { immediate: true },
+)
 
 watch(
   () => form.capability,
@@ -51,19 +91,11 @@ watch(
   [() => form.provider, () => form.capability],
   () => {
     presetLabel.value = ''
+    form.modelId = ''
+    form.name = ''
+    form.description = ''
     const def = getProviderDefinition(form.provider)
-    if (def.defaultBaseUrl && !form.baseUrl.trim()) {
-      form.baseUrl = def.defaultBaseUrl
-    }
-    const opts = getModelOptions(form.provider, form.capability)
-    const first = firstRealOption(opts)
-    if (first && !opts.some((o) => o.model === form.modelId)) {
-      form.modelId = first.model
-      presetLabel.value = first.label
-      applyOptionDefaults(first)
-    } else if (!first) {
-      form.modelId = ''
-    }
+    form.baseUrl = def.defaultBaseUrl ?? ''
   },
   { immediate: true },
 )
@@ -77,6 +109,7 @@ function applyOptionDefaults(opt?: ProviderModelOption) {
 
 function onPickerSelect(opt: PickerModelOption) {
   const mapped = pickerOptionToProviderOption(opt)
+  form.modelId = mapped.model
   presetLabel.value = mapped.label
   applyOptionDefaults(mapped)
 }
@@ -128,15 +161,7 @@ function saveModel() {
 
 function resetForm() {
   savedModelId.value = null
-  presetLabel.value = ''
-  Object.assign(form, {
-    name: '',
-    capability: 'chat',
-    provider: 'deepseek',
-    modelId: '',
-    baseUrl: '',
-    description: '',
-  })
+  syncGroupDefaults()
   const opts = getModelOptions(form.provider, form.capability)
   const first = firstRealOption(opts)
   form.modelId = first?.model ?? ''
@@ -152,22 +177,33 @@ async function onConfigurePending(payload: { apiKey?: string; enable: boolean })
   const m = pendingModel.value
   if (!m) return
   if (payload.apiKey) await settings.saveModelSecret(m.id, payload.apiKey)
-  if (payload.enable) settings.enableModel(m.id)
+  if (payload.enable) {
+    settings.enableModel(m.id)
+    settings.bindModelToSkill(m.id)
+  }
 }
 </script>
 
 <template>
   <div class="add-panel">
-    <p class="hint top-hint">
-      文本对话内置 DeepSeek；其它模型（MiniMax、GPT、Claude 等）请选择能力「文本对话」后在此自定义添加。
-    </p>
+    <header class="panel-head">
+      <h3>添加 {{ group.label }}</h3>
+      <p class="hint top-hint">{{ topHint }}</p>
+    </header>
 
     <template v-if="!savedModelId">
-      <label>
-        <span>能力类型 <em>*</em></span>
+      <label v-if="isVisionGroup">
+        <span>输出类型 <em>*</em></span>
         <select v-model="form.capability">
-          <option v-for="(label, key) in CAPABILITY_LABELS" :key="key" :value="key">{{ label }}</option>
+          <option
+            v-for="opt in VISION_MEDIA_TYPES"
+            :key="opt.value"
+            :value="opt.value"
+          >
+            {{ opt.label }}
+          </option>
         </select>
+        <p class="field-hint">同一视觉模型可按输出媒体分别配置图片或视频接入。</p>
       </label>
 
       <div class="field-block">
@@ -246,14 +282,25 @@ async function onConfigurePending(payload: { apiKey?: string; enable: boolean })
   overflow-y: auto;
 }
 
+.panel-head {
+  margin-bottom: 18px;
+
+  h3 {
+    margin: 0 0 8px;
+    font-size: 16px;
+    font-weight: 600;
+    color: $text-primary;
+  }
+}
+
 .hint {
   font-size: 12px;
   color: $text-secondary;
   line-height: 1.5;
-  margin-bottom: 16px;
+  margin-bottom: 0;
 
   &.top-hint {
-    margin-top: 4px;
+    margin-top: 0;
   }
 
   &.block {

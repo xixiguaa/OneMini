@@ -9,12 +9,31 @@ import {
   type KnowledgeDocument,
 } from '../api/platform'
 import { getWikiStatus, runWikiLint, type WikiLintResult } from '../api/wiki'
+import { useConfirmDialog } from '../composables/useConfirmDialog'
 import { useAgentStore } from '../stores/agent'
 import { usePlatformStore } from '../stores/platform'
+import ConfirmDialog from './ConfirmDialog.vue'
 import LoadingIndicator from './LoadingIndicator.vue'
 
 const platform = usePlatformStore()
 const agent = useAgentStore()
+
+const {
+  open: confirmOpen,
+  title: confirmTitle,
+  message: confirmMessage,
+  confirmLabel: confirmConfirmLabel,
+  cancelLabel: confirmCancelLabel,
+  danger: confirmDanger,
+  loading: confirmLoading,
+  confirm: showConfirm,
+  setLoading: setConfirmLoading,
+  close: closeConfirm,
+  onCancel: onConfirmCancel,
+  onOpenUpdate: onConfirmOpenUpdate,
+} = useConfirmDialog()
+
+const deleteDocId = ref<string | null>(null)
 
 const panelTab = ref<'rag' | 'wiki'>('rag')
 const wikiStats = ref<{ nodes: number; edges: number; pending_ingest?: number; orphan_wiki?: number } | null>(null)
@@ -92,18 +111,44 @@ async function onFileChange(ev: Event) {
   }
 }
 
-async function removeDoc(docId: string) {
-  if (!confirm('确定删除该文档的所有向量片段？')) return
+function requestDeleteDoc(docId: string) {
+  deleteDocId.value = docId
+  const doc = documents.value.find((d) => d.doc_id === docId)
+  const label = doc?.source || docId
+  void showConfirm({
+    title: '删除文档',
+    message: `确定删除「${label}」的所有向量片段？\n\n此操作会从 Milvus 移除相关数据且无法恢复。`,
+    confirmLabel: '删除',
+    danger: true,
+  })
+}
+
+async function onConfirmDeleteDoc() {
+  const docId = deleteDocId.value
+  if (!docId) {
+    closeConfirm(false)
+    return
+  }
+  setConfirmLoading(true)
   loading.value = true
+  error.value = ''
   try {
     await deleteKnowledgeDocument(docId)
     await loadDocs()
     selectedId.value = 'add'
+    deleteDocId.value = null
+    closeConfirm(true)
   } catch (e) {
     error.value = e instanceof Error ? e.message : '删除失败'
   } finally {
+    setConfirmLoading(false)
     loading.value = false
   }
+}
+
+function onCancelDeleteDoc() {
+  deleteDocId.value = null
+  onConfirmCancel()
 }
 
 async function loadWikiStats() {
@@ -339,7 +384,7 @@ onMounted(async () => {
               class="btn-danger"
               type="button"
               :disabled="loading"
-              @click="removeDoc(selectedDoc()!.doc_id)"
+              @click="requestDeleteDoc(selectedDoc()!.doc_id)"
             >
               <Trash2 :size="16" />
               删除文档
@@ -354,6 +399,19 @@ onMounted(async () => {
       </section>
     </div>
   </div>
+
+  <ConfirmDialog
+    :open="confirmOpen"
+    :title="confirmTitle"
+    :message="confirmMessage"
+    :confirm-label="confirmConfirmLabel"
+    :cancel-label="confirmCancelLabel"
+    :danger="confirmDanger"
+    :loading="confirmLoading"
+    @update:open="onConfirmOpenUpdate"
+    @confirm="onConfirmDeleteDoc"
+    @cancel="onCancelDeleteDoc"
+  />
 </template>
 
 <style scoped lang="scss">

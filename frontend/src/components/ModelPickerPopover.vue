@@ -3,7 +3,7 @@ import { Check, ChevronDown, Search, X } from 'lucide-vue-next'
 import LoadingIndicator from './LoadingIndicator.vue'
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { loadModelPickerOptions } from '../api/models'
-import { CAPABILITY_LABELS } from '../config/defaults'
+import { getModelCapabilityLabel } from '../config/defaults'
 import { getProviderLogo, getProviderLabel } from '../config/providers'
 import type { ModelCatalogResponse, PickerModelOption } from '../types/modelCatalog'
 import type { ModelCapability, ModelProvider } from '../types/agent'
@@ -143,7 +143,7 @@ onUnmounted(() => document.removeEventListener('click', onDocClick))
       </header>
 
       <p class="panel-meta">
-        {{ getProviderLabel(provider) }} · {{ CAPABILITY_LABELS[capability] }}
+        {{ getProviderLabel(provider) }} · {{ getModelCapabilityLabel(capability) }}
       </p>
 
       <LoadingIndicator v-if="loading" label="加载中…" variant="block" class="panel-loading" />

@@ -15,9 +15,9 @@ export interface PresetTemplate {
 export const MODEL_CATALOG: PresetTemplate[] = [
   {
     id: 'deepseek-v4-pro',
-    name: 'DeepSeek V4',
+    name: 'DeepSeek V4 Pro',
     provider: 'deepseek',
-    model: 'deepseek-chat',
+    model: 'deepseek-v4-pro',
     capability: 'chat',
     baseUrl: 'https://api.deepseek.com/v1',
     description: '内置 DeepSeek 对话；MiniMax、GPT、Claude 等请通过「添加模型」自行配置',

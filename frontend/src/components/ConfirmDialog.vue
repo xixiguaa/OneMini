@@ -85,7 +85,7 @@ onUnmounted(() => {
           :aria-describedby="message ? 'confirm-message' : undefined"
           aria-modal="true"
         >
-          <h3 v-if="title" id="confirm-title" class="confirm-title" :class="{ danger }">
+          <h3 v-if="title" id="confirm-title" class="confirm-title" :class="{ 'is-danger': danger }">
             {{ title }}
           </h3>
           <p v-if="message" id="confirm-message" class="confirm-message">{{ message }}</p>
@@ -106,7 +106,7 @@ onUnmounted(() => {
             <a
               v-if="showConfirm && confirmHref"
               class="btn-confirm"
-              :class="{ danger }"
+              :class="{ 'btn-confirm--danger': danger }"
               :href="confirmHref"
               target="_blank"
               rel="noopener noreferrer"
@@ -118,7 +118,7 @@ onUnmounted(() => {
               v-else-if="showConfirm"
               type="button"
               class="btn-confirm"
-              :class="{ danger }"
+              :class="{ 'btn-confirm--danger': danger }"
               :disabled="loading"
               @click="onConfirm"
             >
@@ -163,8 +163,8 @@ onUnmounted(() => {
   color: $text-primary;
   line-height: 1.35;
 
-  &.danger {
-    color: $color-danger;
+  &.is-danger {
+    color: #c92a4a;
   }
 }
 
@@ -252,21 +252,34 @@ onUnmounted(() => {
 
 .btn-confirm {
   color: $btn-primary-text;
-  background: $accent;
+  background-color: $accent;
   border: 1px solid transparent;
 
   &:hover:not(:disabled) {
-    background: $btn-primary-hover-bg;
+    background-color: $btn-primary-hover-bg;
     box-shadow: $shadow-glow;
   }
 
-  &.danger {
+  &:focus-visible {
+    outline: none;
+    box-shadow: $shadow-focus;
+  }
+
+  &.btn-confirm--danger {
     color: #fff;
-    background: $color-danger;
-    border-color: $color-danger;
+    background-color: #e03151;
+    border-color: #e03151;
+    box-shadow: none;
 
     &:hover:not(:disabled) {
-      filter: brightness(1.05);
+      background-color: #c92a4a;
+      border-color: #c92a4a;
+      box-shadow: none;
+      filter: none;
+    }
+
+    &:focus-visible {
+      box-shadow: 0 0 0 3px rgba(224, 49, 81, 0.35);
     }
   }
 }

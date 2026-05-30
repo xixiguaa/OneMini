@@ -1,33 +1,66 @@
 import type { ModelConfig } from '../types/agent'
 import type { OneMiniSkeleton } from '../types/agentConfig'
 
-function isModelReady(model: ModelConfig | undefined): model is ModelConfig {
+export function isModelReady(model: ModelConfig | undefined): model is ModelConfig {
   if (!model?.enabled) return false
   if (model.provider === 'tencent') return true
   return !!model.secretConfigured
 }
 
-/** 对话模型：输入框/技能绑定优先，其次骨架 primary → fallbacks → 同能力首个可用 */
-export function resolveModelForChat(
+type ChatSettings = {
+  getModel: (id: string) => ModelConfig | undefined
+  getSkill: (id: 'chat') => { defaultModelId?: string } | undefined
+  modelsByCapability: (cap: 'chat') => ModelConfig[]
+}
+
+export type ChatModelResolveResult =
+  | { ok: true; model: ModelConfig }
+  | { ok: false; error: string }
+
+/**
+ * 对话模型：输入框所选优先且不可静默回退；
+ * 仅当未选择或所选已删除时，才走骨架 primary → fallbacks → 首个可用。
+ */
+export function resolveChatModel(
   skeleton: OneMiniSkeleton,
-  settings: {
-    getModel: (id: string) => ModelConfig | undefined
-    getSkill: (id: 'chat') => { defaultModelId?: string } | undefined
-    modelsByCapability: (cap: 'chat') => ModelConfig[]
-  },
-  skillId: 'chat' = 'chat',
-): ModelConfig | null {
+  settings: ChatSettings,
+): ChatModelResolveResult {
+  const skill = settings.getSkill('chat')
+
+  if (skill?.defaultModelId) {
+    const selected = settings.getModel(skill.defaultModelId)
+    if (isModelReady(selected)) return { ok: true, model: selected }
+    if (selected) {
+      return {
+        ok: false,
+        error: `当前选择的「${selected.name}」尚未配置 API Key 或未启用，请在「模型配置」中保存密钥并启用。`,
+      }
+    }
+  }
+
   const candidates: string[] = []
-  const skill = settings.getSkill(skillId)
-  if (skill?.defaultModelId) candidates.push(skill.defaultModelId)
   if (skeleton.models.primary) candidates.push(skeleton.models.primary)
   candidates.push(...skeleton.models.fallbacks)
 
   for (const id of candidates) {
     const m = settings.getModel(id)
-    if (isModelReady(m)) return m
+    if (isModelReady(m)) return { ok: true, model: m }
   }
 
   const fallback = settings.modelsByCapability('chat').find(isModelReady)
-  return fallback ?? null
+  if (fallback) return { ok: true, model: fallback }
+
+  return {
+    ok: false,
+    error: '请在「模型配置」填写对话模型 API Key，或在「Agent 配置 → 运行时」设置主模型',
+  }
+}
+
+/** @deprecated 使用 resolveChatModel，避免所选模型未就绪时被静默回退 */
+export function resolveModelForChat(
+  skeleton: OneMiniSkeleton,
+  settings: ChatSettings,
+): ModelConfig | null {
+  const result = resolveChatModel(skeleton, settings)
+  return result.ok ? result.model : null
 }

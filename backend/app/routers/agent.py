@@ -5,6 +5,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from app.deps import get_user_id
+from app.services.image_gen import generate_image, supported_image_providers
 from app.services.llm import (
     PROVIDER_BASE_URLS,
     chat_completion,
@@ -30,6 +31,7 @@ OPENAI_COMPATIBLE_PROVIDERS = frozenset(
         "grok",
         "meta",
         "minimax",
+        "moonshot",
         "nanobanana",
         "kling",
     }
@@ -48,6 +50,16 @@ class AgentChatRequest(BaseModel):
     base_url: str | None = None
     model_config_id: str | None = None
     temperature: float = 0.2
+
+
+class ImageGenRequest(BaseModel):
+    prompt: str
+    model: str | None = None
+    provider: str | None = None
+    base_url: str | None = None
+    model_config_id: str | None = None
+    aspect_ratio: str | None = None
+    image_url: str | None = None
 
 
 def _resolve_chat_url(provider: str | None, base_url: str | None) -> str:
@@ -118,3 +130,32 @@ async def agent_chat_stream(req: AgentChatRequest, user_id: str = Depends(get_us
         media_type="text/event-stream; charset=utf-8",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
+
+
+@router.post("/image")
+async def agent_image(req: ImageGenRequest, user_id: str = Depends(get_user_id)):
+    provider = (req.provider or "").strip()
+    if provider and provider not in supported_image_providers() and provider != "tencent":
+        raise HTTPException(400, f"暂不支持该图片服务商: {provider}")
+
+    api_key = resolve_model_api_key(user_id, req.model_config_id)
+    if not api_key and provider != "tencent":
+        raise HTTPException(
+            400,
+            "未配置该模型的 API Key，请在模型配置中保存密钥（密钥仅存于服务端）",
+        )
+
+    try:
+        result = await generate_image(
+            req.prompt,
+            model=req.model,
+            provider=req.provider,
+            api_key=api_key,
+            base_url=req.base_url,
+            aspect_ratio=req.aspect_ratio,
+            image_url=req.image_url,
+            user_id=user_id,
+        )
+        return result
+    except Exception as exc:
+        raise HTTPException(500, str(exc)) from exc

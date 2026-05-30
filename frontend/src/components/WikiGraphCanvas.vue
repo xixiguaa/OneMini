@@ -1013,12 +1013,14 @@ function renderGraph() {
   })
 
   if (nodes.length) {
-    setTimeout(() => fitView(), 480)
+    const animateFit = !initialFitPending
+    initialFitPending = false
+    setTimeout(() => fitView(animateFit), animateFit ? 480 : 0)
   }
   updateFocus()
 }
 
-function fitView() {
+function fitView(animate = true) {
   const svg = svgRef.value
   const container = containerRef.value
   if (!svg || !container || !gMain || !zoomBehavior) return
@@ -1051,14 +1053,21 @@ function fitView() {
     .scale(scale)
     .translate(-cx, -cy)
 
-  d3.select(svg)
-    .transition()
-    .duration(500)
-    .call(zoomBehavior.transform, transform)
-    .on('end', () => {
-      syncZoomScaleFromSvg()
-      updateFocus(false)
-    })
+  const sel = d3.select(svg)
+  if (animate) {
+    sel
+      .transition()
+      .duration(500)
+      .call(zoomBehavior.transform, transform)
+      .on('end', () => {
+        syncZoomScaleFromSvg()
+        updateFocus(false)
+      })
+  } else {
+    sel.call(zoomBehavior.transform, transform)
+    syncZoomScaleFromSvg()
+    updateFocus(false)
+  }
 }
 
 watch(
@@ -1075,6 +1084,7 @@ watch(
 )
 
 let resizeObserver: ResizeObserver | null = null
+let initialFitPending = true
 
 onMounted(() => {
   renderGraph()

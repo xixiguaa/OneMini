@@ -28,6 +28,13 @@ export const messages = {
       delete: '删除',
       messages: '条',
       incognitoActive: '隐身对话进行中',
+      groups: {
+        today: '今天',
+        yesterday: '昨天',
+        last7days: '7 天内',
+        last30days: '30 天内',
+        older: '更早',
+      },
     },
     incognito: {
       bannerTitle: '隐身对话',
@@ -74,6 +81,13 @@ export const messages = {
       delete: 'Delete',
       messages: 'msgs',
       incognitoActive: 'Incognito chat in progress',
+      groups: {
+        today: 'Today',
+        yesterday: 'Yesterday',
+        last7days: 'Previous 7 days',
+        last30days: 'Previous 30 days',
+        older: 'Older',
+      },
     },
     incognito: {
       bannerTitle: 'Incognito chat',

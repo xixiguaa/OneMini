@@ -1,3 +1,4 @@
+import axios from 'axios'
 import { defineStore } from 'pinia'
 import { computed, ref, watch } from 'vue'
 import { deleteModelSecret, fetchSecretStatuses, saveModelSecret as saveModelSecretApi } from '../api/secrets'
@@ -12,8 +13,42 @@ import type {
   SkillId,
 } from '../types/agent'
 import { DEFAULT_GENERATION_PREFS } from '../types/agent'
+import {
+  ASPECT_RATIOS,
+  VIDEO_ASPECT_RATIOS,
+  VIDEO_RESOLUTIONS,
+} from '../config/constants'
 
 const STORAGE_KEY = 'aji-agent-settings'
+const IMAGE_ASPECT_DEFAULT_MIGRATION_KEY = 'onemini-image-aspect-default-1x1'
+
+const ASPECT_RATIO_IDS = new Set(ASPECT_RATIOS.map((r) => r.id))
+const VIDEO_RESOLUTION_IDS = new Set(VIDEO_RESOLUTIONS.map((r) => r.id))
+const VIDEO_ASPECT_RATIO_IDS = new Set(VIDEO_ASPECT_RATIOS.map((r) => r.id))
+
+function applyImageAspectDefaultMigration(prefs: GenerationPrefs): GenerationPrefs {
+  try {
+    if (localStorage.getItem(IMAGE_ASPECT_DEFAULT_MIGRATION_KEY) === '1') return prefs
+    localStorage.setItem(IMAGE_ASPECT_DEFAULT_MIGRATION_KEY, '1')
+    return { ...prefs, aspectRatio: '1:1' }
+  } catch {
+    return prefs
+  }
+}
+
+function normalizeGenerationPrefs(prefs?: Partial<GenerationPrefs>): GenerationPrefs {
+  const merged: GenerationPrefs = { ...DEFAULT_GENERATION_PREFS, ...prefs }
+  if (merged.aspectRatio === 'smart' || !ASPECT_RATIO_IDS.has(merged.aspectRatio)) {
+    merged.aspectRatio = DEFAULT_GENERATION_PREFS.aspectRatio
+  }
+  if (!VIDEO_RESOLUTION_IDS.has(merged.videoResolution)) {
+    merged.videoResolution = DEFAULT_GENERATION_PREFS.videoResolution
+  }
+  if (!VIDEO_ASPECT_RATIO_IDS.has(merged.videoAspectRatio)) {
+    merged.videoAspectRatio = DEFAULT_GENERATION_PREFS.videoAspectRatio
+  }
+  return merged
+}
 
 function stripLegacyApiKeys(models: ModelConfig[]): ModelConfig[] {
   return models.map((m) => {
@@ -37,8 +72,14 @@ function mergeModelsWithCatalog(saved?: ModelConfig[]): ModelConfig[] {
       if (s) {
         const name =
           def.preset && s.name === 'DeepSeek' ? def.name : s.name || def.name
+        let model = s.model || def.model
+        // 旧版内置预设误用 deepseek-chat，走 Agent Plan 时会路由到错误模型
+        if (def.id === 'deepseek-v4-pro' && model === 'deepseek-chat') {
+          model = def.model
+        }
         return {
           ...def,
+          model,
           baseUrl: s.baseUrl ?? def.baseUrl,
           enabled: s.enabled ?? false,
           name,
@@ -102,7 +143,9 @@ function loadSettings(): AgentSettings {
       return {
         models,
         skills: mergeSkills(parsed.skills, modelIds),
-        generationPrefs: { ...DEFAULT_GENERATION_PREFS, ...parsed.generationPrefs },
+        generationPrefs: applyImageAspectDefaultMigration(
+          normalizeGenerationPrefs(parsed.generationPrefs),
+        ),
       }
     }
   } catch {
@@ -139,6 +182,20 @@ export const useSettingsStore = defineStore('settings', () => {
 
   function getSkill(id: SkillId) {
     return settings.value.skills.find((s) => s.id === id)
+  }
+
+  /** 将模型设为对应技能（对话/图片/视频/世界）的默认调用项 */
+  function bindModelToSkill(modelId: string) {
+    const m = getModel(modelId)
+    if (!m) return
+    const skillMap: Partial<Record<ModelCapability, SkillId>> = {
+      chat: 'chat',
+      image: 'image',
+      video: 'video',
+      world: 'world',
+    }
+    const skillId = skillMap[m.capability]
+    if (skillId) updateSkill(skillId, { defaultModelId: modelId })
   }
 
   function getModel(id: string) {
@@ -202,7 +259,10 @@ export const useSettingsStore = defineStore('settings', () => {
   }
 
   function updateGenerationPrefs(patch: Partial<GenerationPrefs>) {
-    Object.assign(settings.value.generationPrefs, patch)
+    settings.value.generationPrefs = normalizeGenerationPrefs({
+      ...settings.value.generationPrefs,
+      ...patch,
+    })
   }
 
   function addCustomModel(model: Omit<ModelConfig, 'id' | 'preset'> & { id?: string }) {
@@ -230,7 +290,11 @@ export const useSettingsStore = defineStore('settings', () => {
     try {
       await deleteModelSecret(id)
     } catch (e) {
-      console.warn('[settings] 删除服务端密钥失败', e)
+      const is404 = axios.isAxiosError(e) && e.response?.status === 404
+      if (!is404) {
+        console.warn('[settings] 删除服务端密钥失败', e)
+        return false
+      }
     }
     settings.value.models = settings.value.models.filter((x) => x.id !== id)
     settings.value.skills.forEach((s) => {
@@ -271,6 +335,7 @@ export const useSettingsStore = defineStore('settings', () => {
     modelsByCapability,
     getSkill,
     getModel,
+    bindModelToSkill,
     updateModel,
     hydrateSecretStatuses,
     saveModelSecret,

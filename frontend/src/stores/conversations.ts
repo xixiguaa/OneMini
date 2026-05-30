@@ -9,11 +9,20 @@ import {
   replaceConversationMessages,
 } from '../api/conversations'
 import type { ChatMessage, Conversation } from '../types/agent'
+import { groupConversations } from '../utils/conversationTimeGroup'
 import { randomUUID } from '../utils/uuid'
 
 const LEGACY_STORAGE_KEY = 'aji-conversations'
 const PERSIST_DEBOUNCE_MS = 600
 const TITLE_MAX_LEN = 28
+
+/** 侧栏对话历史：仅含文字问答 / Agent 交互，排除纯图片视频会话 */
+export function isChatConversation(conv: Conversation): boolean {
+  if (conv.messages.length === 0) return true
+  return conv.messages.some(
+    (m) => m.type === 'text' || m.type === 'error' || m.skillId === 'chat',
+  )
+}
 
 /** 从首条用户消息生成侧栏标题（过长省略） */
 export function deriveConversationTitle(
@@ -64,6 +73,10 @@ export const useConversationsStore = defineStore('conversations', () => {
     [...list.value].sort((a, b) => b.updatedAt - a.updatedAt),
   )
 
+  const chatList = computed(() => sortedList.value.filter(isChatConversation))
+
+  const groupedList = computed(() => groupConversations(chatList.value))
+
   function setPersistPaused(paused: boolean) {
     persistPaused.value = paused
     if (paused) {
@@ -90,12 +103,16 @@ export const useConversationsStore = defineStore('conversations', () => {
   async function flushPersist(conversationId: string) {
     const conv = list.value.find((c) => c.id === conversationId)
     if (!conv) return
+    const messages = conv.messages
     try {
       persistError.value = null
-      const saved = await replaceConversationMessages(conversationId, conv.messages)
-      const localTitle = deriveConversationTitle(conv.messages)
-      conv.title = localTitle !== '新对话' ? localTitle : saved.title || conv.title
-      conv.updatedAt = saved.updatedAt
+      const saved = await replaceConversationMessages(conversationId, messages)
+      // 删除后可能仍有在途写入，避免把已删会话写回服务端
+      const live = list.value.find((c) => c.id === conversationId)
+      if (!live) return
+      const localTitle = deriveConversationTitle(messages)
+      live.title = localTitle !== '新对话' ? localTitle : saved.title || live.title
+      live.updatedAt = saved.updatedAt
     } catch (e) {
       persistError.value = e instanceof Error ? e.message : '保存对话失败'
       console.error('[conversations] persist', e)
@@ -109,21 +126,19 @@ export const useConversationsStore = defineStore('conversations', () => {
     try {
       let conversations = await fetchConversations(true)
       const legacy = loadLegacyConversations()
-      if (legacy.length > 0 && conversations.length === 0) {
-        await importConversationsApi(legacy)
+      if (legacy.length > 0) {
+        if (conversations.length === 0) {
+          await importConversationsApi(legacy)
+          conversations = await fetchConversations(true)
+        }
+        // 服务端已有数据时仅丢弃旧 localStorage，避免刷新后重复导入
         clearLegacyStorage()
-        conversations = await fetchConversations(true)
       }
       list.value = conversations
       activeId.value = conversations[0]?.id ?? null
       hydrated.value = true
     } catch (e) {
       persistError.value = e instanceof Error ? e.message : '加载对话失败'
-      const legacy = loadLegacyConversations()
-      if (legacy.length > 0) {
-        list.value = legacy
-        activeId.value = legacy[0]?.id ?? null
-      }
       console.error('[conversations] hydrate', e)
     } finally {
       loading.value = false
@@ -219,11 +234,20 @@ export const useConversationsStore = defineStore('conversations', () => {
   }
 
   async function deleteConversation(id: string) {
+    const timer = persistTimers.get(id)
+    if (timer) {
+      clearTimeout(timer)
+      persistTimers.delete(id)
+    }
     try {
       await deleteConversationApi(id)
     } catch (e) {
       const is404 = axios.isAxiosError(e) && e.response?.status === 404
-      if (!is404) console.error('[conversations] delete', e)
+      if (!is404) {
+        console.error('[conversations] delete', e)
+        persistError.value = e instanceof Error ? e.message : '删除对话失败'
+        throw e
+      }
     }
     list.value = list.value.filter((c) => c.id !== id)
     if (activeId.value === id) {
@@ -232,20 +256,16 @@ export const useConversationsStore = defineStore('conversations', () => {
     if (list.value.length === 0) {
       activeId.value = null
     }
-    const timer = persistTimers.get(id)
-    if (timer) {
-      clearTimeout(timer)
-      persistTimers.delete(id)
-    }
   }
 
   function ensureActive(): string | null {
-    if (list.value.length === 0) {
+    const chats = list.value.filter(isChatConversation)
+    if (chats.length === 0) {
       activeId.value = null
       return null
     }
-    if (!activeId.value || !list.value.some((c) => c.id === activeId.value)) {
-      activeId.value = list.value[0].id
+    if (!activeId.value || !chats.some((c) => c.id === activeId.value)) {
+      activeId.value = chats[0].id
     }
     return activeId.value
   }
@@ -270,6 +290,8 @@ export const useConversationsStore = defineStore('conversations', () => {
     activeId,
     activeConversation,
     sortedList,
+    chatList,
+    groupedList,
     loading,
     hydrated,
     persistError,

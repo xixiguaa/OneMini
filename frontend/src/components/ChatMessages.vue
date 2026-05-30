@@ -36,13 +36,13 @@ function isLastMessage(id: string): boolean {
 }
 
 function shouldShowThinking(msg: ChatMessage): boolean {
-  if (!agent.isProcessing || !isLastMessage(msg.id)) return false
+  if (!agent.isChatProcessing || !isLastMessage(msg.id)) return false
   if (msg.role !== 'assistant' || msg.type !== 'text') return false
   return isAwaitingReply(msg.content)
 }
 
 const showThinkingForUserTurn = computed(() => {
-  if (!agent.isProcessing) return false
+  if (!agent.isChatProcessing) return false
   const last = agent.messages[agent.messages.length - 1]
   return last?.role === 'user'
 })
@@ -80,7 +80,7 @@ watch(
 )
 
 watch(
-  () => agent.isProcessing,
+  () => agent.isChatProcessing,
   async (processing) => {
     if (processing) stickToBottom.value = true
     await nextTick()

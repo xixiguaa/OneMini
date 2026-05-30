@@ -281,9 +281,9 @@ onUnmounted(() => {
 
             <div class="actions">
               <button type="button" class="btn-primary" :disabled="agent.isProcessing" @click="generate">
-                <Loader2 v-if="agent.isProcessing" :size="16" class="om-loading-spinner" aria-hidden="true" />
+                <Loader2 v-if="agent.isWorldProcessing" :size="16" class="om-loading-spinner" aria-hidden="true" />
                 <Sparkles v-else :size="16" />
-                {{ agent.isProcessing ? '生成中…' : '立即生成' }}
+                {{ agent.isWorldProcessing ? '生成中…' : '立即生成' }}
               </button>
             </div>
           </div>

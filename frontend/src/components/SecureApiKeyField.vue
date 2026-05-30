@@ -1,11 +1,13 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
+import { useConfirmDialog } from '../composables/useConfirmDialog'
 import type { ModelProvider } from '../types/agent'
 import {
   getApiKeyFormatHint,
   preventCopy,
   validateApiKey,
 } from '../utils/apiKey'
+import ConfirmDialog from './ConfirmDialog.vue'
 import LoadingIndicator from './LoadingIndicator.vue'
 
 const props = defineProps<{
@@ -28,6 +30,20 @@ const emit = defineEmits<{
 const draft = ref('')
 const validationError = ref('')
 const saving = ref(false)
+const pendingKeyAction = ref<'revoke' | 'disable' | null>(null)
+
+const {
+  open: confirmOpen,
+  title: confirmTitle,
+  message: confirmMessage,
+  confirmLabel: confirmConfirmLabel,
+  cancelLabel: confirmCancelLabel,
+  danger: confirmDanger,
+  confirm: showConfirm,
+  onConfirm: onConfirmOk,
+  onCancel: onConfirmCancel,
+  onOpenUpdate: onConfirmOpenUpdate,
+} = useConfirmDialog()
 
 const hasKey = computed(() => props.configured)
 const showEditor = computed(() => !props.enabled && !props.isTencent && !hasKey.value)
@@ -91,10 +107,50 @@ function cancelKey() {
   emit('cancel')
 }
 
+function cancelEditor() {
+  draft.value = ''
+  validationError.value = ''
+}
+
 function disableKey() {
   draft.value = ''
   validationError.value = ''
   emit('disable')
+}
+
+function requestRevokeKey() {
+  pendingKeyAction.value = 'revoke'
+  void showConfirm({
+    title: '撤销密钥',
+    message: '确定撤销已保存的 API Key？\n\n服务端密钥将被删除，需重新粘贴配置。',
+    confirmLabel: '撤销',
+    danger: true,
+  })
+}
+
+function requestDisableKey() {
+  pendingKeyAction.value = 'disable'
+  void showConfirm({
+    title: '停用模型',
+    message: props.isTencent
+      ? '确定停用此模型？'
+      : '确定停用此模型？\n\n服务端 API Key 将被删除，需重新粘贴配置。',
+    confirmLabel: '停用',
+    danger: true,
+  })
+}
+
+function onKeyActionConfirm() {
+  const action = pendingKeyAction.value
+  pendingKeyAction.value = null
+  if (action === 'revoke') cancelKey()
+  else if (action === 'disable') disableKey()
+  onConfirmOk()
+}
+
+function onKeyActionCancel() {
+  pendingKeyAction.value = null
+  onConfirmCancel()
 }
 </script>
 
@@ -107,7 +163,7 @@ function disableKey() {
       <p class="hint">使用服务器环境变量中的腾讯云密钥。</p>
       <div class="actions">
         <button v-if="!enabled" type="button" class="btn enable" @click="enableKey">启用</button>
-        <button v-else type="button" class="btn ghost" @click="disableKey">停用</button>
+        <button v-else type="button" class="btn ghost" @click="requestDisableKey">停用</button>
       </div>
     </template>
 
@@ -130,7 +186,7 @@ function disableKey() {
           <LoadingIndicator v-if="saving" label="保存中…" variant="button" :size="13" />
           <template v-else>保存并启用</template>
         </button>
-        <button type="button" class="btn ghost" @click="cancelKey">取消</button>
+        <button type="button" class="btn ghost" @click="cancelEditor">取消</button>
       </div>
     </template>
 
@@ -146,7 +202,7 @@ function disableKey() {
       />
       <div class="actions">
         <button type="button" class="btn enable" @click="enableKey">启用</button>
-        <button type="button" class="btn ghost" @click="cancelKey">撤销密钥</button>
+        <button type="button" class="btn ghost" @click="requestRevokeKey">撤销密钥</button>
       </div>
     </template>
 
@@ -162,9 +218,21 @@ function disableKey() {
       />
       <p class="hint">停用后将删除服务端密钥，需重新粘贴配置。</p>
       <div class="actions">
-        <button type="button" class="btn ghost" @click="disableKey">停用</button>
+        <button type="button" class="btn ghost" @click="requestDisableKey">停用</button>
       </div>
     </template>
+
+    <ConfirmDialog
+      :open="confirmOpen"
+      :title="confirmTitle"
+      :message="confirmMessage"
+      :confirm-label="confirmConfirmLabel"
+      :cancel-label="confirmCancelLabel"
+      :danger="confirmDanger"
+      @update:open="onConfirmOpenUpdate"
+      @confirm="onKeyActionConfirm"
+      @cancel="onKeyActionCancel"
+    />
   </div>
 </template>
 

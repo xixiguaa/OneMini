@@ -4,6 +4,8 @@ import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { ACCEPT_CHAT_FILES } from '../config/constants'
 import ChatKnowledgeModeToggle from './ChatKnowledgeModeToggle.vue'
 import ModelLogo from './ModelLogo.vue'
+import { isModelReady, resolveChatModel } from '../utils/resolveModel'
+import { useAgentConfigStore } from '../stores/agentConfig'
 import { useAgentStore } from '../stores/agent'
 import { useSettingsStore } from '../stores/settings'
 
@@ -12,22 +14,29 @@ defineProps<{
 }>()
 
 const agent = useAgentStore()
+const agentConfig = useAgentConfigStore()
 const settings = useSettingsStore()
 const fileInput = ref<HTMLInputElement | null>(null)
 const pickerRef = ref<HTMLElement | null>(null)
 const showModelMenu = ref(false)
 
-const chatModels = computed(() => settings.chatModels)
+/** 仅展示已启用且已配置密钥的模型，与后端实际调用一致 */
+const chatModels = computed(() => settings.chatModels.filter(isModelReady))
 
+/** 与 handleChat 共用 resolveChatModel，保证展示与 API 调用一致 */
 const selectedModel = computed(() => {
-  const skill = settings.getSkill('chat')
-  const id = skill?.defaultModelId
+  const resolved = resolveChatModel(agentConfig.skeleton, settings)
+  if (resolved.ok) return resolved.model
+
+  const id = settings.getSkill('chat')?.defaultModelId
   if (id) {
     const m = settings.getModel(id)
-    if (m?.enabled && m.capability === 'chat') return m
+    if (m?.enabled) return m
   }
   return chatModels.value[0] ?? null
 })
+
+const isChatBusy = computed(() => agent.isChatProcessing)
 
 const canSend = () =>
   !agent.isProcessing &&
@@ -71,13 +80,20 @@ function onDocClick(e: MouseEvent) {
 }
 
 function ensureDefaultModel() {
+  const models = chatModels.value
+  if (!models.length) return
   const skill = settings.getSkill('chat')
-  if (!skill?.defaultModelId && chatModels.value[0]) {
-    settings.updateSkill('chat', { defaultModelId: chatModels.value[0].id })
+  const current = skill?.defaultModelId
+  if (!current) {
+    settings.updateSkill('chat', { defaultModelId: models[0].id })
+    return
+  }
+  if (!settings.getModel(current)) {
+    settings.updateSkill('chat', { defaultModelId: models[0].id })
   }
 }
 
-watch(chatModels, ensureDefaultModel, { immediate: true })
+watch(chatModels, ensureDefaultModel, { immediate: true, deep: true })
 
 onMounted(() => {
   document.addEventListener('click', onDocClick)
@@ -156,12 +172,12 @@ onUnmounted(() => {
             <button
               type="button"
               class="send-btn"
-              :class="{ ready: canSend(), waiting: agent.isProcessing }"
+              :class="{ ready: canSend(), waiting: isChatBusy }"
               :disabled="!canSend()"
               title="发送"
               @click="agent.sendMessage('chat')"
             >
-              <Loader2 v-if="agent.isProcessing" :size="18" class="om-loading-spinner" aria-hidden="true" />
+              <Loader2 v-if="isChatBusy" :size="18" class="om-loading-spinner" aria-hidden="true" />
               <ArrowUp v-else :size="18" stroke-width="2.5" />
             </button>
           </div>

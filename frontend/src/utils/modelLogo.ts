@@ -27,6 +27,7 @@ const KEYWORD_LOGO: [RegExp, string][] = [
   [/doubao|豆包/i, '/logos/doubao-color.svg'],
   [/bytedance|字节|volces|ark/i, '/logos/bytedance-color.svg'],
   [/minimax/i, '/logos/minimax-color.svg'],
+  [/kimi|moonshot/i, '/logos/kimi-color.svg'],
   [/grok|xai/i, '/logos/grok.svg'],
   [/nanobanana/i, '/logos/nanobanana-color.svg'],
   [/codex/i, '/logos/codex-color.svg'],

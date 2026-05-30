@@ -29,57 +29,22 @@ const FORMAT_HINT: Partial<Record<ModelProvider, string>> = {
   bailian: '格式示例：sk-xxxxxxxx（百炼 / DashScope）',
   doubao: '格式示例：火山方舟 API Key',
   bytedance: '格式示例：火山方舟 API Key',
+  minimax: '格式示例：MiniMax API Key',
+  moonshot: '格式示例：sk-xxxxxxxx（Moonshot / Kimi）',
   custom: '至少 16 位，可含字母、数字、-、_、.',
 }
 
-/** 按服务商做简单格式校验 */
-export function validateApiKey(key: string, provider: ModelProvider): ApiKeyValidationResult {
+/** 按服务商做简单格式校验（不限制 sk- 等前缀，兼容火山方舟等接入方式） */
+export function validateApiKey(key: string, _provider?: ModelProvider): ApiKeyValidationResult {
   const k = key.trim()
   if (!k) return { valid: false, message: '请粘贴 API Key' }
 
-  if (k.length < 16) {
-    return { valid: false, message: '密钥长度过短（至少 16 位）' }
+  if (k.length < 8) {
+    return { valid: false, message: '密钥长度过短（至少 8 位）' }
   }
 
   if (/\s/.test(k)) {
     return { valid: false, message: '密钥不能包含空格' }
-  }
-
-  switch (provider) {
-    case 'anthropic':
-      if (!/^sk-ant-[a-zA-Z0-9_-]{10,}$/.test(k)) {
-        return {
-          valid: false,
-          message: 'Claude 密钥应以 sk-ant- 开头',
-        }
-      }
-      break
-    case 'deepseek':
-    case 'openai':
-    case 'qwen':
-    case 'bailian':
-      if (!/^sk-[a-zA-Z0-9_-]{16,}$/.test(k)) {
-        return {
-          valid: false,
-          message: '密钥应以 sk- 开头，后为字母、数字、- 或 _',
-        }
-      }
-      break
-    case 'zhipu':
-      if (!/^[a-zA-Z0-9]+(\.[a-zA-Z0-9_-]+)?$/.test(k) || k.length < 20) {
-        return {
-          valid: false,
-          message: '智谱密钥格式不正确（通常为 id.secret 或长串字母数字）',
-        }
-      }
-      break
-    default:
-      if (!/^[a-zA-Z0-9_.-]{16,}$/.test(k)) {
-        return {
-          valid: false,
-          message: '密钥仅可包含字母、数字及 - _ .',
-        }
-      }
   }
 
   return { valid: true }

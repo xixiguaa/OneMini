@@ -2,24 +2,38 @@
 import {
   ArrowUp,
   ChevronDown,
+  FileText,
   Image,
   Loader2,
   Plus,
   Sparkles,
   Video,
+  X,
 } from 'lucide-vue-next'
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { ACCEPT_CHAT_FILES } from '../config/constants'
 import BrandLogo from './BrandLogo.vue'
 import CreativeSkillsMenu from './CreativeSkillsMenu.vue'
 import GenPreferencesPopover from './GenPreferencesPopover.vue'
+import ModelLogo from './ModelLogo.vue'
+import ImageEditOverlay from './ImageEditOverlay.vue'
 import WorksWaterfall from './WorksWaterfall.vue'
+import { isModelReady } from '../utils/resolveModel'
+import { useWorksGallery } from '../composables/useWorksGallery'
 import { useAgentStore } from '../stores/agent'
+import { useCreateHistoryStore } from '../stores/createHistory'
+import { useSettingsStore } from '../stores/settings'
+import type { CreateMode, SkillId } from '../types/agent'
 
 const agent = useAgentStore()
+const { hasItems } = useWorksGallery()
+const createHistory = useCreateHistoryStore()
+const settings = useSettingsStore()
 const fileInput = ref<HTMLInputElement | null>(null)
 const modeWrapRef = ref<HTMLElement | null>(null)
+const modelPickerRef = ref<HTMLElement | null>(null)
 const showModeMenu = ref(false)
+const showModelMenu = ref(false)
 
 const modes = [
   { id: 'agent' as const, label: 'Agent 模式', icon: Sparkles },
@@ -28,6 +42,31 @@ const modes = [
 ]
 
 const currentMode = computed(() => modes.find((m) => m.id === agent.createMode))
+
+const skillForMode = computed((): SkillId => {
+  if (agent.createMode === 'video') return 'video'
+  if (agent.createMode === 'image') return 'image'
+  return 'chat'
+})
+
+const availableModels = computed(() => {
+  let list = settings.chatModels
+  if (agent.createMode === 'video') list = settings.videoModels
+  else if (agent.createMode === 'image') list = settings.imageModels
+  else if (agent.createMode === 'agent') list = settings.chatModels
+  return list.filter(isModelReady)
+})
+
+const selectedModel = computed(() => {
+  const models = availableModels.value
+  const skill = settings.getSkill(skillForMode.value)
+  const id = skill?.defaultModelId
+  if (id) {
+    const m = models.find((x) => x.id === id)
+    if (m) return m
+  }
+  return models[0] ?? null
+})
 
 const greeting = computed(() => {
   const h = new Date().getHours()
@@ -47,13 +86,43 @@ function onKeydown(e: KeyboardEvent) {
   }
 }
 
-function pickMode(id: typeof agent.createMode) {
+function pickMode(id: CreateMode) {
   agent.createMode = id
   showModeMenu.value = false
+  ensureDefaultModel()
+}
+
+function selectModel(id: string) {
+  settings.updateSkill(skillForMode.value, { defaultModelId: id })
+  showModelMenu.value = false
+}
+
+function ensureDefaultModel() {
+  const models = availableModels.value
+  if (!models.length) return
+  const skill = settings.getSkill(skillForMode.value)
+  const current = skill?.defaultModelId
+  const valid = current && models.some((m) => m.id === current)
+  if (!valid) {
+    settings.updateSkill(skillForMode.value, { defaultModelId: models[0].id })
+  }
+}
+
+function toggleModelMenu(e: MouseEvent) {
+  e.stopPropagation()
+  if (!availableModels.value.length) {
+    agent.setCurrentView('models')
+    return
+  }
+  showModelMenu.value = !showModelMenu.value
+  showModeMenu.value = false
+  agent.showSkillsMenu = false
+  agent.showPrefsMenu = false
 }
 
 function closeComposerMenus() {
   showModeMenu.value = false
+  showModelMenu.value = false
   agent.showSkillsMenu = false
   agent.showPrefsMenu = false
 }
@@ -62,6 +131,7 @@ function toggleModeMenu(e: MouseEvent) {
   e.stopPropagation()
   agent.showSkillsMenu = false
   agent.showPrefsMenu = false
+  showModelMenu.value = false
   showModeMenu.value = !showModeMenu.value
 }
 
@@ -69,99 +139,157 @@ function onDocClick(e: MouseEvent) {
   if (showModeMenu.value && !modeWrapRef.value?.contains(e.target as Node)) {
     showModeMenu.value = false
   }
+  if (showModelMenu.value && !modelPickerRef.value?.contains(e.target as Node)) {
+    showModelMenu.value = false
+  }
 }
 
-onMounted(() => document.addEventListener('click', onDocClick))
+watch(() => agent.createMode, ensureDefaultModel)
+watch(availableModels, ensureDefaultModel, { deep: true })
+watch(
+  () => agent.currentView,
+  (view) => {
+    if (view === 'create') ensureDefaultModel()
+  },
+)
+
+onMounted(() => {
+  document.addEventListener('click', onDocClick)
+  ensureDefaultModel()
+  void createHistory.hydrate(true)
+})
 onUnmounted(() => document.removeEventListener('click', onDocClick))
 
 const canSend = () =>
   !agent.isProcessing &&
   (agent.inputText.trim().length > 0 || agent.pendingAttachments.length > 0)
+
+const isCreateBusy = computed(() => agent.isCreateProcessing)
+
+function fileBadge(name: string) {
+  const ext = name.split('.').pop()?.toUpperCase()
+  if (!ext || ext.length > 5) return 'FILE'
+  return ext
+}
 </script>
 
 <template>
   <div class="create-studio" @click="closeComposerMenus">
-    <section class="hero">
-      <div class="hero-center">
+    <div class="create-body">
+      <section class="create-top">
         <div class="greeting">
-          <BrandLogo :size="64" />
+          <BrandLogo :size="52" />
           <h1>{{ greeting }}</h1>
         </div>
 
         <div class="composer card">
-        <textarea
-          v-model="agent.inputText"
-          class="composer-input"
-          placeholder="今天想创作什么？"
-          rows="3"
-          @keydown="onKeydown"
-        />
-
-        <div v-if="agent.pendingAttachments.length" class="attach-chips">
-          <span v-for="a in agent.pendingAttachments" :key="a.id" class="chip">
-            {{ a.name }}
-            <button type="button" @click="agent.removeAttachment(a.id)">×</button>
-          </span>
-        </div>
-
-        <div class="composer-bar">
-          <button type="button" class="icon-btn" title="上传" @click="fileInput?.click()">
-            <Plus :size="18" />
-          </button>
-
-          <div class="bar-pills">
-            <div ref="modeWrapRef" class="mode-wrap">
-              <button type="button" class="pill" @click.stop="toggleModeMenu">
-                <component :is="currentMode?.icon ?? Sparkles" :size="14" />
-                {{ currentMode?.label ?? 'Agent 模式' }}
-                <ChevronDown :size="12" />
+          <div v-if="agent.pendingAttachments.length" class="attachments">
+            <div
+              v-for="a in agent.pendingAttachments"
+              :key="a.id"
+              class="attach-card"
+            >
+              <button type="button" class="attach-remove" title="移除" @click="agent.removeAttachment(a.id)">
+                <X :size="12" />
               </button>
-              <div v-if="showModeMenu" class="mode-menu card" @click.stop>
+              <div class="attach-preview">
+                <img v-if="a.previewUrl" :src="a.previewUrl" :alt="a.name" class="attach-img" />
+                <FileText v-else :size="28" class="attach-doc-icon" />
+              </div>
+              <span class="attach-badge">{{ fileBadge(a.name) }}</span>
+            </div>
+          </div>
+
+          <textarea
+            v-model="agent.inputText"
+            class="composer-input"
+            placeholder="今天想创作什么？"
+            rows="3"
+            @keydown="onKeydown"
+          />
+
+          <div class="composer-bar">
+            <button type="button" class="icon-btn" title="上传" @click="fileInput?.click()">
+              <Plus :size="18" />
+            </button>
+
+            <div class="bar-pills">
+              <div ref="modeWrapRef" class="mode-wrap">
+                <button type="button" class="pill" @click.stop="toggleModeMenu">
+                  <component :is="currentMode?.icon ?? Sparkles" :size="14" />
+                  {{ currentMode?.label ?? 'Agent 模式' }}
+                  <ChevronDown :size="12" />
+                </button>
+                <div v-if="showModeMenu" class="mode-menu card" @click.stop>
+                  <button
+                    v-for="m in modes"
+                    :key="m.id"
+                    type="button"
+                    class="mode-item"
+                    :class="{ active: agent.createMode === m.id }"
+                    @click="pickMode(m.id)"
+                  >
+                    <component :is="m.icon" :size="16" />
+                    {{ m.label }}
+                  </button>
+                </div>
+              </div>
+              <GenPreferencesPopover v-if="agent.createMode !== 'agent'" />
+              <CreativeSkillsMenu v-if="agent.createMode !== 'agent'" />
+            </div>
+
+            <div ref="modelPickerRef" class="model-picker-wrap">
+              <button type="button" class="model-picker" @click.stop="toggleModelMenu">
+                <ModelLogo v-if="selectedModel" :model="selectedModel" :size="18" />
+                <span class="model-name">{{ selectedModel?.name ?? '选择模型' }}</span>
+                <ChevronDown :size="12" class="chevron" :class="{ open: showModelMenu }" />
+              </button>
+              <div v-if="showModelMenu && availableModels.length" class="model-menu card" @click.stop>
                 <button
-                  v-for="m in modes"
+                  v-for="m in availableModels"
                   :key="m.id"
                   type="button"
-                  class="mode-item"
-                  :class="{ active: agent.createMode === m.id }"
-                  @click="pickMode(m.id)"
+                  class="model-option"
+                  :class="{ active: selectedModel?.id === m.id }"
+                  @click="selectModel(m.id)"
                 >
-                  <component :is="m.icon" :size="16" />
-                  {{ m.label }}
+                  <ModelLogo :model="m" :size="20" />
+                  <span>{{ m.name }}</span>
                 </button>
               </div>
             </div>
-            <GenPreferencesPopover />
-            <CreativeSkillsMenu />
+
+            <button
+              type="button"
+              class="send-btn"
+              :class="{ ready: canSend(), waiting: isCreateBusy }"
+              :disabled="!canSend() && !isCreateBusy"
+              title="发送"
+              @click="agent.generateFromStudio()"
+            >
+              <Loader2 v-if="isCreateBusy" :size="18" class="om-loading-spinner" aria-hidden="true" />
+              <ArrowUp v-else :size="18" stroke-width="2.5" />
+            </button>
           </div>
 
-          <button
-            type="button"
-            class="send-btn"
-            :class="{ ready: canSend(), waiting: agent.isProcessing }"
-            :disabled="!canSend() && !agent.isProcessing"
-            title="发送"
-            @click="agent.generateFromStudio()"
-          >
-            <Loader2 v-if="agent.isProcessing" :size="18" class="om-loading-spinner" aria-hidden="true" />
-            <ArrowUp v-else :size="18" stroke-width="2.5" />
-          </button>
+          <input
+            ref="fileInput"
+            type="file"
+            :accept="ACCEPT_CHAT_FILES"
+            multiple
+            hidden
+            @change="onFiles"
+          />
         </div>
+      </section>
 
-        <input
-          ref="fileInput"
-          type="file"
-          :accept="ACCEPT_CHAT_FILES"
-          multiple
-          hidden
-          @change="onFiles"
-        />
-      </div>
-      </div>
-    </section>
+      <section class="gallery">
+        <div v-if="hasItems" class="gallery-label">创作历史</div>
+        <WorksWaterfall />
+      </section>
+    </div>
 
-    <section class="gallery">
-      <WorksWaterfall />
-    </section>
+    <ImageEditOverlay />
   </div>
 </template>
 
@@ -174,37 +302,34 @@ const canSend = () =>
   overflow-y: auto;
   width: 100%;
   display: flex;
-  flex-direction: column;
-}
-
-.hero {
-  flex: 1;
-  display: flex;
-  align-items: center;
   justify-content: center;
-  min-height: min(72vh, 640px);
-  padding: 32px 24px;
+  padding: 48px 24px 32px;
 }
 
-.hero-center {
+.create-body {
   width: 100%;
-  max-width: 560px;
+  max-width: 800px;
   display: flex;
   flex-direction: column;
-  align-items: center;
   gap: 20px;
+  margin-top: min(6vh, 56px);
+}
+
+.create-top {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
 }
 
 .greeting {
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
   text-align: center;
-  gap: 16px;
+  gap: 12px;
 
   h1 {
-    font-size: 26px;
+    font-size: 24px;
     font-weight: 500;
     color: $text-primary;
     letter-spacing: -0.02em;
@@ -214,7 +339,7 @@ const canSend = () =>
 
 .composer.card {
   width: 100%;
-  padding: 16px 18px 14px;
+  padding: 18px 20px 14px;
   border-radius: 16px;
   background: var(--composer-bg);
   border: 1px solid var(--composer-border);
@@ -229,7 +354,7 @@ const canSend = () =>
 
 .composer-input {
   width: 100%;
-  min-height: 72px;
+  min-height: 80px;
   resize: none;
   font-size: 15px;
   line-height: 1.6;
@@ -242,28 +367,74 @@ const canSend = () =>
   }
 }
 
-.attach-chips {
+
+.attachments {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
-  margin: 8px 0 4px;
+  gap: 10px;
+  margin-bottom: 14px;
 }
 
-.chip {
+.attach-card {
+  position: relative;
+  width: 112px;
+  height: 112px;
+  border-radius: 12px;
+  overflow: hidden;
+  background: $bg-input;
+  border: 1px solid $glass-border;
+  box-shadow: $shadow-sm;
+}
+
+.attach-preview {
+  width: 100%;
+  height: 100%;
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 4px 10px;
-  background: $accent-light;
-  border-radius: 12px;
-  font-size: 11px;
-  color: $accent;
+  justify-content: center;
+  background: #fff;
+}
 
-  button {
-    font-size: 14px;
-    line-height: 1;
-    opacity: 0.7;
-    &:hover { opacity: 1; }
+.attach-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.attach-doc-icon {
+  color: $text-muted;
+}
+
+.attach-badge {
+  position: absolute;
+  left: 8px;
+  bottom: 8px;
+  padding: 2px 6px;
+  border-radius: 6px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: #fff;
+  background: rgba(0, 0, 0, 0.55);
+}
+
+.attach-remove {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  z-index: 2;
+  width: 22px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  color: #fff;
+  background: rgba(0, 0, 0, 0.5);
+
+  &:hover {
+    background: rgba(220, 53, 69, 0.85);
   }
 }
 
@@ -359,6 +530,79 @@ const canSend = () =>
   }
 }
 
+.model-picker-wrap {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.model-picker {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 160px;
+  padding: 6px 10px;
+  border-radius: 18px;
+  border: 1px solid var(--composer-pill-border);
+  background: var(--composer-pill-bg);
+  font-size: 12px;
+  color: var(--composer-pill-text);
+
+  &:hover {
+    border-color: $accent;
+    background: var(--composer-pill-hover-bg);
+  }
+}
+
+.model-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chevron {
+  flex-shrink: 0;
+  transition: transform 0.15s;
+
+  &.open {
+    transform: rotate(180deg);
+  }
+}
+
+.model-menu {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  right: 0;
+  min-width: 200px;
+  max-height: 240px;
+  overflow-y: auto;
+  padding: 6px;
+  z-index: 40;
+  background: var(--composer-menu-bg);
+  border: 1px solid var(--composer-border);
+}
+
+.model-option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 10px;
+  border-radius: 8px;
+  font-size: 13px;
+  text-align: left;
+  color: var(--composer-menu-text);
+
+  &:hover {
+    background: var(--composer-option-hover);
+  }
+
+  &.active {
+    color: $accent;
+    font-weight: 600;
+    background: var(--composer-option-hover);
+  }
+}
+
 .send-btn {
   display: flex;
   align-items: center;
@@ -393,14 +637,11 @@ const canSend = () =>
 
 .gallery {
   flex-shrink: 0;
-  max-width: 1200px;
-  margin: 0 auto;
   width: 100%;
-  padding: 8px 28px 32px;
 }
 
 .gallery-label {
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 600;
   color: $text-muted;
   text-transform: uppercase;

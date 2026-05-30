@@ -1,37 +1,50 @@
 import { computed } from 'vue'
-import { useConversationsStore } from '../stores/conversations'
+import { useCreateHistoryStore } from '../stores/createHistory'
+import type { CreateHistoryItem } from '../stores/createHistory'
 import type { MessageType } from '../types/agent'
+import { resolveCreateHistoryImageUrl } from '../utils/createHistoryMedia'
 
-export interface WorkItem {
+export interface GalleryItem {
   id: string
   type: Extract<MessageType, 'image' | 'video'>
-  url: string
   prompt: string
   timestamp: number
+  status: CreateHistoryItem['status']
+  url?: string
+  sessionId?: string
+  parentId?: string
 }
 
 export function useWorksGallery() {
-  const conversations = useConversationsStore()
+  const createHistory = useCreateHistoryStore()
 
-  const works = computed(() => {
-    const items: WorkItem[] = []
-    for (const conv of conversations.list) {
-      for (const msg of conv.messages) {
-        if (msg.role !== 'assistant') continue
-        if (msg.type !== 'image' && msg.type !== 'video') continue
-        const url = msg.attachments?.url || msg.attachments?.previewUrl
-        if (!url) continue
-        items.push({
-          id: msg.id,
-          type: msg.type,
-          url,
-          prompt: msg.content,
-          timestamp: msg.timestamp,
-        })
+  const galleryItems = computed<GalleryItem[]>(() => {
+    const latestBySession = new Map<string, GalleryItem>()
+    for (const item of createHistory.sortedItems) {
+      if (item.status === 'FAIL') continue
+      const sid = item.sessionId || item.id
+      const mapped: GalleryItem = {
+        id: item.id,
+        type: item.type,
+        prompt: item.prompt,
+        timestamp: item.createdAt,
+        status: item.status,
+        url: resolveCreateHistoryImageUrl(item),
+        sessionId: item.sessionId,
+        parentId: item.parentId,
+      }
+      const existing = latestBySession.get(sid)
+      if (!existing || item.createdAt >= existing.timestamp) {
+        latestBySession.set(sid, mapped)
       }
     }
-    return items.sort((a, b) => b.timestamp - a.timestamp)
+    return [...latestBySession.values()].sort((a, b) => b.timestamp - a.timestamp)
   })
 
-  return { works }
+  const hasItems = computed(() => galleryItems.value.length > 0)
+  const pendingCount = computed(() =>
+    galleryItems.value.filter((i) => i.status === 'RUNNING').length,
+  )
+
+  return { galleryItems, hasItems, pendingCount }
 }
