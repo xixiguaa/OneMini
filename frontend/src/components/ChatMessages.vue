@@ -118,6 +118,33 @@ async function setFeedback(msg: ChatMessage, feedback: MessageFeedback) {
   await agent.setMessageFeedback(msg.id, feedback)
 }
 
+function siblingVariants(msg: ChatMessage): ChatMessage[] {
+  return agent.getMessageBranchVariants(msg.id)
+}
+
+function variantBadge(msg: ChatMessage): string | null {
+  if (msg.role !== 'assistant') return null
+  const variants = siblingVariants(msg)
+  if (variants.length <= 1) return null
+  const idx = variants.findIndex((v) => v.id === msg.id)
+  if (idx < 0) return null
+  return idx === 0 ? `回答 1/${variants.length}` : `重新生成 · ${idx + 1}/${variants.length}`
+}
+
+function isContinuationActive(msg: ChatMessage) {
+  return agent.activePathIds.has(msg.id)
+}
+
+function showSetContinuation(msg: ChatMessage) {
+  if (msg.role !== 'assistant' || msg.type !== 'text') return false
+  if (siblingVariants(msg).length < 2) return false
+  return !isContinuationActive(msg)
+}
+
+function setContinuation(msg: ChatMessage) {
+  agent.switchMessageBranch(msg.id)
+}
+
 watch(
   () => agent.messages.length,
   async () => {
@@ -168,7 +195,11 @@ onMounted(() => {
         <div v-else class="assistant-turn">
           <div
             class="assistant-bubble"
-            :class="{ 'assistant-bubble--thinking': shouldShowThinking(msg) }"
+            :class="{
+              'assistant-bubble--thinking': shouldShowThinking(msg),
+              'assistant-bubble--inactive-branch':
+                msg.role === 'assistant' && !isContinuationActive(msg),
+            }"
           >
             <div class="assistant-body">
           <LoadingIndicator
@@ -234,6 +265,25 @@ onMounted(() => {
               {{ msg.attachments.status }}
             </span>
           </div>
+          </div>
+
+          <div v-if="variantBadge(msg) || showSetContinuation(msg)" class="msg-meta-row">
+            <span v-if="variantBadge(msg)" class="version-badge">{{ variantBadge(msg) }}</span>
+            <span
+              v-if="variantBadge(msg) && isContinuationActive(msg)"
+              class="continuation-hint"
+            >
+              后续对话基于此版本
+            </span>
+            <button
+              v-if="showSetContinuation(msg)"
+              type="button"
+              class="continuation-btn"
+              :disabled="agent.isChatProcessing"
+              @click="setContinuation(msg)"
+            >
+              以此版本继续对话
+            </button>
           </div>
 
           <div
@@ -416,6 +466,49 @@ $messages-max: 48rem;
   &.disliked {
     color: $accent;
     background: $accent-light;
+  }
+}
+
+.assistant-bubble--inactive-branch {
+  opacity: 0.92;
+  border-left: 2px solid var(--composer-pill-border, $border-light);
+  padding-left: 12px;
+  margin-left: 2px;
+}
+
+.msg-meta-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  margin-top: 8px;
+}
+
+.version-badge {
+  font-size: 11px;
+  color: $text-muted;
+  padding: 2px 8px;
+  border-radius: 6px;
+  background: var(--composer-pill-bg, $bg-elevated);
+}
+
+.continuation-hint {
+  font-size: 11px;
+  color: $accent;
+}
+
+.continuation-btn {
+  font-size: 11px;
+  color: $text-secondary;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+
+  &:hover:not(:disabled) {
+    color: $accent;
+  }
+
+  &:disabled {
+    opacity: 0.45;
   }
 }
 

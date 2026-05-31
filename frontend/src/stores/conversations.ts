@@ -9,7 +9,12 @@ import {
   patchMessageFeedbackApi,
   replaceConversationMessages,
 } from '../api/conversations'
-import type { ChatMessage, Conversation, MessageFeedback } from '../types/agent'
+import type { ChatMessage, Conversation, MessageFeedback, WorkingMemoryState } from '../types/agent'
+import {
+  buildBranchTimeline,
+  normalizeToGraph,
+  resolveDefaultLeaf,
+} from '../services/conversationGraph'
 import { groupConversations } from '../utils/conversationTimeGroup'
 import { randomUUID } from '../utils/uuid'
 
@@ -59,6 +64,8 @@ export const useConversationsStore = defineStore('conversations', () => {
 
   const incognitoActive = ref(false)
   const incognitoMessages = ref<ChatMessage[]>([])
+  const incognitoActiveLeafId = ref<string | null>(null)
+  const incognitoWorkingMemory = ref<WorkingMemoryState | undefined>(undefined)
 
   const persistTimers = new Map<string, ReturnType<typeof setTimeout>>()
   /** 流式生成期间暂停防抖写入，结束后统一 flush，避免同一条消息触发两次 PUT */
@@ -108,13 +115,18 @@ export const useConversationsStore = defineStore('conversations', () => {
     try {
       persistError.value = null
       await ensureConversationOnServer(conversationId)
-      const saved = await replaceConversationMessages(conversationId, messages)
+      const saved = await replaceConversationMessages(conversationId, messages, {
+        activeLeafId: conv.activeLeafId,
+        workingMemory: conv.workingMemory,
+      })
       // 删除后可能仍有在途写入，避免把已删会话写回服务端
       const live = list.value.find((c) => c.id === conversationId)
       if (!live) return
       const localTitle = deriveConversationTitle(messages)
       live.title = localTitle !== '新对话' ? localTitle : saved.title || live.title
       live.updatedAt = saved.updatedAt
+      if (saved.activeLeafId) live.activeLeafId = saved.activeLeafId
+      if (saved.workingMemory) live.workingMemory = saved.workingMemory
     } catch (e) {
       persistError.value = e instanceof Error ? e.message : '保存对话失败'
       console.error('[conversations] persist', e)
@@ -136,7 +148,7 @@ export const useConversationsStore = defineStore('conversations', () => {
         // 服务端已有数据时仅丢弃旧 localStorage，避免刷新后重复导入
         clearLegacyStorage()
       }
-      list.value = conversations.map((c) => ({ ...c, serverSynced: true }))
+      list.value = conversations.map((c) => ensureConversationGraphFields({ ...c, serverSynced: true }))
       activeId.value = conversations[0]?.id ?? null
       hydrated.value = true
     } catch (e) {
@@ -154,14 +166,24 @@ export const useConversationsStore = defineStore('conversations', () => {
     activeId.value = null
   }
 
+  function ensureConversationGraphFields(conv: Conversation): Conversation {
+    const messages = normalizeToGraph(conv.messages ?? [])
+    const leaf = conv.activeLeafId ?? resolveDefaultLeaf(messages)?.id ?? null
+    return { ...conv, messages, activeLeafId: leaf }
+  }
+
   function startIncognito() {
     incognitoActive.value = true
     incognitoMessages.value = []
+    incognitoActiveLeafId.value = null
+    incognitoWorkingMemory.value = undefined
   }
 
   function exitIncognito() {
     incognitoActive.value = false
     incognitoMessages.value = []
+    incognitoActiveLeafId.value = null
+    incognitoWorkingMemory.value = undefined
   }
 
   function getIncognitoMessages(): ChatMessage[] {
@@ -233,11 +255,46 @@ export const useConversationsStore = defineStore('conversations', () => {
   function setMessages(id: string, messages: ChatMessage[]) {
     const conv = list.value.find((c) => c.id === id)
     if (!conv) return
-    conv.messages = messages
+    conv.messages = normalizeToGraph(messages)
+    if (!conv.activeLeafId || !conv.messages.some((m) => m.id === conv.activeLeafId)) {
+      conv.activeLeafId = resolveDefaultLeaf(conv.messages)?.id ?? null
+    }
     conv.updatedAt = Date.now()
-    const derived = deriveConversationTitle(messages)
+    const derived = deriveConversationTitle(buildBranchTimeline(conv.messages, conv.activeLeafId ?? null).path)
     if (derived !== '新对话') conv.title = derived
     schedulePersist(id)
+  }
+
+  function getActiveLeafId(id: string): string | null {
+    if (incognitoActive.value) return incognitoActiveLeafId.value
+    return list.value.find((c) => c.id === id)?.activeLeafId ?? null
+  }
+
+  function setActiveLeafId(conversationId: string, leafId: string | null) {
+    if (incognitoActive.value) {
+      incognitoActiveLeafId.value = leafId
+      return
+    }
+    const conv = list.value.find((c) => c.id === conversationId)
+    if (!conv) return
+    conv.activeLeafId = leafId
+    conv.updatedAt = Date.now()
+    schedulePersist(conversationId)
+  }
+
+  function getWorkingMemory(id: string): WorkingMemoryState | undefined {
+    if (incognitoActive.value) return incognitoWorkingMemory.value
+    return list.value.find((c) => c.id === id)?.workingMemory
+  }
+
+  function setWorkingMemory(conversationId: string, state: WorkingMemoryState | undefined) {
+    if (incognitoActive.value) {
+      incognitoWorkingMemory.value = state
+      return
+    }
+    const conv = list.value.find((c) => c.id === conversationId)
+    if (!conv) return
+    conv.workingMemory = state
   }
 
   function patchMessageLocal(
@@ -363,6 +420,10 @@ export const useConversationsStore = defineStore('conversations', () => {
     selectConversation,
     getMessages,
     setMessages,
+    getActiveLeafId,
+    setActiveLeafId,
+    getWorkingMemory,
+    setWorkingMemory,
     patchMessageLocal,
     updateMessageFeedback,
     updateTitleFromText,

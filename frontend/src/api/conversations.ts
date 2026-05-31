@@ -1,5 +1,5 @@
 import axios from 'axios'
-import type { ChatMessage, Conversation, MessageFeedback } from '../types/agent'
+import type { ChatMessage, Conversation, MessageFeedback, WorkingMemoryState } from '../types/agent'
 import { setupAuthInterceptors } from '../utils/setupAuthInterceptors'
 
 const api = axios.create({
@@ -27,8 +27,13 @@ export async function createConversationApi(payload?: {
 export async function replaceConversationMessages(
   conversationId: string,
   messages: ChatMessage[],
+  opts?: { activeLeafId?: string | null; workingMemory?: WorkingMemoryState },
 ): Promise<Conversation> {
-  const { data } = await api.put<Conversation>(`/${conversationId}/messages`, { messages })
+  const { data } = await api.put<Conversation>(`/${conversationId}/messages`, {
+    messages,
+    activeLeafId: opts?.activeLeafId ?? undefined,
+    workingMemory: opts?.workingMemory,
+  })
   return data
 }
 
@@ -56,4 +61,26 @@ export async function importConversationsApi(conversations: Conversation[]): Pro
     conversations,
   })
   return data
+}
+
+export interface EpisodicMemoryHit {
+  id: string
+  score: number
+  conversationId?: string
+  role?: string
+  type?: string
+  content?: string
+  timestamp?: number
+}
+
+/** 情节记忆 (Episodic Memory)：跨会话语义检索 */
+export async function searchEpisodicMemory(
+  query: string,
+  topK = 5,
+): Promise<EpisodicMemoryHit[]> {
+  const { data } = await api.post<{ hits: EpisodicMemoryHit[] }>('/search', {
+    query,
+    top_k: topK,
+  })
+  return data.hits ?? []
 }

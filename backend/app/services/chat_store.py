@@ -117,6 +117,39 @@ def _metadata_json_from_raw(raw: dict[str, Any]) -> str:
     fb = raw.get("feedback")
     if fb in ("like", "dislike"):
         meta["feedback"] = fb
+    for key in (
+        "parentId",
+        "parent_id",
+        "branchRootId",
+        "branch_root_id",
+        "variantIndex",
+        "variant_index",
+        "metadata",
+        "action",
+        "targetAssistantId",
+        "workingMemory",
+        "toolCalls",
+    ):
+        if key not in raw:
+            continue
+        val = raw.get(key)
+        if val is None:
+            continue
+        if key in ("parent_id", "parentId"):
+            meta["parentId"] = val
+        elif key in ("branch_root_id", "branchRootId"):
+            meta["branchRootId"] = val
+        elif key in ("variant_index", "variantIndex"):
+            meta["variantIndex"] = val
+        elif key == "metadata" and isinstance(val, dict):
+            meta.update(val)
+        elif key in ("action", "targetAssistantId", "workingMemory", "toolCalls"):
+            meta[key] = val
+    nested = raw.get("metadata")
+    if isinstance(nested, dict):
+        for k, v in nested.items():
+            if v is not None:
+                meta[k] = v
     return json.dumps(meta, ensure_ascii=False) if meta else ""
 
 
@@ -134,6 +167,18 @@ def _row_to_message(row: dict[str, Any]) -> dict[str, Any]:
     fb = meta.get("feedback")
     if fb in ("like", "dislike"):
         out["feedback"] = fb
+    if meta.get("parentId"):
+        out["parentId"] = meta["parentId"]
+    if meta.get("branchRootId"):
+        out["branchRootId"] = meta["branchRootId"]
+    if meta.get("variantIndex") is not None:
+        out["variantIndex"] = meta["variantIndex"]
+    msg_meta: dict[str, Any] = {}
+    for k in ("action", "targetAssistantId", "workingMemory", "toolCalls"):
+        if k in meta:
+            msg_meta[k] = meta[k]
+    if msg_meta:
+        out["metadata"] = msg_meta
     return out
 
 
@@ -253,7 +298,7 @@ def get_conversation(user_id: str, conversation_id: str) -> dict[str, Any] | Non
     try:
         rows = col.query(
             expr=expr,
-            output_fields=["id", "title", "created_at", "updated_at"],
+            output_fields=["id", "title", "created_at", "updated_at", "metadata_json"],
             limit=1,
         )
     except MilvusException:
@@ -262,13 +307,19 @@ def get_conversation(user_id: str, conversation_id: str) -> dict[str, Any] | Non
         return None
     row = rows[0]
     messages = _load_messages(col, conversation_id)
-    return {
+    conv_meta = _parse_conversation_meta(row.get("metadata_json"))
+    out: dict[str, Any] = {
         "id": row["id"],
         "title": row.get("title") or "新对话",
         "createdAt": row.get("created_at") or 0,
         "updatedAt": row.get("updated_at") or 0,
         "messages": messages,
     }
+    if conv_meta.get("activeLeafId"):
+        out["activeLeafId"] = conv_meta["activeLeafId"]
+    if conv_meta.get("workingMemory"):
+        out["workingMemory"] = conv_meta["workingMemory"]
+    return out
 
 
 def create_conversation(
@@ -384,10 +435,30 @@ def _delete_by_ids(col: Collection, ids: list[str]) -> None:
     col.flush()
 
 
+def _conversation_meta_json(
+    *,
+    active_leaf_id: str | None = None,
+    working_memory: dict[str, Any] | None = None,
+) -> str:
+    meta: dict[str, Any] = {}
+    if active_leaf_id:
+        meta["activeLeafId"] = active_leaf_id
+    if working_memory:
+        meta["workingMemory"] = working_memory
+    return json.dumps(meta, ensure_ascii=False) if meta else ""
+
+
+def _parse_conversation_meta(raw: str | None) -> dict[str, Any]:
+    return _parse_metadata(raw)
+
+
 def replace_messages(
     user_id: str,
     conversation_id: str,
     messages: list[dict[str, Any]],
+    *,
+    active_leaf_id: str | None = None,
+    working_memory: dict[str, Any] | None = None,
 ) -> dict[str, Any] | None:
     conv = get_conversation(user_id, conversation_id)
     if not conv:
@@ -457,6 +528,10 @@ def replace_messages(
         col.insert(normalized)
         col.flush()
 
+    conv_meta = _conversation_meta_json(
+        active_leaf_id=active_leaf_id,
+        working_memory=working_memory,
+    )
     _delete_by_ids(col, [conversation_id])
     col.insert(
         [
@@ -473,7 +548,7 @@ def replace_messages(
                 "sort_index": 0,
                 "status": STATUS_ACTIVE,
                 "attachments_json": "",
-                "metadata_json": "",
+                "metadata_json": conv_meta,
                 "created_at": conv["createdAt"],
                 "updated_at": t,
                 "embedding": _embed_one(title),

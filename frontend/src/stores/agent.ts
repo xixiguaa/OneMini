@@ -10,6 +10,7 @@ import {
   shouldUseMultiAgent,
 } from '../services/multiAgentOrchestrator'
 import type {
+  AgentToolCallRecord,
   ChatMessage,
   CreateMode,
   MessageFeedback,
@@ -17,6 +18,7 @@ import type {
   ModelConfig,
   SkillId,
   ViewId,
+  WorkingMemoryState,
 } from '../types/agent'
 import {
   formatAttachmentsForPrompt,
@@ -25,10 +27,30 @@ import {
   type ParsedAttachment,
 } from '../utils/files'
 import {
+  attachNode,
+  buildActivePath,
+  buildBranchTimeline,
+  buildDisplayTimeline,
+  getSiblingVariants,
+  mergeWorkingMemoryFromMessages,
+  normalizeToGraph,
+  resolveDefaultLeaf,
+  resolveLeafForBranch,
+} from '../services/conversationGraph'
+import { searchEpisodicMemory } from '../api/conversations'
+import {
   composeSystemPrompt,
   formatRuntimeModelHint,
   truncateHistory,
 } from '../utils/promptComposer'
+import {
+  composeEpisodicMemoryBlock,
+  composeWorkingMemoryBlock,
+  formatEpisodicSnippet,
+  parseStateUpdate,
+  TOOL_AWARENESS_PROTOCOL,
+  WORKING_MEMORY_PROTOCOL,
+} from '../utils/workingMemory'
 import { resolveChatBaseUrl } from '../config/providers'
 import { resolveChatModel } from '../utils/resolveModel'
 import { randomUUID } from '../utils/uuid'
@@ -83,22 +105,65 @@ export const useAgentStore = defineStore('agent', () => {
 
   const isIncognito = computed(() => conversations.isIncognito)
 
-  const messages = computed({
-    get: () => {
-      if (conversations.isIncognito) return conversations.getIncognitoMessages()
-      const id = conversations.activeId
-      if (!id) return []
-      return conversations.getMessages(id)
-    },
-    set: (val: ChatMessage[]) => {
-      if (conversations.isIncognito) {
-        conversations.setIncognitoMessages(val)
-        return
-      }
-      const id = conversations.activeId
-      if (!id) return
-      conversations.setMessages(id, val)
-    },
+  function getAllGraphMessages(): ChatMessage[] {
+    if (conversations.isIncognito) return conversations.getIncognitoMessages()
+    const id = conversations.activeId
+    if (!id) return []
+    return conversations.getMessages(id)
+  }
+
+  function setAllGraphMessages(val: ChatMessage[]) {
+    const normalized = normalizeToGraph(val)
+    if (conversations.isIncognito) {
+      conversations.setIncognitoMessages(normalized)
+      return
+    }
+    const id = conversations.activeId
+    if (!id) return
+    conversations.setMessages(id, normalized)
+  }
+
+  function getActiveLeafId(): string | null {
+    if (conversations.isIncognito) {
+      return conversations.getActiveLeafId('incognito')
+    }
+    const id = conversations.activeId
+    if (!id) return null
+    return conversations.getActiveLeafId(id)
+  }
+
+  function setActiveLeafId(leafId: string | null) {
+    if (conversations.isIncognito) {
+      conversations.setActiveLeafId('incognito', leafId)
+      return
+    }
+    const id = conversations.activeId
+    if (!id) return
+    conversations.setActiveLeafId(id, leafId)
+  }
+
+  /** UI：展示全部消息（含重新生成的历史回答），按时间排序 */
+  const messages = computed(() => buildDisplayTimeline(getAllGraphMessages()))
+
+  const activePathIds = computed(() => {
+    const all = getAllGraphMessages()
+    const leaf = getActiveLeafId() ?? resolveDefaultLeaf(all)?.id ?? null
+    return new Set(buildActivePath(all, leaf).map((m) => m.id))
+  })
+
+  const branchTimeline = computed(() =>
+    buildBranchTimeline(getAllGraphMessages(), getActiveLeafId()),
+  )
+
+  const workingMemory = computed((): WorkingMemoryState | undefined => {
+    if (conversations.isIncognito) {
+      return conversations.getWorkingMemory('incognito')
+    }
+    const id = conversations.activeId
+    const fromConv = id ? conversations.getWorkingMemory(id) : undefined
+    return (
+      mergeWorkingMemoryFromMessages(getAllGraphMessages(), fromConv) ?? fromConv
+    )
   })
 
   const activeCreativeSkill = computed(() => {
@@ -138,25 +203,56 @@ export const useAgentStore = defineStore('agent', () => {
     },
   )
 
-  function addMessage(msg: Omit<ChatMessage, 'id' | 'timestamp'>): string {
-    const id = randomUUID()
-    messages.value = [
-      ...messages.value,
-      { ...msg, id, timestamp: Date.now() },
-    ]
-    return id
+  function addMessage(
+    msg: Omit<ChatMessage, 'id' | 'timestamp'>,
+    opts?: { parentId?: string | null; activate?: boolean },
+  ): string {
+    const all = getAllGraphMessages()
+    const parentId =
+      opts && 'parentId' in opts ? (opts.parentId ?? null) : getActiveLeafId()
+    const { messages: next, nodeId } = attachNode(
+      all,
+      { ...msg, timestamp: Date.now() } as ChatMessage,
+      parentId,
+    )
+    setAllGraphMessages(next)
+    if (opts?.activate !== false) setActiveLeafId(nodeId)
+    return nodeId
   }
 
   function patchMessage(messageId: string, patch: Partial<ChatMessage>) {
-    if (!conversations.isIncognito && !conversations.activeId) return
-    const list = conversations.isIncognito
-      ? [...conversations.getIncognitoMessages()]
-      : [...conversations.getMessages(conversations.activeId!)]
+    const list = [...getAllGraphMessages()]
     const idx = list.findIndex((m) => m.id === messageId)
     if (idx < 0) return
     const next = [...list]
-    next[idx] = { ...next[idx], ...patch }
-    messages.value = next
+    const prev = next[idx]
+    if (patch.metadata && prev.metadata) {
+      patch = { ...patch, metadata: { ...prev.metadata, ...patch.metadata } }
+    }
+    next[idx] = { ...prev, ...patch }
+    setAllGraphMessages(next)
+    if (patch.metadata?.workingMemory) {
+      const convId = conversations.isIncognito ? 'incognito' : conversations.activeId
+      if (convId) conversations.setWorkingMemory(convId, patch.metadata.workingMemory)
+    }
+  }
+
+  function finalizeAssistantContent(messageId: string, raw: string) {
+    const { displayContent, workingMemory: wm } = parseStateUpdate(raw)
+    patchMessage(messageId, {
+      content: displayContent || raw,
+      metadata: wm ? { workingMemory: wm } : undefined,
+    })
+  }
+
+  function trackToolCall(
+    messageId: string,
+    tool: AgentToolCallRecord,
+  ) {
+    const msg = getAllGraphMessages().find((m) => m.id === messageId)
+    const prev = msg?.metadata?.toolCalls ?? []
+    const merged = [...prev.filter((t) => t.id !== tool.id), tool]
+    patchMessage(messageId, { metadata: { toolCalls: merged } })
   }
 
   async function addAttachments(files: FileList | File[]) {
@@ -206,7 +302,7 @@ export const useAgentStore = defineStore('agent', () => {
     return `${prefix}${text}${fileCtx}`.trim()
   }
 
-  async function handleChat(content: string) {
+  async function handleChat(content: string, parentUserId: string) {
     const skill = settings.getSkill('chat')
     const resolved = resolveChatModel(agentConfig.skeleton, settings)
     if (!resolved.ok) {
@@ -216,6 +312,22 @@ export const useAgentStore = defineStore('agent', () => {
 
     const fullContent = buildUserContent(content)
     const runtimeHint = formatRuntimeModelHint(model)
+
+    let episodicSnippets: string[] = []
+    if (!conversations.isIncognito) {
+      try {
+        const hits = await searchEpisodicMemory(fullContent, 5)
+        const convId = conversations.activeId
+        episodicSnippets = hits
+          .filter((h) => h.conversationId !== convId && (h.content || '').trim())
+          .slice(0, 3)
+          .map(formatEpisodicSnippet)
+      } catch {
+        /* Milvus 不可用时跳过情节记忆 */
+      }
+    }
+
+    const wmBlock = composeWorkingMemoryBlock(workingMemory.value)
     const systemPrompt = [
       composeSystemPrompt(
         agentConfig.workspace,
@@ -223,11 +335,20 @@ export const useAgentStore = defineStore('agent', () => {
         undefined,
         agentConfig.bootstrapMaxChars,
       ),
+      WORKING_MEMORY_PROTOCOL,
+      TOOL_AWARENESS_PROTOCOL,
+      wmBlock,
+      composeEpisodicMemoryBlock(episodicSnippets),
       runtimeHint,
-    ].join('\n\n')
+    ]
+      .filter(Boolean)
+      .join('\n\n')
+
     const maxHist = agentConfig.skeleton.session.maxHistoryMessages
+    const path = buildActivePath(getAllGraphMessages(), getActiveLeafId())
     const history = truncateHistory(
-      messages.value
+      path
+        .filter((m) => m.id !== parentUserId)
         .filter((m) => (m.type === 'text' || m.type === 'error') && m.role !== 'system')
         .map((m) => ({ role: m.role, content: m.content })),
       maxHist,
@@ -236,12 +357,15 @@ export const useAgentStore = defineStore('agent', () => {
     let assistantId: string | null = null
     const ensureAssistantMessage = () => {
       if (!assistantId) {
-        assistantId = addMessage({
-          role: 'assistant',
-          type: 'text',
-          content: '',
-          skillId: 'chat',
-        })
+        assistantId = addMessage(
+          {
+            role: 'assistant',
+            type: 'text',
+            content: '',
+            skillId: 'chat',
+          },
+          { parentId: parentUserId },
+        )
       }
       return assistantId
     }
@@ -251,7 +375,13 @@ export const useAgentStore = defineStore('agent', () => {
     if (shouldUseMultiAgent(fullContent, agentConfig.skeleton.multiAgent)) {
       isStreaming.value = true
       try {
-        patchMessage(ensureAssistantMessage(), {
+        const aid = ensureAssistantMessage()
+        trackToolCall(aid, {
+          id: 'multi-agent',
+          name: '多智能体协作',
+          status: 'running',
+        })
+        patchMessage(aid, {
           content: '🦞 多智能体协作中：总指挥正在拆解任务…\n\n',
         })
         const result = await runMultiAgentPipeline({
@@ -266,9 +396,14 @@ export const useAgentStore = defineStore('agent', () => {
         const sections = result.stepOutputs
           .map((s) => `### ${s.agentName}\n${s.content}`)
           .join('\n\n')
-        patchMessage(ensureAssistantMessage(), {
-          content: `**${result.plan.summary}**\n\n${sections}\n\n---\n\n**最终答复**\n\n${result.finalAnswer}`,
+        const raw = `**${result.plan.summary}**\n\n${sections}\n\n---\n\n**最终答复**\n\n${result.finalAnswer}`
+        trackToolCall(aid, {
+          id: 'multi-agent',
+          name: '多智能体协作',
+          status: 'done',
+          summary: result.plan.summary,
         })
+        finalizeAssistantContent(aid, raw)
       } finally {
         isStreaming.value = false
       }
@@ -280,14 +415,16 @@ export const useAgentStore = defineStore('agent', () => {
 
     try {
       if (platform.knowledgeChatMode === 'rag') {
+        const aid = ensureAssistantMessage()
+        trackToolCall(aid, { id: 'rag', name: 'Milvus RAG', status: 'running' })
         const ragPrefix = '📚 Milvus RAG 检索中…\n\n'
-        patchMessage(ensureAssistantMessage(), { content: ragPrefix })
+        patchMessage(aid, { content: ragPrefix })
         accumulated = ragPrefix
 
         await sendRagChatStream({
           question: fullContent,
           messages: history,
-          systemExtra: runtimeHint,
+          systemExtra: systemPrompt,
           model: model.model,
           provider: model.provider,
           modelConfigId: model.id,
@@ -302,23 +439,27 @@ export const useAgentStore = defineStore('agent', () => {
             if (!accumulated.includes('引用：')) {
               accumulated = hint + accumulated.replace(ragPrefix, '')
               accumulated = ragPrefix + accumulated
-              patchMessage(ensureAssistantMessage(), { content: accumulated })
+              patchMessage(aid, { content: accumulated })
             }
           },
           onDelta: (chunk) => {
             accumulated += chunk
-            patchMessage(ensureAssistantMessage(), { content: accumulated })
+            patchMessage(aid, { content: accumulated })
           },
         })
+        trackToolCall(aid, { id: 'rag', name: 'Milvus RAG', status: 'done' })
+        finalizeAssistantContent(aid, accumulated)
       } else if (platform.knowledgeChatMode === 'wiki') {
+        const aid = ensureAssistantMessage()
+        trackToolCall(aid, { id: 'wiki', name: 'LLM-Wiki', status: 'running' })
         const wikiPrefix = '🕸️ LLM-Wiki 检索中…\n\n'
-        patchMessage(ensureAssistantMessage(), { content: wikiPrefix })
+        patchMessage(aid, { content: wikiPrefix })
         accumulated = wikiPrefix
 
         await sendWikiChatStream({
           question: fullContent,
           messages: history,
-          systemExtra: runtimeHint,
+          systemExtra: systemPrompt,
           model: model.model,
           provider: model.provider,
           modelConfigId: model.id,
@@ -333,14 +474,16 @@ export const useAgentStore = defineStore('agent', () => {
             if (!accumulated.includes('Wiki 页：')) {
               accumulated = hint + accumulated.replace(wikiPrefix, '')
               accumulated = wikiPrefix + accumulated
-              patchMessage(ensureAssistantMessage(), { content: accumulated })
+              patchMessage(aid, { content: accumulated })
             }
           },
           onDelta: (chunk) => {
             accumulated += chunk
-            patchMessage(ensureAssistantMessage(), { content: accumulated })
+            patchMessage(aid, { content: accumulated })
           },
         })
+        trackToolCall(aid, { id: 'wiki', name: 'LLM-Wiki', status: 'done' })
+        finalizeAssistantContent(aid, accumulated)
       } else {
         await sendChatStream({
           messages: [
@@ -358,6 +501,7 @@ export const useAgentStore = defineStore('agent', () => {
             patchMessage(ensureAssistantMessage(), { content: accumulated })
           },
         })
+        if (assistantId) finalizeAssistantContent(assistantId, accumulated)
       }
     } finally {
       isStreaming.value = false
@@ -504,11 +648,12 @@ export const useAgentStore = defineStore('agent', () => {
       conversations.ensureLocalSession()
     }
 
-    addMessage({
+    const userMsgId = addMessage({
       role: 'user',
       type: skill === 'chat' ? 'text' : skill,
       content: displayContent,
       skillId: skill,
+      metadata: { action: 'send' },
       attachments: {
         previewUrl: pendingAttachments.value.find((a) => a.previewUrl)?.previewUrl,
         uploadedFiles: attachmentMeta(),
@@ -558,7 +703,7 @@ export const useAgentStore = defineStore('agent', () => {
       try {
         switch (skill) {
           case 'chat':
-            await handleChat(savedContent)
+            await handleChat(savedContent, userMsgId)
             break
           case 'image':
             await handleImageGen(savedContent)
@@ -598,36 +743,112 @@ export const useAgentStore = defineStore('agent', () => {
   async function regenerateAssistant(messageId: string) {
     if (processingScope.value) return
 
-    const list = [...messages.value]
-    const assistantIdx = list.findIndex((m) => m.id === messageId)
-    if (assistantIdx < 0) return
+    const all = getAllGraphMessages()
+    const assistant = all.find((m) => m.id === messageId)
+    if (!assistant || assistant.role !== 'assistant' || assistant.type !== 'text') return
 
-    const assistant = list[assistantIdx]
-    if (assistant.role !== 'assistant' || assistant.type !== 'text') return
-    if (!assistant.content.trim()) return
+    const userMsg = assistant.parentId
+      ? all.find((m) => m.id === assistant.parentId)
+      : undefined
+    if (!userMsg || userMsg.role !== 'user') return
 
-    let userIdx = assistantIdx - 1
-    while (userIdx >= 0 && list[userIdx].role !== 'user') userIdx -= 1
-    if (userIdx < 0) return
-
-    const userMsg = list[userIdx]
     const text = userMsg.content === '（含附件）' ? '' : userMsg.content
     if (!text.trim() && !userMsg.attachments?.uploadedFiles?.length) return
 
-    messages.value = list.slice(0, userIdx)
-    inputText.value = text
-    await sendMessage('chat')
+    if (!conversations.isIncognito && !conversations.hydrated) {
+      await conversations.hydrate()
+    }
+    if (!conversations.isIncognito) {
+      conversations.ensureLocalSession()
+    }
+
+    setActiveLeafId(userMsg.id)
+
+    processingScope.value = 'chat'
+    let enteredMainFlow = false
+    let branchAssistantId: string | null = null
+
+    try {
+      void conversations.syncActiveConversation()
+
+      const skillCfg = settings.getSkill('chat')
+      if (!skillCfg?.enabled) {
+        branchAssistantId = addMessage(
+          {
+            role: 'assistant',
+            type: 'error',
+            content: `技能「${skillCfg?.name || 'chat'}」已禁用`,
+            skillId: 'chat',
+          },
+          { parentId: userMsg.id },
+        )
+        return
+      }
+
+      const sandbox = agentConfig.skeleton.sandbox
+      if (sandbox.mode === 'strict' && !agentConfig.isSkillAllowed('chat')) {
+        branchAssistantId = addMessage(
+          {
+            role: 'assistant',
+            type: 'error',
+            content: '沙箱已禁止技能「chat」，请在 Agent 配置 → 骨架 中调整 allowedSkills',
+            skillId: 'chat',
+          },
+          { parentId: userMsg.id },
+        )
+        return
+      }
+
+      enteredMainFlow = true
+      conversations.setPersistPaused(true)
+
+      const regenHint =
+        `[系统指令·用户不可见] 这是对问题「${userMsg.content.slice(0, 120)}」的重新生成请求（分支 v${getSiblingVariants(all, userMsg.id).filter((m) => m.role === 'assistant').length + 1}）。请给出不同角度的回答，避免重复上一版开头结构。\n\n`
+
+      try {
+        await handleChat(regenHint + text, userMsg.id)
+      } catch (err: unknown) {
+        const msg = formatUserError(err, '处理失败')
+        addMessage(
+          { role: 'assistant', type: 'error', content: msg, skillId: 'chat', metadata: { action: 'regenerate', targetAssistantId: messageId } },
+          { parentId: userMsg.id },
+        )
+      }
+    } finally {
+      processingScope.value = null
+      if (enteredMainFlow) {
+        conversations.setPersistPaused(false)
+        if (!conversations.isIncognito && conversations.activeId) {
+          try {
+            await conversations.syncActiveConversation()
+            await conversations.flushPersist(conversations.activeId)
+          } catch {
+            /* flushPersist 已写入 persistError */
+          }
+        }
+      }
+      void branchAssistantId
+    }
+  }
+
+  function getMessageBranchVariants(messageId: string): ChatMessage[] {
+    return getSiblingVariants(getAllGraphMessages(), messageId)
+  }
+
+  function switchMessageBranch(variantMessageId: string) {
+    const leaf = resolveLeafForBranch(getAllGraphMessages(), variantMessageId)
+    setActiveLeafId(leaf)
   }
 
   function applyMessageFeedback(messageId: string, feedback: MessageFeedback | null) {
-    const list = [...messages.value]
+    const list = [...getAllGraphMessages()]
     const idx = list.findIndex((m) => m.id === messageId)
     if (idx < 0) return
     const next = { ...list[idx] }
     if (feedback) next.feedback = feedback
     else delete next.feedback
     list[idx] = next
-    messages.value = list
+    setAllGraphMessages(list)
   }
 
   async function setMessageFeedback(messageId: string, feedback: MessageFeedback) {
@@ -960,6 +1181,9 @@ export const useAgentStore = defineStore('agent', () => {
     createMode,
     activeSkill,
     messages,
+    activePathIds,
+    branchTimeline,
+    workingMemory,
     inputText,
     isProcessing,
     isChatProcessing,
@@ -994,6 +1218,8 @@ export const useAgentStore = defineStore('agent', () => {
     clearImage,
     sendMessage,
     regenerateAssistant,
+    getMessageBranchVariants,
+    switchMessageBranch,
     setMessageFeedback,
     generateFromStudio,
     isIncognito,

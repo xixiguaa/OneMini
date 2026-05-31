@@ -22,6 +22,10 @@ class MessageIn(BaseModel):
     timestamp: int | None = None
     attachments: dict | list | None = None
     feedback: Literal["like", "dislike"] | None = None
+    parentId: str | None = None
+    branchRootId: str | None = None
+    variantIndex: int | None = None
+    metadata: dict | None = None
 
     model_config = {"populate_by_name": True, "extra": "ignore"}
 
@@ -40,6 +44,8 @@ class ConversationIn(BaseModel):
 
 class ReplaceMessagesBody(BaseModel):
     messages: list[MessageIn]
+    activeLeafId: str | None = None
+    workingMemory: dict | None = None
 
 
 class ImportBody(BaseModel):
@@ -154,9 +160,15 @@ def replace_messages(
     body: ReplaceMessagesBody,
     user_id: str = Depends(get_current_user),
 ):
-    messages = [m.model_dump(by_alias=True) for m in body.messages]
+    messages = [m.model_dump(by_alias=True, exclude_none=True) for m in body.messages]
     try:
-        conv = chat_store.replace_messages(user_id, conversation_id, messages)
+        conv = chat_store.replace_messages(
+            user_id,
+            conversation_id,
+            messages,
+            active_leaf_id=body.activeLeafId,
+            working_memory=body.workingMemory,
+        )
     except Exception as exc:
         raise _milvus_unavailable(exc) from exc
     if not conv:

@@ -51,6 +51,28 @@ export type MessageRole = 'user' | 'assistant' | 'system'
 export type MessageType = 'text' | 'image' | 'video' | 'world' | 'error'
 export type MessageFeedback = 'like' | 'dislike'
 
+/** 工作记忆：Prompt 内 intent_stack + active_slots */
+export interface WorkingMemoryState {
+  intent_stack: string[]
+  active_slots: Record<string, unknown>
+  confidence?: number
+}
+
+export interface AgentToolCallRecord {
+  id: string
+  name: string
+  status: 'pending' | 'running' | 'done' | 'error'
+  summary?: string
+}
+
+export interface MessageMetadata {
+  action?: 'regenerate' | 'branch' | 'send'
+  targetAssistantId?: string
+  workingMemory?: WorkingMemoryState
+  toolCalls?: AgentToolCallRecord[]
+}
+
+/** 消息节点 (MessageNode) */
 export interface ChatMessage {
   id: string
   role: MessageRole
@@ -59,6 +81,13 @@ export interface ChatMessage {
   skillId: SkillId
   timestamp: number
   feedback?: MessageFeedback
+  /** DAG 父节点 */
+  parentId?: string
+  /** 分支根（通常为该轮 user 消息 id） */
+  branchRootId?: string
+  /** 同 parent 下的版本序号 */
+  variantIndex?: number
+  metadata?: MessageMetadata
   attachments?: {
     url?: string
     previewUrl?: string
@@ -89,6 +118,10 @@ export interface Conversation {
   updatedAt: number
   /** 是否已在服务端创建（本地占位会话为 false） */
   serverSynced?: boolean
+  /** 分支时间线当前激活叶节点 */
+  activeLeafId?: string | null
+  /** 会话级工作记忆缓存 */
+  workingMemory?: WorkingMemoryState
 }
 
 export interface GenerationPrefs {
