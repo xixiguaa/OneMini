@@ -1,28 +1,42 @@
 <script setup lang="ts">
-import { Info, Languages, Moon, Sun } from 'lucide-vue-next'
-import { onBeforeUnmount, onMounted, ref } from 'vue'
-import { useLocale } from '../composables/useLocale'
-import { useUiPrefsStore } from '../stores/uiPrefs'
-import { APP_VERSION } from '../types/agent'
-import { BRAND_NAME } from '../utils/modelLogo'
+import { LogOut, MoreHorizontal, Settings } from 'lucide-vue-next'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { useAuthStore } from '../stores/auth'
+import { accountAvatarInitial, maskAccountLabel } from '../utils/maskAccount'
+import SystemSettingsDialog from './SystemSettingsDialog.vue'
 
 const props = defineProps<{
   collapsed?: boolean
 }>()
 
-const ui = useUiPrefsStore()
-const { t } = useLocale()
-
-type PanelId = 'about' | 'lang' | null
-const openPanel = ref<PanelId>(null)
+const auth = useAuthStore()
+const menuOpen = ref(false)
+const settingsOpen = ref(false)
 const rootRef = ref<HTMLElement | null>(null)
 
-function togglePanel(id: Exclude<PanelId, null>) {
-  openPanel.value = openPanel.value === id ? null : id
+const avatarInitial = computed(() => accountAvatarInitial(auth.user))
+const maskedLabel = computed(() => maskAccountLabel(auth.user))
+
+function toggleMenu() {
+  menuOpen.value = !menuOpen.value
+}
+
+function closeMenu() {
+  menuOpen.value = false
+}
+
+function openSettings() {
+  closeMenu()
+  settingsOpen.value = true
+}
+
+async function logout() {
+  closeMenu()
+  await auth.logout()
 }
 
 function onDocClick(e: MouseEvent) {
-  if (!rootRef.value?.contains(e.target as Node)) openPanel.value = null
+  if (!rootRef.value?.contains(e.target as Node)) closeMenu()
 }
 
 onMounted(() => document.addEventListener('click', onDocClick))
@@ -30,223 +44,179 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocClick))
 </script>
 
 <template>
-  <div ref="rootRef" class="footer-bar" :class="{ collapsed: props.collapsed }">
-    <div class="footer-toolbar">
-      <div class="footer-actions">
-        <div class="action-wrap">
-          <button
-            type="button"
-            class="action-btn"
-            :class="{ active: openPanel === 'about' }"
-            :title="t('footer.about')"
-            :aria-label="t('footer.about')"
-            :aria-expanded="openPanel === 'about'"
-            @click.stop="togglePanel('about')"
-          >
-            <Info :size="16" />
-          </button>
-          <div v-if="openPanel === 'about'" class="popover card" @click.stop>
-            <h3 class="popover-title">{{ t('footer.aboutTitle') }}</h3>
-            <p class="popover-desc">{{ t('footer.aboutDesc') }}</p>
-            <p class="popover-meta">{{ BRAND_NAME }} · {{ APP_VERSION }}</p>
-          </div>
-        </div>
+  <div ref="rootRef" class="footer-bar" :class="{ collapsed: props.collapsed, 'menu-open': menuOpen }">
+    <button
+      type="button"
+      class="user-bar"
+      :class="{ 'icon-only': props.collapsed }"
+      :title="maskedLabel"
+      :aria-expanded="menuOpen"
+      aria-haspopup="menu"
+      @click.stop="toggleMenu"
+    >
+      <span class="avatar">{{ avatarInitial }}</span>
+      <span v-if="!props.collapsed" class="user-label">{{ maskedLabel }}</span>
+      <span v-if="!props.collapsed" class="more-btn" aria-hidden="true">
+        <MoreHorizontal :size="16" />
+      </span>
+    </button>
 
-        <div class="action-wrap">
-          <button
-            type="button"
-            class="action-btn"
-            :class="{ active: openPanel === 'lang' }"
-            :title="t('footer.language')"
-            :aria-label="t('footer.language')"
-            :aria-expanded="openPanel === 'lang'"
-            :aria-haspopup="true"
-            @click.stop="togglePanel('lang')"
-          >
-            <Languages :size="16" />
-            <span class="sr-only">{{ t('footer.language') }}</span>
-          </button>
-          <div v-if="openPanel === 'lang'" class="popover popover-menu card" @click.stop>
-            <button
-              type="button"
-              class="menu-item"
-              :class="{ selected: ui.locale === 'zh' }"
-              @click="ui.setLocale('zh'); openPanel = null"
-            >
-              {{ t('footer.langZh') }}
-            </button>
-            <button
-              type="button"
-              class="menu-item"
-              :class="{ selected: ui.locale === 'en' }"
-              @click="ui.setLocale('en'); openPanel = null"
-            >
-              {{ t('footer.langEn') }}
-            </button>
-          </div>
-        </div>
-
-        <button
-          type="button"
-          class="action-btn"
-          :title="ui.theme === 'dark' ? t('footer.themeLight') : t('footer.themeDark')"
-          :aria-label="ui.theme === 'dark' ? t('footer.themeLight') : t('footer.themeDark')"
-          @click="ui.toggleTheme()"
-        >
-          <Moon v-if="ui.theme === 'light'" :size="16" />
-          <Sun v-else :size="16" />
+    <Transition name="menu-pop">
+      <div
+        v-if="menuOpen"
+        class="user-menu"
+        role="menu"
+        @click.stop
+      >
+        <button type="button" class="menu-item" role="menuitem" @click="openSettings">
+          <Settings :size="16" />
+          <span>系统设置</span>
+        </button>
+        <button type="button" class="menu-item" role="menuitem" @click="logout">
+          <LogOut :size="16" />
+          <span>退出登录</span>
         </button>
       </div>
+    </Transition>
 
-      <span v-show="!props.collapsed" class="version">{{ APP_VERSION }}</span>
-    </div>
+    <SystemSettingsDialog v-model:open="settingsOpen" />
   </div>
 </template>
 
 <style scoped lang="scss">
 @use '../styles/variables.scss' as *;
+@use '../styles/cosmic-glass.scss' as cosmic;
 
 .footer-bar {
+  position: relative;
   flex-shrink: 0;
-  margin: auto -10px -12px;
-  border-top: 1px solid $glass-border;
+  margin: 0 -10px 0;
+  padding: 10px 8px 0;
+  border-top: 1px solid var(--sidebar-divider, $border-light);
+  z-index: 20;
+
+  &.menu-open {
+    z-index: 80;
+  }
 
   &.collapsed {
     margin-left: -6px;
     margin-right: -6px;
-    margin-bottom: -12px;
+    margin-bottom: 0;
+    padding: 10px 4px 8px;
   }
 }
 
-.footer-toolbar {
+.user-bar {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  padding: 6px 8px;
+  gap: 10px;
+  width: 100%;
+  min-height: 44px;
+  padding: 8px 10px;
+  border-radius: 12px;
+  color: $text-primary;
+  text-align: left;
+  transition: background 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+  @include cosmic.cosmic-glass-surface;
 
-  .footer-bar.collapsed & {
-    flex-direction: column;
+  &:hover {
+    @include cosmic.cosmic-glass-hover;
+  }
+
+  &.icon-only {
+    width: 40px;
+    height: 40px;
+    min-height: 40px;
+    padding: 0;
     justify-content: center;
-    gap: 6px;
-    padding: 8px 4px;
+    margin: 0 auto;
   }
 }
 
-.footer-actions {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-
-  .footer-bar.collapsed & {
-    flex-direction: column;
-    gap: 4px;
-  }
-}
-
-.action-wrap {
-  position: relative;
-}
-
-.action-btn {
+.avatar {
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 32px;
-  height: 32px;
-  border-radius: 6px;
-  color: $text-muted;
-  transition: background 0.15s ease, color 0.15s ease;
-
-  &:hover,
-  &.active {
-    background: $accent-light;
-    color: $text-primary;
-  }
-
-  &.active {
-    color: $accent;
-  }
+  background: $accent-light;
+  color: $accent;
+  font-size: 13px;
+  font-weight: 600;
 }
 
-.popover {
+.user-label {
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  font-weight: 500;
+  color: $text-primary;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.more-btn {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-label, $text-secondary);
+}
+
+.user-menu {
   position: absolute;
-  bottom: calc(100% + 6px);
-  left: 0;
-  min-width: 200px;
-  padding: 12px;
-  z-index: 30;
-  box-shadow: $shadow-md;
+  left: 8px;
+  right: 8px;
+  bottom: calc(100% + 8px);
+  padding: 6px;
+  z-index: 100;
+  border-radius: var(--glass-radius-md, 20px);
+  background: var(--user-menu-bg);
+  backdrop-filter: blur(var(--glass-blur, 24px)) saturate(1.2);
+  -webkit-backdrop-filter: blur(var(--glass-blur, 24px)) saturate(1.2);
+  box-shadow: var(--user-menu-shadow, var(--glass-float-shadow, $shadow-md));
 
   .footer-bar.collapsed & {
     left: calc(100% + 8px);
+    right: auto;
     bottom: 0;
+    width: 168px;
   }
-}
-
-.popover-menu {
-  min-width: 140px;
-  padding: 4px;
-}
-
-.popover-title {
-  font-size: 13px;
-  font-weight: 600;
-  margin-bottom: 6px;
-}
-
-.popover-desc {
-  font-size: 11px;
-  color: $text-secondary;
-  line-height: 1.5;
-  margin-bottom: 8px;
-}
-
-.popover-meta {
-  font-size: 10px;
-  color: $text-muted;
-  font-family: ui-monospace, monospace;
 }
 
 .menu-item {
+  position: relative;
+  z-index: 1;
   display: flex;
   align-items: center;
+  gap: 10px;
   width: 100%;
-  padding: 6px 10px;
-  border-radius: 4px;
-  font-size: 13px;
-  color: $text-secondary;
+  padding: 10px 12px;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  color: $text-primary;
   text-align: left;
+  border: none;
+  transition: background 0.15s ease;
 
   &:hover {
-    background: $accent-light;
-    color: $text-primary;
-  }
-
-  &.selected {
-    color: $accent;
-    font-weight: 500;
-    background: $accent-light;
+    background: var(--composer-option-hover, $accent-light);
   }
 }
 
-.version {
-  flex-shrink: 0;
-  font-size: 11px;
-  color: $text-muted;
-  font-family: ui-monospace, monospace;
-  user-select: none;
+.menu-pop-enter-active,
+.menu-pop-leave-active {
+  transition: opacity 0.15s ease, transform 0.15s ease;
 }
 
-.sr-only {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  padding: 0;
-  margin: -1px;
-  overflow: hidden;
-  clip: rect(0, 0, 0, 0);
-  white-space: nowrap;
-  border: 0;
+.menu-pop-enter-from,
+.menu-pop-leave-to {
+  opacity: 0;
+  transform: translateY(6px);
 }
 </style>

@@ -2,6 +2,7 @@
 import { computed, reactive, ref, watch } from 'vue'
 import {
   getModelConfigGroupById,
+  MULTIMODAL_FEATURE_TAGS,
   VISION_MEDIA_TYPES,
   type ModelConfigGroupId,
 } from '../config/defaults'
@@ -32,6 +33,7 @@ const presetLabel = ref('')
 
 const group = computed(() => getModelConfigGroupById(props.groupId)!)
 const isVisionGroup = computed(() => props.groupId === 'vision')
+const isMultimodalGroup = computed(() => props.groupId === 'multimodal')
 
 const form = reactive({
   name: '',
@@ -50,10 +52,13 @@ const topHint = computed(() => {
   if (props.groupId === 'language') {
     return '语言模型内置 DeepSeek；其它模型（MiniMax、GPT、Claude 等）可在此添加并填写 API Key。'
   }
+  if (props.groupId === 'multimodal') {
+    return '多模态模型支持文本对话、图片/视频理解与生成，并可读取用户上传的文件；启用后用于「文本对话」技能。'
+  }
   if (props.groupId === 'vision') {
     return '视觉模型用于图片与视频生成，请先选择输出类型，再配置服务商与模型 ID。'
   }
-  return '物理 / 具身模型用于 3D 场景、具身智能与物理仿真，需配置对应服务商与 API Key。'
+  return '世界模型用于 3D 场景、具身智能与物理仿真，需配置对应服务商与 API Key。'
 })
 
 function firstRealOption(opts: ProviderModelOption[]) {
@@ -192,6 +197,10 @@ async function onConfigurePending(payload: { apiKey?: string; enable: boolean })
     </header>
 
     <template v-if="!savedModelId">
+      <p v-if="isMultimodalGroup" class="capability-tags">
+        <span v-for="tag in MULTIMODAL_FEATURE_TAGS" :key="tag" class="cap-tag">{{ tag }}</span>
+      </p>
+
       <label v-if="isVisionGroup">
         <span>输出类型 <em>*</em></span>
         <select v-model="form.capability">
@@ -291,6 +300,21 @@ async function onConfigurePending(payload: { apiKey?: string; enable: boolean })
     font-weight: 600;
     color: $text-primary;
   }
+}
+
+.capability-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0 0 14px;
+}
+
+.cap-tag {
+  font-size: 11px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  background: $accent-light;
+  color: $accent;
 }
 
 .hint {

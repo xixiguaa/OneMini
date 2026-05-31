@@ -1,4 +1,4 @@
-import { getClientUserId } from '../utils/userId'
+import { platformAuthHeaders } from '../utils/authHeaders'
 import { parseApiError } from '../utils/parseApiError'
 
 export interface ChatMessagePayload {
@@ -23,7 +23,7 @@ export async function sendChatStream(opts: ChatStreamOptions): Promise<string> {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'X-User-Id': getClientUserId(),
+      ...platformAuthHeaders(),
     },
     body: JSON.stringify({
       messages: opts.messages,
@@ -90,7 +90,7 @@ export async function sendChat(params: {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'X-User-Id': getClientUserId(),
+      ...platformAuthHeaders(),
     },
     body: JSON.stringify({
       messages: params.messages,
@@ -120,7 +120,7 @@ export async function generateImage(params: {
 }): Promise<{ url?: string; message: string }> {
   const res = await fetch('/api/platform/agent/image', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'X-User-Id': getClientUserId() },
+    headers: { 'Content-Type': 'application/json', ...platformAuthHeaders() },
     body: JSON.stringify({
       prompt: params.prompt,
       model: params.model,
@@ -149,7 +149,7 @@ export async function generateVideo(params: {
 }): Promise<{ url?: string; jobId?: string; status?: string; message: string }> {
   const res = await fetch('/api/video', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'X-User-Id': getClientUserId() },
+    headers: { 'Content-Type': 'application/json', ...platformAuthHeaders() },
     body: JSON.stringify({
       prompt: params.prompt,
       imageBase64: params.imageBase64,

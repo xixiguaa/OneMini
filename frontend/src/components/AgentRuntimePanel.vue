@@ -7,7 +7,7 @@ import type { SkillId } from '../types/agent'
 const agentConfig = useAgentConfigStore()
 const settings = useSettingsStore()
 const skillIds = ['chat', 'image', 'video', 'world'] as SkillId[]
-const chatModels = () => settings.settings.models.filter((m) => m.capability === 'chat')
+const chatModels = () => settings.modelsForChat()
 
 function patchModels(patch: Partial<typeof agentConfig.skeleton.models>) {
   agentConfig.updateSkeleton({

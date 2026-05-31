@@ -12,6 +12,7 @@ import {
 import type {
   ChatMessage,
   CreateMode,
+  MessageFeedback,
   ModelCapability,
   ModelConfig,
   SkillId,
@@ -232,19 +233,25 @@ export const useAgentStore = defineStore('agent', () => {
       maxHist,
     )
 
-    const assistantId = addMessage({
-      role: 'assistant',
-      type: 'text',
-      content: '',
-      skillId: 'chat',
-    })
+    let assistantId: string | null = null
+    const ensureAssistantMessage = () => {
+      if (!assistantId) {
+        assistantId = addMessage({
+          role: 'assistant',
+          type: 'text',
+          content: '',
+          skillId: 'chat',
+        })
+      }
+      return assistantId
+    }
 
     const temperature = agentConfig.skeleton.models.temperature
 
     if (shouldUseMultiAgent(fullContent, agentConfig.skeleton.multiAgent)) {
       isStreaming.value = true
       try {
-        patchMessage(assistantId, {
+        patchMessage(ensureAssistantMessage(), {
           content: '🦞 多智能体协作中：总指挥正在拆解任务…\n\n',
         })
         const result = await runMultiAgentPipeline({
@@ -259,7 +266,7 @@ export const useAgentStore = defineStore('agent', () => {
         const sections = result.stepOutputs
           .map((s) => `### ${s.agentName}\n${s.content}`)
           .join('\n\n')
-        patchMessage(assistantId, {
+        patchMessage(ensureAssistantMessage(), {
           content: `**${result.plan.summary}**\n\n${sections}\n\n---\n\n**最终答复**\n\n${result.finalAnswer}`,
         })
       } finally {
@@ -274,7 +281,7 @@ export const useAgentStore = defineStore('agent', () => {
     try {
       if (platform.knowledgeChatMode === 'rag') {
         const ragPrefix = '📚 Milvus RAG 检索中…\n\n'
-        patchMessage(assistantId, { content: ragPrefix })
+        patchMessage(ensureAssistantMessage(), { content: ragPrefix })
         accumulated = ragPrefix
 
         await sendRagChatStream({
@@ -295,17 +302,17 @@ export const useAgentStore = defineStore('agent', () => {
             if (!accumulated.includes('引用：')) {
               accumulated = hint + accumulated.replace(ragPrefix, '')
               accumulated = ragPrefix + accumulated
-              patchMessage(assistantId, { content: accumulated })
+              patchMessage(ensureAssistantMessage(), { content: accumulated })
             }
           },
           onDelta: (chunk) => {
             accumulated += chunk
-            patchMessage(assistantId, { content: accumulated })
+            patchMessage(ensureAssistantMessage(), { content: accumulated })
           },
         })
       } else if (platform.knowledgeChatMode === 'wiki') {
         const wikiPrefix = '🕸️ LLM-Wiki 检索中…\n\n'
-        patchMessage(assistantId, { content: wikiPrefix })
+        patchMessage(ensureAssistantMessage(), { content: wikiPrefix })
         accumulated = wikiPrefix
 
         await sendWikiChatStream({
@@ -326,12 +333,12 @@ export const useAgentStore = defineStore('agent', () => {
             if (!accumulated.includes('Wiki 页：')) {
               accumulated = hint + accumulated.replace(wikiPrefix, '')
               accumulated = wikiPrefix + accumulated
-              patchMessage(assistantId, { content: accumulated })
+              patchMessage(ensureAssistantMessage(), { content: accumulated })
             }
           },
           onDelta: (chunk) => {
             accumulated += chunk
-            patchMessage(assistantId, { content: accumulated })
+            patchMessage(ensureAssistantMessage(), { content: accumulated })
           },
         })
       } else {
@@ -348,7 +355,7 @@ export const useAgentStore = defineStore('agent', () => {
           temperature,
           onDelta: (chunk) => {
             accumulated += chunk
-            patchMessage(assistantId, { content: accumulated })
+            patchMessage(ensureAssistantMessage(), { content: accumulated })
           },
         })
       }
@@ -486,36 +493,16 @@ export const useAgentStore = defineStore('agent', () => {
     if (!content && !pendingAttachments.value.length) return
     if (processingScope.value) return
 
-    await conversations.ensureMessagingSession()
     const skill = skillOverride ?? activeSkill.value
-    const skillCfg = settings.getSkill(skill)
-
-    if (!skillCfg?.enabled) {
-      addMessage({
-        role: 'assistant',
-        type: 'error',
-        content: `技能「${skillCfg?.name || skill}」已禁用`,
-        skillId: skill,
-      })
-      return
-    }
-
-    const sandbox = agentConfig.skeleton.sandbox
-    if (
-      sandbox.mode === 'strict' &&
-      !agentConfig.isSkillAllowed(skill)
-    ) {
-      addMessage({
-        role: 'assistant',
-        type: 'error',
-        content: `沙箱已禁止技能「${skill}」，请在 Agent 配置 → 骨架 中调整 allowedSkills`,
-        skillId: skill,
-      })
-      return
-    }
-    processingScope.value = 'chat'
-    conversations.setPersistPaused(true)
     const displayContent = content || '（含附件）'
+    const savedContent = content
+
+    if (!conversations.isIncognito && !conversations.hydrated) {
+      await conversations.hydrate()
+    }
+    if (!conversations.isIncognito) {
+      conversations.ensureLocalSession()
+    }
 
     addMessage({
       role: 'user',
@@ -533,40 +520,134 @@ export const useAgentStore = defineStore('agent', () => {
     }
 
     inputText.value = ''
+    processingScope.value = 'chat'
+    let enteredMainFlow = false
 
     try {
-      switch (skill) {
-        case 'chat':
-          await handleChat(content)
-          break
-        case 'image':
-          await handleImageGen(content)
-          break
-        case 'video':
-          await handleVideoGen(content)
-          break
-        case 'world':
-          await handleWorldGen(content)
-          break
+      void conversations.syncActiveConversation()
+
+      const skillCfg = settings.getSkill(skill)
+
+      if (!skillCfg?.enabled) {
+        addMessage({
+          role: 'assistant',
+          type: 'error',
+          content: `技能「${skillCfg?.name || skill}」已禁用`,
+          skillId: skill,
+        })
+        return
       }
-    } catch (err: unknown) {
-      const msg = formatUserError(err, '处理失败')
-      addMessage({ role: 'assistant', type: 'error', content: msg, skillId: skill })
-      if (skill === 'image' || skill === 'video') {
-        notifyError(err, skill === 'image' ? '图片生成失败' : '视频生成失败')
+
+      const sandbox = agentConfig.skeleton.sandbox
+      if (
+        sandbox.mode === 'strict' &&
+        !agentConfig.isSkillAllowed(skill)
+      ) {
+        addMessage({
+          role: 'assistant',
+          type: 'error',
+          content: `沙箱已禁止技能「${skill}」，请在 Agent 配置 → 骨架 中调整 allowedSkills`,
+          skillId: skill,
+        })
+        return
+      }
+
+      enteredMainFlow = true
+      conversations.setPersistPaused(true)
+
+      try {
+        switch (skill) {
+          case 'chat':
+            await handleChat(savedContent)
+            break
+          case 'image':
+            await handleImageGen(savedContent)
+            break
+          case 'video':
+            await handleVideoGen(savedContent)
+            break
+          case 'world':
+            await handleWorldGen(savedContent)
+            break
+        }
+      } catch (err: unknown) {
+        const msg = formatUserError(err, '处理失败')
+        addMessage({ role: 'assistant', type: 'error', content: msg, skillId: skill })
+        if (skill === 'image' || skill === 'video') {
+          notifyError(err, skill === 'image' ? '图片生成失败' : '视频生成失败')
+        }
       }
     } finally {
       processingScope.value = null
-      conversations.setPersistPaused(false)
-      if (!conversations.isIncognito && conversations.activeId) {
-        try {
-          await conversations.flushPersist(conversations.activeId)
-        } catch {
-          /* flushPersist 已写入 persistError */
+      if (enteredMainFlow) {
+        conversations.setPersistPaused(false)
+        if (!conversations.isIncognito && conversations.activeId) {
+          try {
+            await conversations.syncActiveConversation()
+            await conversations.flushPersist(conversations.activeId)
+          } catch {
+            /* flushPersist 已写入 persistError */
+          }
         }
+        clearAttachments()
+        selectedCreativeSkillId.value = null
       }
-      clearAttachments()
-      selectedCreativeSkillId.value = null
+    }
+  }
+
+  async function regenerateAssistant(messageId: string) {
+    if (processingScope.value) return
+
+    const list = [...messages.value]
+    const assistantIdx = list.findIndex((m) => m.id === messageId)
+    if (assistantIdx < 0) return
+
+    const assistant = list[assistantIdx]
+    if (assistant.role !== 'assistant' || assistant.type !== 'text') return
+    if (!assistant.content.trim()) return
+
+    let userIdx = assistantIdx - 1
+    while (userIdx >= 0 && list[userIdx].role !== 'user') userIdx -= 1
+    if (userIdx < 0) return
+
+    const userMsg = list[userIdx]
+    const text = userMsg.content === '（含附件）' ? '' : userMsg.content
+    if (!text.trim() && !userMsg.attachments?.uploadedFiles?.length) return
+
+    messages.value = list.slice(0, userIdx)
+    inputText.value = text
+    await sendMessage('chat')
+  }
+
+  function applyMessageFeedback(messageId: string, feedback: MessageFeedback | null) {
+    const list = [...messages.value]
+    const idx = list.findIndex((m) => m.id === messageId)
+    if (idx < 0) return
+    const next = { ...list[idx] }
+    if (feedback) next.feedback = feedback
+    else delete next.feedback
+    list[idx] = next
+    messages.value = list
+  }
+
+  async function setMessageFeedback(messageId: string, feedback: MessageFeedback) {
+    const msg = messages.value.find((m) => m.id === messageId)
+    if (!msg) return
+
+    const nextFeedback: MessageFeedback | null = msg.feedback === feedback ? null : feedback
+
+    if (conversations.isIncognito) {
+      applyMessageFeedback(messageId, nextFeedback)
+      return
+    }
+
+    const convId = conversations.activeId
+    if (!convId) return
+
+    try {
+      await conversations.updateMessageFeedback(convId, messageId, nextFeedback)
+    } catch {
+      useToastStore().showError('保存反馈失败')
     }
   }
 
@@ -824,6 +905,10 @@ export const useAgentStore = defineStore('agent', () => {
     conversations.ensureActive()
   }
 
+  async function bootstrapAfterLogin() {
+    await initConversations()
+  }
+
   function setCurrentView(id: ViewId) {
     if (id === 'world' && currentView.value !== 'world') {
       previousView.value = currentView.value
@@ -908,6 +993,8 @@ export const useAgentStore = defineStore('agent', () => {
     setImageFile,
     clearImage,
     sendMessage,
+    regenerateAssistant,
+    setMessageFeedback,
     generateFromStudio,
     isIncognito,
     newSession,
@@ -916,6 +1003,7 @@ export const useAgentStore = defineStore('agent', () => {
     selectConversation,
     deleteConversation,
     initConversations,
+    bootstrapAfterLogin,
     generateWorldFromStudio,
     stopWorldPolling,
   }

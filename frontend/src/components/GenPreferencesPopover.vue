@@ -187,7 +187,7 @@ function pickVideoResolution(id: string) {
       left: 2px;
       width: 16px;
       height: 16px;
-      background: #fff;
+      background: var(--glass-inner-highlight, rgba(255, 255, 255, 0.92));
       border-radius: 50%;
       transition: transform 0.2s;
     }

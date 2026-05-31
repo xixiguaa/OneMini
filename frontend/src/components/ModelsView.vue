@@ -6,6 +6,7 @@ import {
   getModelConfigGroup,
   getVisionMediaLabel,
   MODEL_CONFIG_GROUPS,
+  MULTIMODAL_FEATURE_TAGS,
   type ModelConfigGroupId,
 } from '../config/defaults'
 import { isModelReady } from '../utils/resolveModel'
@@ -73,7 +74,7 @@ function pickSelectionAfterDelete(removedId: string, capability: ModelConfig['ca
     (m) => m.capability === capability && m.id !== removedId,
   )
   const fallback =
-    capability === 'chat'
+    capability === 'chat' || capability === 'multimodal'
       ? 'deepseek-v4-pro'
       : settings.settings.models.find((m) => m.id !== removedId)?.id
   const next = remaining[0]?.id ?? fallback ?? 'deepseek-v4-pro'
@@ -125,11 +126,14 @@ function modelState(m: ModelConfig) {
 function modelMeta(m: ModelConfig) {
   const state = modelState(m)
   const tags: string[] = []
+  if (m.capability === 'multimodal') {
+    tags.push(MULTIMODAL_FEATURE_TAGS.slice(0, 3).join(' / '))
+  }
   if (m.capability === 'image' || m.capability === 'video') {
     tags.push(getVisionMediaLabel(m.capability))
   }
   const skillId =
-    m.capability === 'chat'
+    m.capability === 'chat' || m.capability === 'multimodal'
       ? 'chat'
       : m.capability === 'image'
         ? 'image'
@@ -247,10 +251,6 @@ function modelMeta(m: ModelConfig) {
 }
 
 .card {
-  background: $bg-card;
-  border: 1px solid $glass-border;
-  border-radius: $radius-md;
-  box-shadow: $shadow-sm;
   min-height: 0;
   overflow: hidden;
 }

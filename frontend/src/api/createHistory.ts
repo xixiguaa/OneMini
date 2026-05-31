@@ -1,19 +1,16 @@
 import axios from 'axios'
 import type { CreateHistoryItem } from '../stores/createHistory'
-import { getClientUserId } from '../utils/userId'
+import { setupAuthInterceptors } from '../utils/setupAuthInterceptors'
 
 const api = axios.create({
   baseURL: '/api/platform/create-history',
   timeout: 60000,
 })
 
-api.interceptors.request.use((config) => {
-  config.headers.set('X-User-Id', getClientUserId())
-  return config
-})
+setupAuthInterceptors(api)
 
 export async function fetchCreateHistory(): Promise<CreateHistoryItem[]> {
-  const { data } = await api.get<{ items: CreateHistoryItem[] }>('/')
+  const { data } = await api.get<{ items: CreateHistoryItem[] }>('')
   return data.items ?? []
 }
 

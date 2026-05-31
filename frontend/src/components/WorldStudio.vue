@@ -347,10 +347,6 @@ onUnmounted(() => {
 }
 
 .card {
-  background: $bg-card;
-  border: 1px solid $glass-border;
-  border-radius: $radius-md;
-  box-shadow: $shadow-sm;
   min-height: 0;
   overflow: hidden;
 }
@@ -491,8 +487,8 @@ onUnmounted(() => {
   max-height: min(52vh, 480px);
   border-radius: $radius-sm;
   overflow: hidden;
-  background: #13132a;
-  border: 1px solid $border-light;
+  background: $bg-page;
+  border: var(--glass-border-width, 0.5px) solid $glass-border;
   margin-bottom: 16px;
 
   &.is-fullscreen {
@@ -506,7 +502,7 @@ onUnmounted(() => {
     margin: 0;
     border: none;
     border-radius: 0;
-    background: #0d0d1a;
+    background: #060412;
   }
 }
 
@@ -537,14 +533,17 @@ onUnmounted(() => {
   align-items: center;
   justify-content: center;
   border-radius: 8px;
-  background: rgba(13, 13, 26, 0.88);
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  color: rgba(255, 255, 255, 0.88);
+  background: rgba(255, 255, 255, 0.07);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border: 0.5px solid rgba(255, 255, 255, 0.13);
+  color: rgba(255, 255, 255, 0.92);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12);
 
   &:hover {
-    background: rgba(26, 26, 53, 0.95);
+    background: rgba(255, 255, 255, 0.12);
     color: #fff;
-    border-color: rgba(255, 255, 255, 0.28);
+    border-color: rgba(255, 255, 255, 0.2);
   }
 }
 
@@ -559,21 +558,24 @@ onUnmounted(() => {
   gap: 6px 10px;
   max-width: calc(100% - 20px);
   padding: 6px 10px;
-  background: rgba(13, 13, 26, 0.88);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.07);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border: 0.5px solid rgba(255, 255, 255, 0.13);
   border-radius: 8px;
   font-size: 10px;
   color: rgba(255, 255, 255, 0.75);
   pointer-events: none;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1);
 
   .legend-title {
     font-weight: 600;
-    color: rgba(255, 255, 255, 0.45);
+    color: rgba(255, 255, 255, 0.35);
   }
 
   kbd {
     padding: 1px 5px;
-    background: rgba(255, 255, 255, 0.12);
+    background: rgba(255, 255, 255, 0.08);
     border-radius: 4px;
     font-size: 9px;
   }

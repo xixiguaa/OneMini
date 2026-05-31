@@ -33,50 +33,33 @@ const Icon = computed(() => {
 </template>
 
 <style scoped lang="scss">
+@use '../styles/variables.scss' as *;
+@use '../styles/cosmic-glass.scss' as *;
+
 .app-toast {
-  position: absolute;
-  top: 20px;
-  left: 50%;
-  z-index: 3000;
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  width: min(520px, calc(100% - 48px));
-  max-width: 800px;
-  padding: 12px 14px;
-  border-radius: 12px;
-  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.22);
-  transform: translateX(-50%);
-  backdrop-filter: blur(8px);
-  pointer-events: auto;
+  @include cosmic-top-toast;
 
   &--error {
-    background: rgba(58, 22, 30, 0.96);
-    border: 1px solid rgba(224, 49, 81, 0.45);
-    color: rgba(255, 255, 255, 0.96);
+    border-color: color-mix(in srgb, $color-danger 45%, $glass-border);
 
     .app-toast-icon {
-      color: #ff8fa3;
+      color: $color-danger;
     }
   }
 
   &--success {
-    background: rgba(22, 58, 40, 0.96);
-    border: 1px solid rgba(76, 175, 80, 0.45);
-    color: rgba(255, 255, 255, 0.95);
+    border-color: color-mix(in srgb, $color-success 45%, $glass-border);
 
     .app-toast-icon {
-      color: #6ee7a0;
+      color: $color-success;
     }
   }
 
   &--info {
-    background: rgba(24, 32, 48, 0.96);
-    border: 1px solid rgba(120, 150, 220, 0.4);
-    color: rgba(255, 255, 255, 0.95);
+    border-color: color-mix(in srgb, $accent 45%, $glass-border);
 
     .app-toast-icon {
-      color: #9ec5ff;
+      color: $accent;
     }
   }
 }
@@ -87,7 +70,6 @@ const Icon = computed(() => {
 }
 
 .app-toast-text {
-  flex: 1;
   font-size: 13px;
   line-height: 1.5;
   white-space: pre-line;
@@ -101,11 +83,11 @@ const Icon = computed(() => {
   align-items: center;
   justify-content: center;
   border-radius: 6px;
-  color: rgba(255, 255, 255, 0.72);
+  color: $text-muted;
 
   &:hover {
-    background: rgba(255, 255, 255, 0.1);
-    color: #fff;
+    background: $accent-light;
+    color: $text-primary;
   }
 }
 

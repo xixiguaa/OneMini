@@ -30,6 +30,7 @@ const emit = defineEmits<{
 const draft = ref('')
 const validationError = ref('')
 const saving = ref(false)
+const isReplacing = ref(false)
 const pendingKeyAction = ref<'revoke' | 'disable' | null>(null)
 
 const {
@@ -46,11 +47,15 @@ const {
 } = useConfirmDialog()
 
 const hasKey = computed(() => props.configured)
-const showEditor = computed(() => !props.enabled && !props.isTencent && !hasKey.value)
+/** 未配置密钥，或正在更换密钥 */
+const showEditor = computed(() => !props.isTencent && (!hasKey.value || isReplacing.value))
 const showPending = computed(
-  () => !props.enabled && !props.isTencent && hasKey.value,
+  () => !props.isTencent && hasKey.value && !props.enabled && !isReplacing.value,
 )
-const showLocked = computed(() => props.enabled && !props.isTencent && hasKey.value)
+const showLocked = computed(
+  () => !props.isTencent && hasKey.value && props.enabled && !isReplacing.value,
+)
+const needsKeyWarning = computed(() => props.enabled && !hasKey.value && !props.isTencent)
 const masked = computed(() => props.hint?.trim() || '••••••••')
 
 const draftValidation = computed(() => {
@@ -68,6 +73,13 @@ const canEnable = computed(
 const formatHint = computed(() =>
   props.isTencent ? '' : getApiKeyFormatHint(props.provider ?? 'custom'),
 )
+
+const saveButtonLabel = computed(() => {
+  if (isReplacing.value) return '保存新密钥'
+  if (hasKey.value && !props.enabled) return '启用'
+  if (needsKeyWarning.value) return '保存密钥'
+  return '保存并启用'
+})
 
 function onDraftInput() {
   const key = draft.value.trim()
@@ -94,8 +106,12 @@ async function enableKey() {
   validationError.value = ''
   saving.value = true
   try {
-    emit('configure', { apiKey: key || undefined, enable: true })
+    emit('configure', {
+      apiKey: key || undefined,
+      enable: !props.enabled || !hasKey.value || isReplacing.value,
+    })
     draft.value = ''
+    isReplacing.value = false
   } finally {
     saving.value = false
   }
@@ -108,6 +124,13 @@ function cancelKey() {
 }
 
 function cancelEditor() {
+  draft.value = ''
+  validationError.value = ''
+  isReplacing.value = false
+}
+
+function startReplaceKey() {
+  isReplacing.value = true
   draft.value = ''
   validationError.value = ''
 }
@@ -159,6 +182,8 @@ function onKeyActionCancel() {
     <span class="label">API Key</span>
     <p v-if="!isTencent" class="vault-hint">密钥仅保存于服务端加密保险库，不会写入浏览器本地存储。</p>
 
+    <p v-if="needsKeyWarning" class="warn-hint">模型已启用但尚未配置密钥，对话与知识图谱构建将无法调用 LLM。</p>
+
     <template v-if="isTencent">
       <p class="hint">使用服务器环境变量中的腾讯云密钥。</p>
       <div class="actions">
@@ -180,13 +205,16 @@ function onKeyActionCancel() {
         @keydown.enter="enableKey"
       />
       <p v-if="validationError" class="error">{{ validationError }}</p>
-      <p v-else class="hint">{{ formatHint }}。点击「保存并启用」后明文不会留在本页。</p>
+      <p v-else-if="isReplacing" class="hint">粘贴新密钥后将覆盖服务端已保存的旧密钥。</p>
+      <p v-else class="hint">{{ formatHint }}。点击「{{ saveButtonLabel }}」后明文不会留在本页。</p>
       <div class="actions">
         <button type="button" class="btn enable" :disabled="!canEnable || saving" @click="enableKey">
           <LoadingIndicator v-if="saving" label="保存中…" variant="button" :size="13" />
-          <template v-else>保存并启用</template>
+          <template v-else>{{ saveButtonLabel }}</template>
         </button>
-        <button type="button" class="btn ghost" @click="cancelEditor">取消</button>
+        <button type="button" class="btn ghost" @click="cancelEditor">
+          {{ isReplacing ? '取消更换' : '取消' }}
+        </button>
       </div>
     </template>
 
@@ -218,6 +246,7 @@ function onKeyActionCancel() {
       />
       <p class="hint">停用后将删除服务端密钥，需重新粘贴配置。</p>
       <div class="actions">
+        <button type="button" class="btn ghost" @click="startReplaceKey">更换密钥</button>
         <button type="button" class="btn ghost" @click="requestDisableKey">停用</button>
       </div>
     </template>
@@ -255,6 +284,17 @@ function onKeyActionCancel() {
   color: $accent;
   margin-bottom: 10px;
   line-height: 1.4;
+}
+
+.warn-hint {
+  font-size: 12px;
+  color: $color-danger;
+  margin-bottom: 10px;
+  line-height: 1.45;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: $color-danger-soft;
+  border: 1px solid color-mix(in srgb, $color-danger 22%, transparent);
 }
 
 .key-input {

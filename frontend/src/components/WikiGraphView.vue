@@ -40,9 +40,15 @@ import {
   type WikiIngestConflict,
   type WikiIngestStatus,
   type WikiNodeContent,
+  type WikiIngestLlmConfig,
   type WikiRawFile,
 } from '../api/wiki'
+import { WIKI_INGEST_MODEL_STORAGE_KEY } from '../config/constants'
+import { CHAT_MODEL_CAPABILITIES } from '../config/defaults'
 import { useConfirmDialog } from '../composables/useConfirmDialog'
+import { useSettingsStore } from '../stores/settings'
+import { isModelReady } from '../utils/resolveModel'
+import type { ModelConfig } from '../types/agent'
 import {
   OBSIDIAN_DOWNLOAD_URL,
   resolveObsidianTargetPath,
@@ -50,9 +56,12 @@ import {
 } from '../utils/openObsidian'
 import ConfirmDialog from './ConfirmDialog.vue'
 import LoadingIndicator from './LoadingIndicator.vue'
+import ModelLogo from './ModelLogo.vue'
 import WikiGraphCanvas from './WikiGraphCanvas.vue'
 import WikiIssuesDrawer from './WikiIssuesDrawer.vue'
 import WikiNodeDetail from './WikiNodeDetail.vue'
+
+const settingsStore = useSettingsStore()
 
 const {
   open: confirmOpen,
@@ -96,6 +105,81 @@ const openingObsidian = ref(false)
 let contentRequestSeq = 0
 let ingestPollTimer: ReturnType<typeof setInterval> | null = null
 let finishIngestPollWait: (() => void) | null = null
+
+const ingestModelId = ref('')
+const showIngestModelMenu = ref(false)
+const ingestModelPickerRef = ref<HTMLElement | null>(null)
+
+const ingestModelCandidates = computed(() =>
+  settingsStore.settings.models.filter(
+    (m) => CHAT_MODEL_CAPABILITIES.includes(m.capability) && isModelReady(m),
+  ),
+)
+
+const selectedIngestModel = computed(
+  () =>
+    ingestModelCandidates.value.find((m) => m.id === ingestModelId.value) ??
+    ingestModelCandidates.value[0] ??
+    null,
+)
+
+function persistIngestModelId(id: string) {
+  ingestModelId.value = id
+  try {
+    localStorage.setItem(WIKI_INGEST_MODEL_STORAGE_KEY, id)
+  } catch {
+    /* ignore */
+  }
+}
+
+function loadIngestModelIdPreference(server?: WikiIngestLlmConfig) {
+  const fromJob = ingestJob.value?.llm?.model_config_id
+  if (fromJob && isModelReady(settingsStore.getModel(fromJob))) {
+    persistIngestModelId(fromJob)
+    return
+  }
+  if (server?.model_config_id && isModelReady(settingsStore.getModel(server.model_config_id))) {
+    persistIngestModelId(server.model_config_id)
+    return
+  }
+  try {
+    const saved = localStorage.getItem(WIKI_INGEST_MODEL_STORAGE_KEY)
+    if (saved && isModelReady(settingsStore.getModel(saved))) {
+      persistIngestModelId(saved)
+      return
+    }
+  } catch {
+    /* ignore */
+  }
+  const skillDefault = settingsStore.getSkill('chat')?.defaultModelId
+  if (skillDefault && isModelReady(settingsStore.getModel(skillDefault))) {
+    persistIngestModelId(skillDefault)
+    return
+  }
+  const first = ingestModelCandidates.value[0]
+  if (first) persistIngestModelId(first.id)
+}
+
+function buildIngestLlmPayload(): WikiIngestLlmConfig | undefined {
+  const m = selectedIngestModel.value
+  if (!m) return undefined
+  return {
+    model_config_id: m.id,
+    provider: m.provider,
+    model: m.model,
+    base_url: m.baseUrl?.trim() || undefined,
+  }
+}
+
+function selectIngestModel(m: ModelConfig) {
+  persistIngestModelId(m.id)
+  showIngestModelMenu.value = false
+}
+
+function toggleIngestModelMenu() {
+  if (ingestRunning.value) return
+  showIngestModelMenu.value = !showIngestModelMenu.value
+}
 
 function completeIngestPollWait() {
   finishIngestPollWait?.()
@@ -456,7 +540,7 @@ async function handleIngestJobFinished(status: WikiIngestStatus) {
     openIssuesDrawer('conflicts')
   } else if (status.errors?.length) {
     ingestNotice.value = ''
-    error.value = `已完成，但有 ${status.errors.length} 项失败（见顶部提示）`
+    error.value = `已完成，但有 ${status.errors.length} 项失败`
   } else {
     ingestNotice.value = ''
   }
@@ -470,6 +554,7 @@ async function pollIngestUntilDone() {
       try {
         const status = await getWikiIngestStatus()
         ingestJob.value = status
+        if (status.llm) loadIngestModelIdPreference(status.llm)
         if (!status.running) {
           stopIngestPoll()
           await handleIngestJobFinished(status)
@@ -522,6 +607,14 @@ function onFlowInfoDocClick(e: MouseEvent) {
   flowInfoOpen.value = false
 }
 
+function onWikiPageDocClick(e: MouseEvent) {
+  onFlowInfoDocClick(e)
+  if (!showIngestModelMenu.value) return
+  const target = e.target as Node
+  if (ingestModelPickerRef.value?.contains(target)) return
+  showIngestModelMenu.value = false
+}
+
 async function resolveIngestConflict(id: string, resolution: WikiConflictResolution) {
   resolvingConflictId.value = id
   error.value = ''
@@ -544,8 +637,10 @@ async function refreshAll() {
     try {
       const status = await getWikiStatus()
       wikiRoot.value = status.wiki_root
+      loadIngestModelIdPreference(status.ingest_llm)
     } catch {
       wikiRoot.value = ''
+      loadIngestModelIdPreference()
     }
     rawFiles.value = await listWikiRawFiles()
     const graph = await getWikiGraph()
@@ -594,11 +689,16 @@ async function onUpload(ev: Event) {
 }
 
 async function runRepairOrphans() {
+  const llm = buildIngestLlmPayload()
+  if (!llm) {
+    error.value = '请先在「模型配置」中启用并配置对话或多模态模型的 API Key'
+    return
+  }
   loading.value = true
   error.value = ''
   ingestErrorsDismissed.value = false
   try {
-    const result = await repairUnknownWikiNodes()
+    const result = await repairUnknownWikiNodes(llm)
     if (result.started || result.running) {
       ingestJob.value = {
         running: true,
@@ -644,12 +744,17 @@ async function onCancelIngest() {
 }
 
 async function runIngestJob(retryFailedOnly = false) {
+  const llm = buildIngestLlmPayload()
+  if (!llm) {
+    error.value = '请先在「模型配置」中启用并配置对话或多模态模型的 API Key'
+    return
+  }
   loading.value = true
   error.value = ''
   ingestNotice.value = ''
   ingestErrorsDismissed.value = false
   try {
-    const result = await rebuildWikiGraph(true, { retryFailedOnly })
+    const result = await rebuildWikiGraph(true, { retryFailedOnly, llm })
     if (result.started || result.running) {
       ingestJob.value = {
         running: true,
@@ -662,6 +767,7 @@ async function runIngestJob(retryFailedOnly = false) {
       }
       await pollIngestUntilDone()
     } else {
+      ingestNotice.value = result.message || '没有待构建的 raw 文件'
       await refreshAll()
       canvasRef.value?.fitView()
     }
@@ -793,7 +899,7 @@ watch(ingestConflictCount, (n, prev) => {
 
 onMounted(async () => {
   window.addEventListener('keydown', onGraphEscape)
-  document.addEventListener('click', onFlowInfoDocClick)
+  document.addEventListener('click', onWikiPageDocClick)
   await refreshAll()
   if (ingestJob.value?.running) {
     loading.value = true
@@ -804,7 +910,7 @@ onMounted(async () => {
 
 onUnmounted(() => {
   window.removeEventListener('keydown', onGraphEscape)
-  document.removeEventListener('click', onFlowInfoDocClick)
+  document.removeEventListener('click', onWikiPageDocClick)
   stopIngestPoll()
   completeIngestPollWait()
   graphFullscreen.value = false
@@ -863,19 +969,27 @@ watch(selectedNodeId, (id) => expandSectionForNode(id))
           class="issues-chip warn"
           @click="openIssuesDrawer('conflicts')"
         >
-          内容冲突 {{ ingestConflictCount }}
+          内容冲突
+          <span class="issues-count">{{ ingestConflictCount }}</span>
         </button>
-        <div v-if="ingestErrorCount && !ingestErrorsDismissed" class="issues-errors-summary">
-          <span class="issues-errors-text">
-            构建失败 {{ ingestErrorCount }} 项（多为模型返回空 JSON）
-          </span>
-          <button type="button" class="issues-link-btn" :disabled="ingestActive" @click="onRetryFailed">
-            重试
-          </button>
-          <button type="button" class="issues-link-btn" @click="openIssuesDrawer('errors')">
-            查看详情
-          </button>
-        </div>
+        <button
+          v-if="ingestErrorCount && !ingestErrorsDismissed"
+          type="button"
+          class="issues-chip danger"
+          @click="openIssuesDrawer('errors')"
+        >
+          构建失败
+          <span class="issues-count">{{ ingestErrorCount }}</span>
+        </button>
+        <button
+          v-if="ingestErrorCount && !ingestErrorsDismissed"
+          type="button"
+          class="issues-action-btn"
+          :disabled="ingestActive"
+          @click="onRetryFailed"
+        >
+          重试失败项
+        </button>
       </div>
       <button
         type="button"
@@ -912,7 +1026,8 @@ watch(selectedNodeId, (id) => expandSectionForNode(id))
           <button
             type="button"
             class="action-btn primary-outline"
-            :disabled="ingestRunning"
+            :disabled="ingestRunning || !selectedIngestModel"
+            :title="selectedIngestModel ? undefined : '请先在模型配置中启用对话或多模态模型'"
             @click="onRebuild"
           >
             <Loader2 v-if="ingestRunning" :size="16" class="om-loading-spinner" aria-hidden="true" />
@@ -923,7 +1038,7 @@ watch(selectedNodeId, (id) => expandSectionForNode(id))
             v-if="ingestErrorCount && !ingestJob?.running"
             type="button"
             class="action-btn"
-            :disabled="ingestActive"
+            :disabled="ingestActive || !selectedIngestModel"
             @click="onRetryFailed"
           >
             <RefreshCw :size="16" />
@@ -998,6 +1113,52 @@ watch(selectedNodeId, (id) => expandSectionForNode(id))
               </ul>
             </div>
           </Teleport>
+
+          <div class="ingest-arch-block">
+            <p class="ingest-arch-label">构建模型选择</p>
+            <div ref="ingestModelPickerRef" class="ingest-model-picker">
+              <button
+                type="button"
+                class="ingest-model-btn"
+                :disabled="ingestRunning"
+                :aria-expanded="showIngestModelMenu"
+                @click.stop="toggleIngestModelMenu"
+              >
+                <ModelLogo v-if="selectedIngestModel" :model="selectedIngestModel" :size="20" />
+                <span class="ingest-model-name">
+                  {{ selectedIngestModel?.name ?? '未配置可用模型' }}
+                </span>
+                <ChevronDown
+                  :size="14"
+                  class="chevron"
+                  :class="{ open: showIngestModelMenu }"
+                  aria-hidden="true"
+                />
+              </button>
+              <div
+                v-if="showIngestModelMenu && ingestModelCandidates.length"
+                class="ingest-model-menu"
+                role="listbox"
+              >
+                <button
+                  v-for="m in ingestModelCandidates"
+                  :key="m.id"
+                  type="button"
+                  class="ingest-model-option"
+                  :class="{ active: selectedIngestModel?.id === m.id }"
+                  role="option"
+                  @click="selectIngestModel(m)"
+                >
+                  <ModelLogo :model="m" :size="22" />
+                  <span>{{ m.name }}</span>
+                </button>
+              </div>
+            </div>
+            <p class="ingest-model-hint">
+              用于「构建知识框架」与断链补全；支持对话 / 多模态模型（需已配置 API Key）。
+            </p>
+          </div>
+
           <div class="flow-rail" aria-label="raw 到 wiki 到输出流程">
             <div v-for="step in flowStats" :key="step.key" class="flow-step" :data-step="step.key">
               <span class="flow-value">{{ step.value }}</span>
@@ -1177,7 +1338,7 @@ watch(selectedNodeId, (id) => expandSectionForNode(id))
               <button
                 type="button"
                 class="action-btn primary-outline orphan-repair-btn"
-                :disabled="ingestActive"
+                :disabled="ingestActive || !selectedIngestModel"
                 @click="runRepairOrphans"
               >
                 <RefreshCw :size="16" />
@@ -1329,6 +1490,7 @@ watch(selectedNodeId, (id) => expandSectionForNode(id))
 
 <style scoped lang="scss">
 @use '../styles/variables.scss' as *;
+@use '../styles/cosmic-glass.scss' as cosmic;
 
 @mixin hide-scrollbar {
   scrollbar-width: none;
@@ -1469,52 +1631,71 @@ watch(selectedNodeId, (id) => expandSectionForNode(id))
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-  padding: 8px 12px;
+  padding: 6px 10px;
   border-radius: $radius-md;
-  background: rgba(255, 255, 255, 0.88);
+  background: $bg-card;
   border: 1px solid $glass-border;
-  box-shadow: $shadow-sm;
 }
 
 .wiki-issues-strip-main {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px 12px;
+  gap: 6px 8px;
   min-width: 0;
 }
 
 .issues-chip {
-  padding: 4px 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
   font-size: 12px;
-  font-weight: 600;
-  border-radius: 999px;
-  border: 1px solid color-mix(in srgb, $color-warning 45%, transparent);
-  background: color-mix(in srgb, $color-warning 12%, transparent);
-  color: color-mix(in srgb, $color-warning 70%, $text-primary);
+  font-weight: 500;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: $text-secondary;
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
 
   &:hover {
-    background: color-mix(in srgb, $color-warning 20%, transparent);
+    color: $text-primary;
+    background: rgba(0, 0, 0, 0.04);
+  }
+
+  &.warn {
+    border-color: color-mix(in srgb, $color-warning 35%, transparent);
+
+    .issues-count {
+      color: color-mix(in srgb, $color-warning 80%, $text-primary);
+      background: color-mix(in srgb, $color-warning 14%, transparent);
+    }
+  }
+
+  &.danger {
+    border-color: color-mix(in srgb, $color-danger 30%, transparent);
+
+    .issues-count {
+      color: $color-danger;
+      background: $color-danger-soft;
+    }
   }
 }
 
-.issues-errors-summary {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px 10px;
-  font-size: 12px;
-  color: $color-danger;
-}
-
-.issues-errors-text {
-  font-weight: 500;
-}
-
-.issues-link-btn {
-  padding: 2px 8px;
-  font-size: 12px;
+.issues-count {
+  min-width: 18px;
+  padding: 0 5px;
+  font-size: 10px;
   font-weight: 600;
+  line-height: 16px;
+  border-radius: 999px;
+  text-align: center;
+}
+
+.issues-action-btn {
+  padding: 4px 10px;
+  font-size: 12px;
+  font-weight: 500;
   border-radius: 6px;
   color: $accent;
   background: transparent;
@@ -1539,6 +1720,109 @@ watch(selectedNodeId, (id) => expandSectionForNode(id))
     color: $text-primary;
     background: rgba(0, 0, 0, 0.06);
   }
+}
+
+.ingest-arch-block {
+  margin: 10px 0 12px;
+}
+
+.ingest-arch-label {
+  margin: 0 0 8px;
+  font-size: 11px;
+  font-weight: 600;
+  color: $text-muted;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.ingest-model-picker {
+  position: relative;
+}
+
+.ingest-model-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid $border-light;
+  border-radius: 8px;
+  background: $bg-card;
+  font-size: 13px;
+  color: $text-primary;
+  text-align: left;
+
+  &:hover:not(:disabled) {
+    border-color: $accent;
+    background: $accent-light;
+  }
+
+  &:disabled {
+    opacity: 0.65;
+    cursor: not-allowed;
+  }
+
+  .chevron {
+    margin-left: auto;
+    color: $text-muted;
+    transition: transform 0.15s ease;
+
+    &.open {
+      transform: rotate(180deg);
+    }
+  }
+}
+
+.ingest-model-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ingest-model-menu {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  max-height: 220px;
+  overflow-y: auto;
+  padding: 4px;
+  border: 1px solid $glass-border;
+  border-radius: 8px;
+  background: $bg-card;
+  box-shadow: $shadow-md;
+}
+
+.ingest-model-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 10px;
+  border-radius: 6px;
+  font-size: 13px;
+  color: $text-primary;
+  text-align: left;
+
+  &:hover {
+    background: $accent-light;
+  }
+
+  &.active {
+    background: $accent-light;
+    color: $accent;
+    font-weight: 500;
+  }
+}
+
+.ingest-model-hint {
+  margin: 8px 0 0;
+  font-size: 11px;
+  line-height: 1.45;
+  color: $text-muted;
 }
 
 .flow-section-head {
@@ -1572,12 +1856,9 @@ watch(selectedNodeId, (id) => expandSectionForNode(id))
 }
 
 .flow-info-popover {
+  @include cosmic.cosmic-glass-frost(var(--glass-radius-md, 20px));
   width: min(300px, calc(100vw - 48px));
   padding: 12px 14px;
-  border-radius: 10px;
-  border: 1px solid $glass-border;
-  background: $bg-card;
-  box-shadow: $shadow-md;
   font-size: 12px;
   line-height: 1.55;
   color: $text-secondary;
@@ -1652,10 +1933,6 @@ watch(selectedNodeId, (id) => expandSectionForNode(id))
 }
 
 .card {
-  background: $bg-card;
-  border: 1px solid $glass-border;
-  border-radius: $radius-md;
-  box-shadow: $shadow-sm;
   min-height: 0;
 }
 
@@ -2081,16 +2358,16 @@ watch(selectedNodeId, (id) => expandSectionForNode(id))
     background: #6b6b8a;
   }
   &[data-type='entity'] {
-    background: #7b5fff;
+    background: #7c5fe8;
   }
   &[data-type='concept'] {
-    background: #1fffd4;
+    background: #1e96be;
   }
   &[data-type='source'] {
     background: #ffb830;
   }
   &[data-type='synthesis'] {
-    background: #826afb;
+    background: #5338c0;
   }
   &[data-type='raw_extract'] {
     background: #a0a0c0;
@@ -2124,8 +2401,8 @@ watch(selectedNodeId, (id) => expandSectionForNode(id))
 
   &:not(.is-fullscreen) {
     border-radius: $radius-md;
-    border: 1px solid $border-light;
-    background: #13132a;
+    border: var(--glass-border-width, 0.5px) solid $glass-border;
+    background: transparent;
     box-shadow: $shadow-sm;
   }
 
@@ -2136,7 +2413,7 @@ watch(selectedNodeId, (id) => expandSectionForNode(id))
     width: 100vw;
     height: 100vh;
     flex: none;
-    background: #0d0d1a;
+    background: #060412;
   }
 
   &.has-detail .graph-canvas-slot {
@@ -2189,21 +2466,22 @@ watch(selectedNodeId, (id) => expandSectionForNode(id))
   width: 32px;
   height: 32px;
   padding: 0;
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border: 0.5px solid rgba(255, 255, 255, 0.13);
   border-radius: 8px;
-  background: rgba(28, 32, 36, 0.92);
-  color: rgba(220, 228, 224, 0.92);
+  background: rgba(255, 255, 255, 0.07);
+  color: rgba(255, 255, 255, 0.92);
   cursor: pointer;
-  backdrop-filter: blur(8px);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
   outline: none;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.28);
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.32), inset 0 1px 0 rgba(255, 255, 255, 0.12);
   transition:
     background 0.15s ease,
     border-color 0.15s ease,
     transform 0.12s ease;
 
   &:hover {
-    background: rgba(48, 54, 58, 0.96);
+    background: rgba(255, 255, 255, 0.12);
     border-color: rgba(255, 255, 255, 0.2);
   }
 
@@ -2291,27 +2569,30 @@ watch(selectedNodeId, (id) => expandSectionForNode(id))
   min-width: 280px;
   max-width: 480px;
   height: 100%;
-  /* 固定深色阅读面：避免浅色主题下深底+深字 */
-  --text-primary: #f4f4ff;
-  --text-secondary: #d0d0e8;
-  --text-muted: #a8a8c8;
-  --bg-elevated: #222244;
-  --bg-input: #1a1a35;
-  --bg-card: #13132a;
-  --border-light: rgba(58, 58, 96, 0.72);
-  --accent: #7b5fff;
-  --accent-emphasis: #b0a0ff;
-  --accent-light: rgba(123, 95, 255, 0.16);
-  --color-warning: #ffd06a;
-  --color-danger: #ff8a9e;
+  /* 图谱区固定深空玻璃阅读面（画布恒为深色） */
+  --text-primary: rgba(255, 255, 255, 0.92);
+  --text-secondary: rgba(255, 255, 255, 0.5);
+  --text-muted: rgba(255, 255, 255, 0.35);
+  --bg-elevated: rgba(255, 255, 255, 0.06);
+  --bg-input: rgba(0, 0, 0, 0.28);
+  --bg-card: rgba(255, 255, 255, 0.07);
+  --border-light: rgba(255, 255, 255, 0.13);
+  --accent: #7c5fe8;
+  --accent-emphasis: #8d72ec;
+  --accent-light: rgba(124, 95, 232, 0.14);
+  --color-warning: #ffb830;
+  --color-danger: #ff5c7a;
   color: var(--text-secondary);
-  background: #13132a;
+  background: rgba(255, 255, 255, 0.07);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
   display: flex;
   flex-direction: column;
   overflow: hidden;
   isolation: isolate;
   z-index: 25;
-  border-left: 1px solid $border-light;
+  border-left: 0.5px solid rgba(255, 255, 255, 0.13);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12);
 }
 
 .graph-viewport.is-fullscreen .detail-panel {

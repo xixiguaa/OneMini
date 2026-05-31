@@ -10,7 +10,11 @@ import {
   upsertCreateHistoryItem,
 } from '../api/createHistory'
 import type { Conversation } from '../types/agent'
-import { resolveCreateHistoryImageUrl, withCreateHistoryMediaUser } from '../utils/createHistoryMedia'
+import {
+  createHistoryMediaUrl,
+  resolveCreateHistoryImageUrl,
+  withCreateHistoryMediaToken,
+} from '../utils/createHistoryMedia'
 import { randomUUID } from '../utils/uuid'
 
 export interface CreateHistoryItem {
@@ -179,7 +183,7 @@ export const useCreateHistoryStore = defineStore('createHistory', () => {
     try {
       const saved = await upsertCreateHistoryItem({ ...item })
       const rawUrl = saved.previewUrl ?? saved.url
-      const url = rawUrl ? withCreateHistoryMediaUser(rawUrl) : undefined
+      const url = rawUrl ? withCreateHistoryMediaToken(rawUrl) : createHistoryMediaUrl(item.id)
       Object.assign(item, {
         url: url || rawUrl,
         previewUrl: url || rawUrl,

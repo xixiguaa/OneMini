@@ -2,7 +2,6 @@
 import {
   Box,
   Database,
-  ExternalLink,
   GitBranch,
   EyeOff,
   Globe,
@@ -12,11 +11,9 @@ import {
   Palette,
   Plus,
   Sparkles,
-  Trophy,
 } from 'lucide-vue-next'
 import { computed } from 'vue'
 import { useLocale } from '../composables/useLocale'
-import { EXTERNAL_LINKS } from '../config/constants'
 import ChatHistory from './ChatHistory.vue'
 import SidebarFooterBar from './SidebarFooterBar.vue'
 import { useAgentStore } from '../stores/agent'
@@ -69,7 +66,7 @@ function selectView(id: ViewId) {
       <button
         class="new-chat-btn"
         :class="{ inactive: agent.isIncognito, 'icon-only': collapsed }"
-        :title="t('sidebar.newChat')"
+        :title="collapsed ? t('sidebar.newChat') : undefined"
         @click="agent.newSession()"
       >
         <Plus :size="16" />
@@ -78,7 +75,7 @@ function selectView(id: ViewId) {
       <button
         class="incognito-btn"
         :class="{ active: agent.isIncognito, 'icon-only': collapsed }"
-        :title="t('sidebar.incognitoHint')"
+        :title="collapsed ? t('sidebar.incognitoHint') : undefined"
         @click="agent.newIncognitoSession()"
       >
         <EyeOff :size="16" />
@@ -86,59 +83,35 @@ function selectView(id: ViewId) {
       </button>
     </div>
 
-    <ChatHistory v-show="!collapsed" />
-
-    <nav class="nav" :aria-label="t('sidebar.navAria')">
-      <button
-        v-for="item in navItems"
-        :key="item.id"
-        type="button"
-        class="nav-item"
-        :class="{ active: agent.currentView === item.id, 'icon-only': collapsed }"
-        :title="item.label"
-        :aria-label="item.label"
-        @click="selectView(item.id)"
-      >
-        <component :is="item.icon" :size="18" class="nav-icon" />
-        <span v-show="!collapsed" class="sidebar-text">{{ item.label }}</span>
-      </button>
-    </nav>
-
-    <div v-show="!collapsed" class="external">
-      <p class="ext-label">{{ t('sidebar.external') }}</p>
-      <a
-        :href="EXTERNAL_LINKS.chatbotArena"
-        target="_blank"
-        rel="noopener noreferrer"
-        class="ext-link"
-      >
-        <Trophy :size="16" />
-        <div>
-          <span class="ext-title">{{ t('sidebar.arenaTitle') }}</span>
-          <span class="ext-sub">{{ t('sidebar.arenaSub') }}</span>
-        </div>
-        <ExternalLink :size="12" class="ext-arrow" />
-      </a>
+    <div class="sidebar-scroll">
+      <ChatHistory v-show="!collapsed" />
     </div>
 
-    <a
-      v-show="collapsed"
-      :href="EXTERNAL_LINKS.chatbotArena"
-      target="_blank"
-      rel="noopener noreferrer"
-      class="ext-icon-btn"
-      :title="t('sidebar.arenaTitle')"
-      :aria-label="t('sidebar.arenaTitle')"
-    >
-      <Trophy :size="18" />
-    </a>
+    <div class="sidebar-bottom">
+      <nav class="nav" :aria-label="t('sidebar.navAria')">
+        <button
+          v-for="item in navItems"
+          :key="item.id"
+          type="button"
+          class="nav-item"
+          :class="{ active: agent.currentView === item.id, 'icon-only': collapsed }"
+          :title="collapsed ? item.label : undefined"
+          :aria-label="item.label"
+          @click="selectView(item.id)"
+        >
+          <component :is="item.icon" :size="18" class="nav-icon" />
+          <span v-show="!collapsed" class="sidebar-text">{{ item.label }}</span>
+        </button>
+      </nav>
 
-    <SidebarFooterBar :collapsed="collapsed" />
+      <SidebarFooterBar :collapsed="collapsed" />
+    </div>
   </aside>
 </template>
 
 <style scoped lang="scss">
 @use '../styles/variables.scss' as *;
+@use '../styles/cosmic-glass.scss' as cosmic;
 
 $sidebar-expanded: 248px;
 $sidebar-collapsed: 56px;
@@ -151,10 +124,13 @@ $sidebar-collapsed: 56px;
   flex-direction: column;
   padding: 12px 10px 12px;
   background: $bg-sidebar;
-  backdrop-filter: blur(16px);
-  border-right: 1px solid $glass-border;
+  backdrop-filter: blur(var(--glass-blur, 32px)) saturate(var(--glass-saturate, 1.35));
+  -webkit-backdrop-filter: blur(var(--glass-blur, 32px)) saturate(var(--glass-saturate, 1.35));
+  border-right: var(--glass-border-width, 1px) solid var(--sidebar-divider, rgba(255, 255, 255, 0.45));
   flex-shrink: 0;
   overflow: hidden;
+  position: relative;
+  z-index: 2;
   transition: width 0.22s ease, padding 0.22s ease;
 
   &.collapsed {
@@ -198,10 +174,10 @@ $sidebar-collapsed: 56px;
   height: 32px;
   flex-shrink: 0;
   border-radius: 8px;
-  color: $text-muted;
+  color: var(--text-label, $text-secondary);
+  @include cosmic.cosmic-interactive-item(12px);
 
   &:hover {
-    background: $accent-light;
     color: $text-primary;
   }
 
@@ -215,6 +191,20 @@ $sidebar-collapsed: 56px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.sidebar-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.sidebar-bottom {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
 }
 
 .chat-actions {
@@ -267,13 +257,7 @@ $sidebar-collapsed: 56px;
 .incognito-btn {
   padding: 9px 11px;
   color: $accent-emphasis;
-  background: $accent-light;
-  border: 1px solid $border-light;
-
-  &:hover {
-    background: color-mix(in srgb, $accent-light 80%, $accent);
-    border-color: color-mix(in srgb, $border-light 60%, $accent);
-  }
+  @include cosmic.cosmic-interactive-item;
 
   &.active {
     color: #fff;
@@ -290,7 +274,7 @@ $sidebar-collapsed: 56px;
   flex-shrink: 0;
   padding-top: 8px;
   padding-bottom: 8px;
-  border-top: 1px solid $glass-border;
+  border-top: 1px solid var(--sidebar-divider, $border-light);
 
   .collapsed & {
     align-items: center;
@@ -308,8 +292,10 @@ $sidebar-collapsed: 56px;
   padding: 9px 12px;
   border-radius: $radius-sm;
   font-size: 13px;
-  color: $text-secondary;
+  font-weight: 500;
+  color: $text-primary;
   text-align: left;
+  @include cosmic.cosmic-interactive-item;
 
   &.icon-only {
     width: 40px;
@@ -318,93 +304,14 @@ $sidebar-collapsed: 56px;
     justify-content: center;
   }
 
-  &:hover {
-    background: $accent-light;
-    color: $text-primary;
-  }
-
   &.active {
-    background: $accent-light;
-    color: $accent;
+    @include cosmic.cosmic-interactive-item-active;
+    color: $accent-emphasis;
     font-weight: 600;
-    box-shadow: inset $active-indicator 0 0 $accent;
   }
 }
 
 .nav-icon {
   flex-shrink: 0;
-}
-
-.external {
-  flex-shrink: 0;
-  margin-top: auto;
-  margin-left: -10px;
-  margin-right: -10px;
-  padding: 10px 8px 8px;
-  border-top: 1px solid $glass-border;
-}
-
-.ext-label {
-  font-size: 10px;
-  font-weight: 600;
-  color: $text-muted;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  padding: 0 2px 6px;
-}
-
-.ext-link {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-height: 32px;
-  padding: 6px 8px;
-  border-radius: 6px;
-  text-decoration: none;
-  color: inherit;
-  font-size: 13px;
-  border: 1px solid transparent;
-
-  &:hover {
-    background: $accent-light;
-  }
-
-  svg:first-child {
-    color: $accent-gold;
-    flex-shrink: 0;
-  }
-}
-
-.ext-title {
-  display: block;
-  font-size: 13px;
-  font-weight: 500;
-  color: $text-primary;
-}
-
-.ext-sub {
-  display: none;
-}
-
-.ext-arrow {
-  margin-left: auto;
-  color: $text-muted;
-}
-
-.ext-icon-btn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 40px;
-  height: 40px;
-  margin-top: auto;
-  margin-bottom: 4px;
-  align-self: center;
-  border-radius: $radius-sm;
-  color: $accent-gold;
-
-  &:hover {
-    background: $accent-light;
-  }
 }
 </style>

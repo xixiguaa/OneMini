@@ -204,6 +204,7 @@ onUnmounted(() => document.removeEventListener('click', onDocClick))
 
 <style scoped lang="scss">
 @use '../styles/variables.scss' as *;
+@use '../styles/cosmic-glass.scss' as cosmic;
 
 .model-picker {
   position: relative;
@@ -270,6 +271,7 @@ onUnmounted(() => document.removeEventListener('click', onDocClick))
 }
 
 .picker-panel {
+  @include cosmic.cosmic-glass-frost(var(--glass-radius-md, 20px));
   position: absolute;
   z-index: 50;
   top: calc(100% + 6px);
@@ -278,10 +280,7 @@ onUnmounted(() => document.removeEventListener('click', onDocClick))
   max-height: min(420px, 60vh);
   display: flex;
   flex-direction: column;
-  background: var(--composer-menu-bg, $bg-card);
-  border: 1px solid $border-light;
-  border-radius: 12px;
-  box-shadow: $shadow-md;
+  background: var(--composer-menu-bg, $glass-bg);
   overflow: hidden;
 }
 

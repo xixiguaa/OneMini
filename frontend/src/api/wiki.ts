@@ -1,11 +1,9 @@
 import axios from 'axios'
-import { getClientUserId } from '../utils/userId'
+import { platformAuthHeaders } from '../utils/authHeaders'
+import { setupAuthInterceptors } from '../utils/setupAuthInterceptors'
 
 const api = axios.create({ baseURL: '/api/platform', timeout: 120000 })
-api.interceptors.request.use((config) => {
-  config.headers.set('X-User-Id', getClientUserId())
-  return config
-})
+setupAuthInterceptors(api)
 
 export interface WikiRawFile {
   path: string
@@ -41,6 +39,13 @@ export interface WikiGraph {
   edges: WikiGraphEdge[]
 }
 
+export interface WikiIngestLlmConfig {
+  model_config_id?: string
+  provider?: string
+  model?: string
+  base_url?: string
+}
+
 export interface WikiStatus {
   ok: boolean
   wiki_root: string
@@ -50,6 +55,7 @@ export interface WikiStatus {
   allowed_suffixes?: string[]
   pending_ingest?: number
   orphan_wiki?: number
+  ingest_llm?: WikiIngestLlmConfig
   ingest_job?: {
     running: boolean
     total: number
@@ -95,6 +101,7 @@ export interface WikiIngestStatus {
   mode?: string
   cancel_requested?: boolean
   cancelled?: boolean
+  llm?: WikiIngestLlmConfig
 }
 
 export interface WikiRebuildResult {
@@ -145,11 +152,16 @@ export async function getWikiIngestStatus() {
 /** 构建知识框架：默认先 LLM ingest 未处理 raw，再重建图谱（后台队列） */
 export async function rebuildWikiGraph(
   autoIngest = true,
-  options?: { retryFailedOnly?: boolean },
+  options?: { retryFailedOnly?: boolean; llm?: WikiIngestLlmConfig },
 ) {
+  const llm = options?.llm
   const { data } = await api.post<WikiRebuildResult>('/wiki/graph/rebuild', {
     auto_ingest: autoIngest,
     retry_failed_only: options?.retryFailedOnly ?? false,
+    model_config_id: llm?.model_config_id,
+    provider: llm?.provider,
+    model: llm?.model,
+    base_url: llm?.base_url,
   })
   return data
 }
@@ -188,8 +200,13 @@ export async function resolveWikiIngestConflict(
   return data
 }
 
-export async function repairUnknownWikiNodes() {
-  const { data } = await api.post<WikiRebuildResult>('/wiki/graph/repair-unknown')
+export async function repairUnknownWikiNodes(llm?: WikiIngestLlmConfig) {
+  const { data } = await api.post<WikiRebuildResult>('/wiki/graph/repair-unknown', {
+    model_config_id: llm?.model_config_id,
+    provider: llm?.provider,
+    model: llm?.model,
+    base_url: llm?.base_url,
+  })
   return data
 }
 
@@ -270,7 +287,7 @@ export async function sendWikiChatStream(opts: WikiQueryStreamOptions): Promise<
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'X-User-Id': getClientUserId(),
+      ...platformAuthHeaders(),
     },
     body: JSON.stringify({
       question: opts.question,

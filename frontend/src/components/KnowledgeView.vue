@@ -242,7 +242,7 @@ onMounted(async () => {
 
         <p class="group-label">架构说明</p>
         <p class="wiki-arch-hint">
-          <strong>Ingest</strong>：在「知识图谱」上传 raw → 构建知识框架。<br />
+          <strong>Ingest</strong>：在「知识图谱」上传 raw → 选择构架模型 → 构建知识框架。<br />
           <strong>Query</strong>：在对话页切换 LLM-Wiki 模式。<br />
           <strong>健康检查</strong>：构建完成后仍可扫描断链、待补全页与未 ingest 的 raw（不影响已构建内容）。
         </p>
@@ -428,10 +428,11 @@ onMounted(async () => {
 
 .page-head {
   padding: 14px 16px;
-  background: $bg-card;
-  border: 1px solid $glass-border;
-  border-radius: $radius-md;
-  box-shadow: $shadow-sm;
+}
+
+.card {
+  min-height: 0;
+  overflow: hidden;
 }
 
 .panel-tabs {
@@ -568,15 +569,6 @@ onMounted(async () => {
   grid-template-columns: 280px 1fr;
   gap: 16px;
   min-height: 0;
-}
-
-.card {
-  background: $bg-card;
-  border: 1px solid $glass-border;
-  border-radius: $radius-md;
-  box-shadow: $shadow-sm;
-  min-height: 0;
-  overflow: hidden;
 }
 
 .model-list {

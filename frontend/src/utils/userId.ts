@@ -1,15 +1,28 @@
 const STORAGE_KEY = 'onemini-user-id'
 
-/** 匿名用户 ID（仅用于服务端密钥分区，不存储 API Key） */
+/** 登录后的服务端用户 ID（数据分区键） */
 export function getClientUserId(): string {
   try {
-    let id = localStorage.getItem(STORAGE_KEY)
-    if (!id) {
-      id = crypto.randomUUID()
-      localStorage.setItem(STORAGE_KEY, id)
-    }
-    return id
+    const id = localStorage.getItem(STORAGE_KEY)
+    if (id) return id
   } catch {
-    return 'default'
+    /* ignore */
+  }
+  return 'default'
+}
+
+export function setClientUserId(id: string) {
+  try {
+    localStorage.setItem(STORAGE_KEY, id)
+  } catch {
+    /* ignore */
+  }
+}
+
+export function clearClientUserId() {
+  try {
+    localStorage.removeItem(STORAGE_KEY)
+  } catch {
+    /* ignore */
   }
 }

@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import base64
+import fcntl
 import json
 import re
 import time
+from contextlib import contextmanager
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterator
 from urllib.parse import quote
 
 import httpx
@@ -33,6 +35,20 @@ def _user_path(user_id: str) -> Path:
     return _history_dir() / f"{_safe_user_id(user_id)}.json"
 
 
+@contextmanager
+def _user_lock(user_id: str) -> Iterator[None]:
+    """按用户文件锁，避免并发 upsert 覆盖 JSON。"""
+    lock_dir = _history_dir() / "locks"
+    lock_dir.mkdir(parents=True, exist_ok=True)
+    lock_path = lock_dir / f"{_safe_user_id(user_id)}.lock"
+    with open(lock_path, "a+b") as fh:
+        fcntl.flock(fh.fileno(), fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(fh.fileno(), fcntl.LOCK_UN)
+
+
 def _media_dir(user_id: str) -> Path:
     base = _history_dir() / "media" / _safe_user_id(user_id)
     base.mkdir(parents=True, exist_ok=True)
@@ -44,9 +60,9 @@ def media_path(user_id: str, item_id: str) -> Path:
     return _media_dir(user_id) / f"{safe_id}.bin"
 
 
-def media_public_url(user_id: str, item_id: str) -> str:
-    uid = quote(_safe_user_id(user_id), safe="")
-    return f"/api/platform/create-history/media/{item_id}?userId={uid}"
+def media_public_url(_user_id: str, item_id: str) -> str:
+    """客户端须在 URL 上附加 access_token（见 createHistoryMedia.ts）。"""
+    return f"/api/platform/create-history/media/{item_id}"
 
 
 def media_exists(user_id: str, item_id: str) -> bool:
@@ -165,28 +181,34 @@ def _belongs_to_session(item: dict[str, Any], session_id: str) -> bool:
 
 
 def list_items(user_id: str) -> list[dict[str, Any]]:
-    raw_items = _load_raw(user_id)
-    if not raw_items:
-        return []
-    finalized: list[dict[str, Any]] = []
-    changed = False
-    for raw in raw_items:
-        if not raw.get("id"):
-            continue
-        next_record = _finalize_item(user_id, raw)
-        if next_record.get("url") != raw.get("url") or next_record.get("previewUrl") != raw.get("previewUrl"):
-            changed = True
-        finalized.append(next_record)
-    if changed:
-        _save_raw(user_id, finalized)
-    items = [_normalize_item(i) for i in finalized]
-    return sorted(items, key=lambda x: x["createdAt"], reverse=True)
+    with _user_lock(user_id):
+        raw_items = _load_raw(user_id)
+        if not raw_items:
+            return []
+        finalized: list[dict[str, Any]] = []
+        changed = False
+        for raw in raw_items:
+            if not raw.get("id"):
+                continue
+            next_record = _finalize_item(user_id, raw)
+            if next_record.get("url") != raw.get("url") or next_record.get("previewUrl") != raw.get("previewUrl"):
+                changed = True
+            finalized.append(next_record)
+        if changed:
+            _save_raw(user_id, finalized)
+        items = [_normalize_item(i) for i in finalized]
+        return sorted(items, key=lambda x: x["createdAt"], reverse=True)
 
 
 def upsert_item(user_id: str, raw: dict[str, Any]) -> dict[str, Any]:
     item = _normalize_item(raw)
     if not item["id"]:
         raise ValueError("缺少 id")
+    with _user_lock(user_id):
+        return _upsert_item_unlocked(user_id, item)
+
+
+def _upsert_item_unlocked(user_id: str, item: dict[str, Any]) -> dict[str, Any]:
     items = _load_raw(user_id)
     idx = next((i for i, x in enumerate(items) if x.get("id") == item["id"]), -1)
     prev = items[idx] if idx >= 0 else {}
@@ -218,6 +240,11 @@ def upsert_item(user_id: str, raw: dict[str, Any]) -> dict[str, Any]:
 
 
 def patch_item(user_id: str, item_id: str, patch: dict[str, Any]) -> dict[str, Any] | None:
+    with _user_lock(user_id):
+        return _patch_item_unlocked(user_id, item_id, patch)
+
+
+def _patch_item_unlocked(user_id: str, item_id: str, patch: dict[str, Any]) -> dict[str, Any] | None:
     items = _load_raw(user_id)
     idx = next((i for i, x in enumerate(items) if x.get("id") == item_id), -1)
     if idx < 0:
@@ -231,6 +258,11 @@ def patch_item(user_id: str, item_id: str, patch: dict[str, Any]) -> dict[str, A
 
 def sync_items(user_id: str, incoming: list[dict[str, Any]]) -> dict[str, int]:
     """全量合并：以 incoming 更新/追加，保留服务端已有但客户端未传的条目。"""
+    with _user_lock(user_id):
+        return _sync_items_unlocked(user_id, incoming)
+
+
+def _sync_items_unlocked(user_id: str, incoming: list[dict[str, Any]]) -> dict[str, int]:
     existing = {x["id"]: x for x in _load_raw(user_id) if x.get("id")}
     for raw in incoming or []:
         item = _normalize_item(raw)
@@ -269,6 +301,11 @@ def _delete_item_media(user_id: str, item_id: str) -> None:
 
 
 def delete_session(user_id: str, session_id: str) -> int:
+    with _user_lock(user_id):
+        return _delete_session_unlocked(user_id, session_id)
+
+
+def _delete_session_unlocked(user_id: str, session_id: str) -> int:
     items = _load_raw(user_id)
     before = len(items)
     removed_ids: list[str] = []
@@ -289,14 +326,20 @@ def delete_session(user_id: str, session_id: str) -> int:
 
 
 def is_version_leaf(user_id: str, version_id: str) -> bool:
-    items = _load_raw(user_id)
-    return not any(i.get("parentId") == version_id for i in items)
+    with _user_lock(user_id):
+        items = _load_raw(user_id)
+        return not any(i.get("parentId") == version_id for i in items)
 
 
 def delete_version(user_id: str, version_id: str) -> bool:
-    if not is_version_leaf(user_id, version_id):
-        return False
-    items = _load_raw(user_id)
+    with _user_lock(user_id):
+        items = _load_raw(user_id)
+        if any(i.get("parentId") == version_id for i in items):
+            return False
+        return _delete_version_unlocked(user_id, version_id, items)
+
+
+def _delete_version_unlocked(user_id: str, version_id: str, items: list[dict[str, Any]]) -> bool:
     before = len(items)
     items = [i for i in items if i.get("id") != version_id]
     if len(items) == before:

@@ -117,8 +117,8 @@ function onKeydown(e: KeyboardEvent) {
           >
             <span class="share-icon" :class="{ 'is-logo': !!p.logo, 'is-action': !p.logo }">
               <img v-if="p.logo" :src="p.logo" :alt="p.label" class="share-logo" />
-              <Link2 v-else-if="p.id === 'copy'" :size="16" color="#212121" />
-              <Download v-else-if="p.id === 'download'" :size="16" color="#212121" />
+              <Link2 v-else-if="p.id === 'copy'" :size="16" class="share-action-icon" />
+              <Download v-else-if="p.id === 'download'" :size="16" class="share-action-icon" />
             </span>
           </button>
         </div>
@@ -128,25 +128,17 @@ function onKeydown(e: KeyboardEvent) {
 </template>
 
 <style scoped lang="scss">
+@use '../styles/variables.scss' as *;
+@use '../styles/cosmic-glass.scss' as *;
+
 .share-overlay {
-  position: fixed;
-  inset: 0;
-  z-index: 300;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 24px;
-  background: rgba(0, 0, 0, 0.72);
-  backdrop-filter: blur(6px);
+  @include cosmic-modal-overlay(300);
 }
 
 .share-dialog {
-  width: 100%;
-  max-width: 480px;
-  border-radius: 20px;
-  background: #2b2b2b;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.45);
+  @include cosmic-modal-panel(480px);
+  width: min(480px, calc(100vw - 48px));
+  padding: 0;
   overflow: hidden;
 }
 
@@ -155,14 +147,14 @@ function onKeydown(e: KeyboardEvent) {
   align-items: center;
   gap: 12px;
   padding: 14px 16px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  border-bottom: var(--glass-border-width, 0.5px) solid var(--modal-border, $glass-border);
 }
 
 .share-title {
   flex: 1;
   font-size: 15px;
   font-weight: 500;
-  color: rgba(255, 255, 255, 0.92);
+  color: $text-primary;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -175,11 +167,12 @@ function onKeydown(e: KeyboardEvent) {
   align-items: center;
   justify-content: center;
   border-radius: 8px;
-  color: rgba(255, 255, 255, 0.8);
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: $text-muted;
+  border: var(--glass-border-width, 0.5px) solid var(--modal-border, $glass-border);
 
   &:hover {
-    background: rgba(255, 255, 255, 0.08);
+    background: $accent-light;
+    color: $text-primary;
   }
 }
 
@@ -234,8 +227,9 @@ function onKeydown(e: KeyboardEvent) {
   overflow: visible;
 
   &.is-action {
-    background: #fff;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+    background: $bg-input;
+    box-shadow: $shadow-sm;
+    color: $text-primary;
   }
 
   &.is-logo {
@@ -252,32 +246,20 @@ function onKeydown(e: KeyboardEvent) {
   display: block;
 }
 
-.share-toast-top {
-  position: fixed;
-  top: 20px;
-  left: 50%;
-  z-index: 400;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  min-width: 200px;
-  max-width: min(420px, calc(100vw - 32px));
-  padding: 10px 14px;
-  border-radius: 12px;
-  background: rgba(22, 58, 40, 0.96);
-  border: 1px solid rgba(76, 175, 80, 0.45);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
-  color: rgba(255, 255, 255, 0.95);
-  transform: translateX(-50%);
+.share-action-icon {
+  color: $text-primary;
 }
 
-.share-toast-icon {
-  flex-shrink: 0;
-  color: #6ee7a0;
+.share-toast-top {
+  @include cosmic-top-toast(400);
+  border-color: color-mix(in srgb, $color-success 45%, var(--modal-border, $glass-border));
+
+  .share-toast-icon {
+    color: $color-success;
+  }
 }
 
 .share-toast-text {
-  flex: 1;
   font-size: 13px;
   line-height: 1.4;
 }
@@ -290,11 +272,11 @@ function onKeydown(e: KeyboardEvent) {
   align-items: center;
   justify-content: center;
   border-radius: 6px;
-  color: rgba(255, 255, 255, 0.75);
+  color: $text-muted;
 
   &:hover {
-    background: rgba(255, 255, 255, 0.1);
-    color: #fff;
+    background: $accent-light;
+    color: $text-primary;
   }
 }
 

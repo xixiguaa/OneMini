@@ -1,4 +1,5 @@
 @use './variables.scss' as *;
+@use './cosmic-glass.scss' as cosmic;
 
 *,
 *::before,
@@ -28,7 +29,7 @@ button {
   transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
 }
 
-/* 主/次按钮：随浅色、深色主题切换 */
+/* 主/次按钮：Cosmic Glassmorphism CTA */
 .btn-primary,
 .btn.enable {
   padding: 8px 16px;
@@ -37,11 +38,24 @@ button {
   font-weight: 500;
   background: var(--btn-primary-gradient, $accent);
   color: $btn-primary-text;
+  box-shadow: var(--btn-primary-shadow, $shadow-glow);
+  border: var(--glass-border-width, 1px) solid rgba(255, 255, 255, 0.12);
+  position: relative;
+  overflow: hidden;
+
+  &::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.18) 0%, transparent 48%);
+    pointer-events: none;
+  }
 
   &:hover:not(:disabled) {
     background: var(--btn-primary-gradient, $accent);
     filter: brightness(1.08);
-    box-shadow: $shadow-glow;
+    box-shadow: var(--btn-primary-shadow, $shadow-glow), $shadow-glow;
   }
 
   &:disabled {
@@ -104,11 +118,22 @@ select {
   }
 }
 
-input:not([type='checkbox']):not([type='radio']):not([type='range']):not(.composer-input),
+input:not([type='checkbox']):not([type='radio']):not([type='range']):not(.composer-input):not(.login-field-input),
 textarea:not(.composer-input) {
   &:focus {
     border-color: $accent;
     box-shadow: $shadow-focus;
+  }
+}
+
+input.login-field-input {
+  border: none;
+  box-shadow: none;
+  background: transparent;
+
+  &:focus {
+    border: none;
+    box-shadow: none;
   }
 }
 
@@ -127,24 +152,16 @@ textarea:not(.composer-input) {
 }
 
 .glass-panel {
-  background: $glass-bg;
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border: 1px solid $glass-border;
-  border-radius: $radius-lg;
-  box-shadow: $shadow-sm;
+  @include cosmic.cosmic-glass-frost(var(--glass-radius-lg, 28px));
 }
 
 .glass-panel-sm {
-  @extend .glass-panel;
-  border-radius: $radius-md;
+  @include cosmic.cosmic-glass-frost(var(--glass-radius-md, 20px));
 }
 
 .card {
+  @include cosmic.cosmic-glass-frost(var(--glass-radius-md, 20px));
   background: $bg-card;
-  border: 1px solid $glass-border;
-  border-radius: $radius-md;
-  box-shadow: $shadow-sm;
 }
 
 ::-webkit-scrollbar {

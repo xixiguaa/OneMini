@@ -250,15 +250,15 @@ const propertyRows = computed((): PropRow[] => {
   padding: 2px 8px;
   border-radius: 4px;
   font-size: 12px;
-  background: rgba(123, 95, 255, 0.18);
-  color: #ddd6ff;
-  border: 1px solid rgba(123, 95, 255, 0.32);
+  background: rgba(124, 95, 232, 0.18);
+  color: color-mix(in srgb, $accent 85%, white);
+  border: 0.5px solid rgba(124, 95, 232, 0.32);
   word-break: break-all;
 
   &.path {
-    background: rgba(74, 58, 232, 0.16);
-    color: #c8c0ff;
-    border-color: rgba(74, 58, 232, 0.3);
+    background: rgba(124, 95, 232, 0.14);
+    color: var(--link-color, rgba(140, 110, 255, 0.75));
+    border-color: rgba(124, 95, 232, 0.28);
     font-family: ui-monospace, monospace;
     font-size: 11px;
   }
@@ -313,9 +313,9 @@ const propertyRows = computed((): PropRow[] => {
   }
 
   :deep(code) {
-    background: rgba(31, 255, 212, 0.1);
-    color: #6dffe8;
-    border: 1px solid rgba(31, 255, 212, 0.18);
+    background: rgba(30, 150, 190, 0.1);
+    color: $accent-cyan;
+    border: 0.5px solid rgba(30, 150, 190, 0.18);
     font-size: 0.88em;
   }
 

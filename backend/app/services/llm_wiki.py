@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 import subprocess
 import sys
@@ -21,7 +22,7 @@ from app.services.raw_extract import (
     normalize_text_content,
 )
 from app.services.wiki_assets import normalize_markdown_images
-from app.services.wiki_paths import wiki_root
+from app.services.wiki_paths import wiki_root, _global_wiki_base
 
 _SOURCES_RE = re.compile(r"^sources:\s*\n((?:\s+-\s+.+\n)+)", re.MULTILINE)
 _FRONTMATTER_TYPE_RE = re.compile(r"^type:\s*(\S+)\s*$", re.MULTILINE)
@@ -183,8 +184,10 @@ def _is_listable_raw(path: Path) -> bool:
     return path.suffix.lower() in ALLOWED_RAW_SUFFIXES
 
 
-def list_raw_files(settings: Settings | None = None) -> list[dict]:
-    root = wiki_root(settings)
+def list_raw_files(
+    settings: Settings | None = None, *, user_id: str | None = None
+) -> list[dict]:
+    root = wiki_root(settings, user_id)
     raw_dir = root / "raw"
     if not raw_dir.is_dir():
         return []
@@ -447,15 +450,17 @@ source_count: 1
 def rebuild_graph(settings: Settings | None = None) -> dict:
     from app.services.wiki_index import rebuild_wiki_index
 
+    settings = settings or get_settings()
     root = wiki_root(settings)
     rebuild_wiki_index(root)
-    script = root / "scripts" / "build_graph.py"
+    script = _global_wiki_base(settings) / "scripts" / "build_graph.py"
     if not script.is_file():
         raise HTTPException(500, f"缺少图谱脚本: {script}")
 
     proc = subprocess.run(
         [sys.executable, str(script)],
-        cwd=str(root.parent),
+        cwd=str(root),
+        env={**os.environ, "LLM_WIKI_ROOT": str(root)},
         capture_output=True,
         text=True,
         timeout=60,
@@ -498,8 +503,8 @@ def _add_raw_node(nodes: dict[str, dict], root: Path, path: Path) -> None:
         }
 
 
-def load_graph(settings: Settings | None = None) -> dict:
-    root = wiki_root(settings)
+def load_graph(settings: Settings | None = None, *, user_id: str | None = None) -> dict:
+    root = wiki_root(settings, user_id)
     graph_file = root / "graph" / "links.json"
     base: dict = {
         "version": 1,
@@ -577,13 +582,13 @@ def load_graph(settings: Settings | None = None) -> dict:
     }
 
 
-def wiki_status(settings: Settings | None = None) -> dict:
-    root = wiki_root(settings)
-    graph = load_graph(settings)
+def wiki_status(settings: Settings | None = None, *, user_id: str | None = None) -> dict:
+    root = wiki_root(settings, user_id)
+    graph = load_graph(settings, user_id=user_id)
     return {
         "ok": root.is_dir(),
         "wiki_root": str(root),
-        "raw_count": len(list_raw_files(settings)),
+        "raw_count": len(list_raw_files(settings, user_id=user_id)),
         "nodes": len(graph.get("nodes", [])),
         "edges": len(graph.get("edges", [])),
         "allowed_suffixes": sorted(ALLOWED_RAW_SUFFIXES),

@@ -37,7 +37,17 @@ export const useToastStore = defineStore('toast', () => {
   }
 
   function showError(msg: string, duration?: number) {
-    show({ message: msg, kind: 'error', duration })
+    const text = (msg || '').trim()
+    if (!text) return
+    // 连续报错时先隐藏再显示，避免 Transition 不刷新
+    if (visible.value) {
+      visible.value = false
+      requestAnimationFrame(() => {
+        show({ message: text, kind: 'error', duration })
+      })
+      return
+    }
+    show({ message: text, kind: 'error', duration })
   }
 
   function showSuccess(msg: string, duration?: number) {

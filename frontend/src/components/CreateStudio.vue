@@ -21,13 +21,11 @@ import WorksWaterfall from './WorksWaterfall.vue'
 import { isModelReady } from '../utils/resolveModel'
 import { useWorksGallery } from '../composables/useWorksGallery'
 import { useAgentStore } from '../stores/agent'
-import { useCreateHistoryStore } from '../stores/createHistory'
 import { useSettingsStore } from '../stores/settings'
 import type { CreateMode, SkillId } from '../types/agent'
 
 const agent = useAgentStore()
 const { hasItems } = useWorksGallery()
-const createHistory = useCreateHistoryStore()
 const settings = useSettingsStore()
 const fileInput = ref<HTMLInputElement | null>(null)
 const modeWrapRef = ref<HTMLElement | null>(null)
@@ -156,7 +154,7 @@ watch(
 onMounted(() => {
   document.addEventListener('click', onDocClick)
   ensureDefaultModel()
-  void createHistory.hydrate(true)
+  // 进入创作页时 agent.setCurrentView 已 hydrate(true)，此处不重复拉取
 })
 onUnmounted(() => document.removeEventListener('click', onDocClick))
 
@@ -342,8 +340,10 @@ function fileBadge(name: string) {
   padding: 18px 20px 14px;
   border-radius: 16px;
   background: var(--composer-bg);
-  border: 1px solid var(--composer-border);
-  box-shadow: $shadow-sm;
+  backdrop-filter: blur(var(--glass-blur, 24px));
+  -webkit-backdrop-filter: blur(var(--glass-blur, 24px));
+  border: var(--glass-border-width, 0.5px) solid var(--composer-border);
+  box-shadow: var(--glass-float-shadow, $shadow-md);
   transition: border-color 0.2s, box-shadow 0.2s;
 
   &:focus-within {
@@ -392,7 +392,7 @@ function fileBadge(name: string) {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: #fff;
+  background: $bg-elevated;
 }
 
 .attach-img {

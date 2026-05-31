@@ -1,24 +1,25 @@
-import { getClientUserId } from './userId'
+import { getAuthToken } from './authToken'
 
 const MEDIA_PATH = '/api/platform/create-history/media/'
 
-/** 浏览器 <img> 无法带 X-User-Id，媒体地址需带 userId 查询参数 */
+/** 浏览器 <img> 无法带 Authorization，使用 access_token 查询参数 */
 export function createHistoryMediaUrl(itemId: string): string {
-  const uid = encodeURIComponent(getClientUserId())
   const id = encodeURIComponent(itemId)
-  return `${MEDIA_PATH}${id}?userId=${uid}`
+  const token = getAuthToken()
+  if (!token) return ''
+  return `${MEDIA_PATH}${id}?access_token=${encodeURIComponent(token)}`
 }
 
-/** 为已有代理地址补全 userId（兼容旧数据） */
-export function withCreateHistoryMediaUser(url: string): string {
+export function withCreateHistoryMediaToken(url: string): string {
   if (!url.includes(MEDIA_PATH)) return url
+  const token = getAuthToken()
+  if (!token) return url
   try {
     const base =
       typeof window !== 'undefined' ? window.location.origin : 'http://localhost'
     const u = new URL(url, base)
-    if (!u.searchParams.has('userId')) {
-      u.searchParams.set('userId', getClientUserId())
-      return u.pathname + u.search
+    if (!u.searchParams.has('access_token')) {
+      u.searchParams.set('access_token', token)
     }
     return url.startsWith('http') ? u.toString() : u.pathname + u.search
   } catch {
@@ -39,6 +40,6 @@ export function resolveCreateHistoryImageUrl(item: {
   if (raw && !raw.includes(MEDIA_PATH) && (raw.startsWith('http') || raw.startsWith('data:'))) {
     return raw
   }
-  if (raw?.includes(MEDIA_PATH)) return withCreateHistoryMediaUser(raw)
+  if (raw?.includes(MEDIA_PATH)) return withCreateHistoryMediaToken(raw)
   return createHistoryMediaUrl(item.id)
 }

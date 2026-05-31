@@ -18,10 +18,11 @@ async function onConfigureModel(
   payload: { apiKey?: string; enable: boolean },
 ) {
   if (!props.model) return
+  const wasEnabled = props.model.enabled
   if (payload.apiKey) {
     await settings.saveModelSecret(props.model.id, payload.apiKey)
   }
-  if (payload.enable) {
+  if (payload.enable || wasEnabled) {
     settings.enableModel(props.model.id)
     settings.bindModelToSkill(props.model.id)
   }
@@ -31,6 +32,7 @@ const isActiveForSkill = computed(() => {
   if (!props.model) return false
   const skillMap = {
     chat: 'chat',
+    multimodal: 'chat',
     image: 'image',
     video: 'video',
     world: 'world',
@@ -110,7 +112,7 @@ const modelOptionLabel = computed(() => {
       />
     </label>
 
-    <div v-if="model.enabled && ['chat', 'image', 'video', 'world'].includes(model.capability)" class="use-model-row">
+    <div v-if="model.enabled && ['chat', 'multimodal', 'image', 'video', 'world'].includes(model.capability)" class="use-model-row">
       <p v-if="isActiveForSkill" class="use-hint active">当前已在对话/创作中使用此模型</p>
       <button v-else type="button" class="use-btn" @click="useThisModel">设为当前使用模型</button>
     </div>

@@ -193,8 +193,9 @@ onUnmounted(() => {
   position: fixed;
   inset: 0;
   z-index: 2800;
-  background: rgba(0, 0, 0, 0.32);
-  backdrop-filter: blur(2px);
+  background: color-mix(in srgb, var(--bg-page) 55%, transparent);
+  backdrop-filter: blur(var(--glass-blur, 24px));
+  -webkit-backdrop-filter: blur(var(--glass-blur, 24px));
 }
 
 .wiki-drawer {
@@ -206,9 +207,11 @@ onUnmounted(() => {
   flex-direction: column;
   width: min(440px, 100vw);
   height: 100%;
-  background: $bg-card;
-  border-left: 1px solid $glass-border;
-  box-shadow: -12px 0 40px rgba(0, 0, 0, 0.12);
+  background: $glass-bg;
+  backdrop-filter: blur(var(--glass-blur, 24px));
+  -webkit-backdrop-filter: blur(var(--glass-blur, 24px));
+  border-left: var(--glass-border-width, 0.5px) solid $glass-border;
+  box-shadow: -12px 0 40px rgba(0, 0, 0, 0.18), var(--glass-float-shadow, $shadow-md);
 }
 
 .wiki-drawer-head {
@@ -241,59 +244,82 @@ onUnmounted(() => {
 
 .wiki-drawer-tabs {
   display: flex;
-  gap: 6px;
-  padding: 0 12px 12px;
+  gap: 4px;
+  padding: 0 16px;
   border-bottom: 1px solid $glass-border;
 }
 
 .wiki-drawer-tab {
-  flex: 1;
+  position: relative;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 6px;
-  padding: 8px 10px;
+  padding: 10px 12px;
   font-size: 13px;
   font-weight: 500;
-  border-radius: 8px;
-  border: 1px solid transparent;
-  color: $text-secondary;
+  border: none;
+  border-radius: 0;
+  color: $text-muted;
   background: transparent;
+  transition: color 0.15s ease;
 
   &:hover:not(:disabled) {
-    background: $accent-light;
     color: $text-primary;
   }
 
   &.active {
-    border-color: $border-light;
-    background: $accent-light;
-    color: $accent;
+    color: $text-primary;
+    font-weight: 600;
+
+    &::after {
+      content: '';
+      position: absolute;
+      left: 8px;
+      right: 8px;
+      bottom: -1px;
+      height: 2px;
+      border-radius: 2px 2px 0 0;
+      background: $accent;
+    }
+
+    .wiki-drawer-badge.danger {
+      color: $color-danger;
+      background: $color-danger-soft;
+    }
+
+    .wiki-drawer-badge.warn {
+      color: color-mix(in srgb, $color-warning 85%, $text-primary);
+      background: color-mix(in srgb, $color-warning 18%, transparent);
+    }
   }
 
   &:disabled {
-    opacity: 0.45;
+    opacity: 0.4;
     cursor: not-allowed;
   }
 }
 
 .wiki-drawer-badge {
-  min-width: 18px;
+  min-width: 16px;
+  height: 16px;
   padding: 0 5px;
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 600;
-  line-height: 18px;
+  line-height: 16px;
   border-radius: 999px;
   text-align: center;
+  color: $text-muted;
+  background: rgba(0, 0, 0, 0.06);
 
   &.warn {
-    color: color-mix(in srgb, $color-warning 70%, $text-primary);
-    background: color-mix(in srgb, $color-warning 20%, transparent);
+    color: $text-muted;
+    background: rgba(0, 0, 0, 0.06);
   }
 
   &.danger {
-    color: $color-danger;
-    background: $color-danger-soft;
+    color: $text-muted;
+    background: rgba(0, 0, 0, 0.06);
   }
 }
 
@@ -329,7 +355,7 @@ onUnmounted(() => {
   border-radius: 8px;
   color: $accent;
   border: 1px solid $accent;
-  background: #fff;
+  background: $btn-ghost-bg;
 
   &:hover:not(:disabled) {
     background: $accent-light;
@@ -411,7 +437,7 @@ onUnmounted(() => {
   font-size: 12px;
   border-radius: 6px;
   border: 1px solid $glass-border;
-  background: rgba(255, 255, 255, 0.9);
+  background: $bg-input;
   color: $text-primary;
 
   &:hover:not(:disabled) {
@@ -437,25 +463,25 @@ onUnmounted(() => {
 
   li {
     display: flex;
-    gap: 8px;
-    padding: 8px 0;
-    border-top: 1px solid rgba(180, 60, 60, 0.12);
+    flex-direction: column;
+    gap: 4px;
+    padding: 10px 12px;
+    margin-bottom: 8px;
+    border: 1px solid color-mix(in srgb, $color-danger 18%, transparent);
+    border-radius: 8px;
+    background: color-mix(in srgb, $color-danger 4%, transparent);
     font-size: 12px;
-    color: $color-danger;
   }
 
   .err-file {
-    flex-shrink: 0;
-    max-width: 42%;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    font-weight: 500;
+    font-weight: 600;
+    color: $text-primary;
+    word-break: break-all;
   }
 
   .err-msg {
-    flex: 1;
-    min-width: 0;
+    color: $text-secondary;
+    line-height: 1.5;
     word-break: break-word;
   }
 }

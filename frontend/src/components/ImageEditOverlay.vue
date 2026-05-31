@@ -332,8 +332,8 @@ $content-max: 680px;
   z-index: 200;
   display: flex;
   flex-direction: column;
-  background: #212121;
-  color: #ececec;
+  background: #060412;
+  color: rgba(255, 255, 255, 0.92);
 }
 
 .edit-head {
@@ -416,7 +416,10 @@ $content-max: 680px;
   min-width: 120px;
   padding: 6px;
   border-radius: 12px;
-  background: #2f2f2f;
+  background: rgba(255, 255, 255, 0.07);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border: 0.5px solid rgba(255, 255, 255, 0.13);
   border: 1px solid rgba(255, 255, 255, 0.1);
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
   z-index: 10;
@@ -504,7 +507,7 @@ $content-max: 680px;
   border: 2px solid transparent;
   opacity: 0.7;
   transition: opacity 0.15s, border-color 0.15s;
-  background: #2a2a2a;
+  background: rgba(255, 255, 255, 0.06);
 
   img {
     width: 100%;
@@ -560,7 +563,7 @@ $content-max: 680px;
   max-height: min(62vh, 560px);
   border-radius: 16px;
   overflow: hidden;
-  background: #2a2a2a;
+  background: rgba(255, 255, 255, 0.06);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -602,7 +605,10 @@ $content-max: 680px;
   height: 52px;
   padding: 0 8px 0 4px;
   border-radius: 26px;
-  background: #2f2f2f;
+  background: rgba(255, 255, 255, 0.07);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border: 0.5px solid rgba(255, 255, 255, 0.13);
   border: 1px solid rgba(255, 255, 255, 0.08);
 }
 

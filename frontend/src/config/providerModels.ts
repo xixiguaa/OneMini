@@ -60,6 +60,11 @@ export const PROVIDER_MODEL_OPTIONS: Record<
       { model: 'gpt-4o-mini', label: 'GPT-4o Mini', baseUrl: 'https://api.openai.com/v1' },
       { model: 'gpt-5.5-high', label: 'GPT-5.5 High（兼容）', baseUrl: 'https://api.openai.com/v1' },
     ],
+    multimodal: [
+      { model: 'gpt-4o', label: 'GPT-4o', baseUrl: 'https://api.openai.com/v1', description: '文本、识图、文件与图片/视频生成' },
+      { model: 'gpt-4.1', label: 'GPT-4.1', baseUrl: 'https://api.openai.com/v1' },
+      { model: 'gpt-4o-mini', label: 'GPT-4o Mini', baseUrl: 'https://api.openai.com/v1' },
+    ],
     image: [{ model: 'dall-e-3', label: 'DALL·E 3', baseUrl: 'https://api.openai.com/v1' }],
     video: [{ model: 'sora', label: 'Sora（需开通）', baseUrl: 'https://api.openai.com/v1' }],
   },
@@ -68,9 +73,17 @@ export const PROVIDER_MODEL_OPTIONS: Record<
       { model: 'claude-sonnet-4-20250514', label: 'Claude Sonnet 4', baseUrl: 'https://api.anthropic.com/v1' },
       { model: 'claude-3-5-sonnet-20241022', label: 'Claude 3.5 Sonnet', baseUrl: 'https://api.anthropic.com/v1' },
     ],
+    multimodal: [
+      { model: 'claude-sonnet-4-20250514', label: 'Claude Sonnet 4', baseUrl: 'https://api.anthropic.com/v1', description: '支持图片与文档理解' },
+      { model: 'claude-3-5-sonnet-20241022', label: 'Claude 3.5 Sonnet', baseUrl: 'https://api.anthropic.com/v1' },
+    ],
   },
   zhipu: {
     chat: [{ model: 'glm-5.1', label: 'GLM-5.1', baseUrl: ZHIPU_BASE }],
+    multimodal: [
+      { model: 'glm-4v-plus', label: 'GLM-4V Plus', baseUrl: ZHIPU_BASE, description: '视觉理解、文件与多模态对话' },
+      { model: 'glm-4v-flash', label: 'GLM-4V Flash', baseUrl: ZHIPU_BASE },
+    ],
     image: [{ model: 'cogview-3-plus', label: 'CogView 3 Plus', baseUrl: 'https://open.bigmodel.cn/api/paas/v4' }],
   },
   qwen: {
@@ -78,11 +91,18 @@ export const PROVIDER_MODEL_OPTIONS: Record<
       { model: 'qwen-plus', label: 'Qwen Plus', baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1' },
       { model: 'qwen-turbo', label: 'Qwen Turbo', baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1' },
     ],
+    multimodal: [
+      { model: 'qwen-vl-max', label: 'Qwen-VL Max', baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1' },
+      { model: 'qwen-vl-plus', label: 'Qwen-VL Plus', baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1' },
+    ],
     image: [{ model: 'wanx-v1', label: '通义万相', baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1' }],
   },
   bailian: {
     chat: [
       { model: 'qwen-plus', label: '百炼 · Qwen Plus', baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1' },
+    ],
+    multimodal: [
+      { model: 'qwen-vl-max', label: '百炼 · Qwen-VL Max', baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1' },
     ],
     image: [MANUAL],
   },
@@ -94,6 +114,10 @@ export const PROVIDER_MODEL_OPTIONS: Record<
       { model: 'doubao-seed-2.0-mini', label: 'Doubao Seed 2.0 Mini', baseUrl: ARK_BASE },
       { model: 'doubao-pro-32k', label: '豆包 Pro', baseUrl: ARK_BASE },
     ],
+    multimodal: [
+      { model: 'doubao-seed-2.0-pro', label: 'Doubao Seed 2.0 Pro', baseUrl: ARK_BASE, description: '文本、识图、文件与 Seedream/Seedance 创作' },
+      { model: 'doubao-seed-2.0-lite', label: 'Doubao Seed 2.0 Lite', baseUrl: ARK_BASE },
+    ],
     image: [DOUBAO_SEEDREAM_5_LITE],
     video: [DOUBAO_SEEDANCE_2, DOUBAO_SEEDANCE_2_FAST, DOUBAO_SEEDANCE_1_5_PRO],
   },
@@ -103,6 +127,10 @@ export const PROVIDER_MODEL_OPTIONS: Record<
       { model: 'doubao-seed-2.0-code', label: 'Doubao Seed 2.0 Code', baseUrl: ARK_BASE },
       { model: 'doubao-seed-2.0-lite', label: 'Doubao Seed 2.0 Lite', baseUrl: ARK_BASE },
       { model: 'doubao-seed-2.0-mini', label: 'Doubao Seed 2.0 Mini', baseUrl: ARK_BASE },
+    ],
+    multimodal: [
+      { model: 'doubao-seed-2.0-pro', label: 'Doubao Seed 2.0 Pro', baseUrl: ARK_BASE },
+      { model: 'doubao-seed-2.0-lite', label: 'Doubao Seed 2.0 Lite', baseUrl: ARK_BASE },
     ],
     image: [DOUBAO_SEEDREAM_5_LITE],
     video: [DOUBAO_SEEDANCE_2, DOUBAO_SEEDANCE_2_FAST, DOUBAO_SEEDANCE_1_5_PRO],
@@ -121,6 +149,10 @@ export const PROVIDER_MODEL_OPTIONS: Record<
   gemini: {
     chat: [
       { model: 'gemini-2.0-flash', label: 'Gemini 2.0 Flash', description: '请填写 Google AI 兼容 Base URL' },
+    ],
+    multimodal: [
+      { model: 'gemini-2.0-flash', label: 'Gemini 2.0 Flash', description: '文本、识图、文件与多模态输出' },
+      { model: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro' },
     ],
     image: [MANUAL],
   },

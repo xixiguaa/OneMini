@@ -1,3 +1,4 @@
+import re
 import time
 import uuid
 from typing import Any
@@ -143,16 +144,21 @@ def _search_similar_pymilvus(
     query: str,
     top_k: int,
     settings: Settings,
+    *,
+    user_id: str | None = None,
 ) -> list[dict[str, Any]]:
     col = _get_collection(settings)
     vec = embed_texts([query])[0]
-    results = col.search(
-        data=[vec],
-        anns_field="embedding",
-        param={"metric_type": "COSINE"},
-        limit=top_k,
-        output_fields=["doc_id", "chunk_index", "source", "text"],
-    )
+    search_kw: dict[str, Any] = {
+        "data": [vec],
+        "anns_field": "embedding",
+        "param": {"metric_type": "COSINE"},
+        "limit": top_k,
+        "output_fields": ["doc_id", "chunk_index", "source", "text"],
+    }
+    if user_id:
+        search_kw["expr"] = _user_doc_expr(user_id)
+    results = col.search(**search_kw)
     hits: list[dict[str, Any]] = []
     for group in results:
         for hit in group:
@@ -174,11 +180,15 @@ def insert_chunks(
     source: str,
     chunks: list[str],
     settings: Settings | None = None,
+    *,
+    user_id: str | None = None,
 ) -> int:
     if not chunks:
         return 0
 
     settings = settings or get_settings()
+    if user_id:
+        doc_id = scoped_doc_id(user_id, doc_id)
     _get_collection(settings)
 
     try:
@@ -189,7 +199,14 @@ def insert_chunks(
         return _insert_chunks_pymilvus(doc_id, source, chunks, settings)
 
 
-def delete_document(doc_id: str, settings: Settings | None = None) -> int:
+def delete_document(
+    doc_id: str,
+    settings: Settings | None = None,
+    *,
+    user_id: str | None = None,
+) -> int:
+    if user_id:
+        assert_doc_owned(user_id, doc_id)
     settings = settings or get_settings()
     col = _get_collection(settings)
     expr = f'doc_id == "{doc_id}"'
@@ -202,6 +219,8 @@ def search_similar(
     query: str,
     top_k: int | None = None,
     settings: Settings | None = None,
+    *,
+    user_id: str | None = None,
 ) -> list[dict[str, Any]]:
     settings = settings or get_settings()
     k = top_k or settings.rag_top_k
@@ -210,18 +229,27 @@ def search_similar(
     try:
         from app.services.langchain_store import langchain_search_similar
 
-        return langchain_search_similar(query, k, settings)
+        hits = langchain_search_similar(query, k, settings, user_id=user_id)
     except Exception:
-        return _search_similar_pymilvus(query, k, settings)
+        hits = _search_similar_pymilvus(query, k, settings, user_id=user_id)
+    if user_id:
+        prefix = user_doc_prefix(user_id)
+        hits = [h for h in hits if str(h.get("doc_id", "")).startswith(prefix)]
+    return hits
 
 
-def list_documents(settings: Settings | None = None) -> list[dict[str, Any]]:
+def list_documents(
+    settings: Settings | None = None,
+    *,
+    user_id: str | None = None,
+) -> list[dict[str, Any]]:
     settings = settings or get_settings()
     col = _get_collection(settings)
+    expr = _user_doc_expr(user_id) if user_id else "chunk_index >= 0"
 
     try:
         rows = col.query(
-            expr="chunk_index >= 0",
+            expr=expr,
             output_fields=["doc_id", "source", "chunk_index", "created_at"],
             limit=16384,
         )
@@ -248,3 +276,28 @@ def list_documents(settings: Settings | None = None) -> list[dict[str, Any]]:
 
 def new_doc_id() -> str:
     return uuid.uuid4().hex[:16]
+
+
+def _safe_user_id(user_id: str) -> str:
+    return re.sub(r"[^\w\-]", "_", (user_id or "").strip())[:64] or "default"
+
+
+def user_doc_prefix(user_id: str) -> str:
+    return f"{_safe_user_id(user_id)}__"
+
+
+def scoped_doc_id(user_id: str, doc_id: str | None = None) -> str:
+    prefix = user_doc_prefix(user_id)
+    if doc_id and str(doc_id).startswith(prefix):
+        return str(doc_id)
+    return f"{prefix}{doc_id or new_doc_id()}"
+
+
+def assert_doc_owned(user_id: str, doc_id: str) -> None:
+    if not str(doc_id).startswith(user_doc_prefix(user_id)):
+        raise PermissionError("无权访问该文档")
+
+
+def _user_doc_expr(user_id: str) -> str:
+    prefix = user_doc_prefix(user_id).replace('"', '\\"')
+    return f'doc_id like "{prefix}%"'

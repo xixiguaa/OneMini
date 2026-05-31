@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from app.config import Settings, get_settings
+from app.context import bind_user_context
 from app.services import llm_wiki
 from app.services.wiki_assets import normalize_markdown_images
 from app.services.llm import chat_completion
@@ -43,17 +44,48 @@ _job_lock = asyncio.Lock()
 _job_task: asyncio.Task | None = None
 
 
+def _wiki_llm_defaults(settings: Settings) -> dict[str, str | None]:
+    return {
+        "model_config_id": settings.wiki_ingest_model_config_id,
+        "provider": settings.wiki_ingest_provider,
+        "model": settings.wiki_ingest_model,
+        "base_url": (settings.wiki_ingest_base_url or "").strip() or None,
+    }
+
+
 def _resolve_wiki_llm(
     settings: Settings,
     user_id: str,
+    *,
+    model_config_id: str | None = None,
+    provider: str | None = None,
+    model: str | None = None,
+    base_url: str | None = None,
 ) -> tuple[str | None, str, str, str | None]:
-    """使用与对话页相同的 DeepSeek 预设（deepseek-v4-pro）。"""
-    config_id = settings.wiki_ingest_model_config_id
-    provider = settings.wiki_ingest_provider
-    model = settings.wiki_ingest_model
-    base_url = (settings.wiki_ingest_base_url or "").strip() or None
+    """解析 ingest / 补全任务使用的 LLM（优先请求中的 model_config_id）。"""
+    defaults = _wiki_llm_defaults(settings)
+    config_id = (model_config_id or defaults["model_config_id"] or "").strip() or None
+    prov = (provider or defaults["provider"] or "deepseek").strip()
+    mdl = (model or defaults["model"] or "deepseek-chat").strip()
+    burl = (base_url or defaults["base_url"] or "").strip() or None
     api_key = resolve_model_api_key(user_id, config_id, settings=settings)
-    return api_key, provider, model, base_url
+    return api_key, prov, mdl, burl
+
+
+def _llm_from_job_state(state: dict[str, Any]) -> dict[str, str | None]:
+    raw = state.get("llm")
+    if not isinstance(raw, dict):
+        return {}
+    return {
+        "model_config_id": raw.get("model_config_id"),
+        "provider": raw.get("provider"),
+        "model": raw.get("model"),
+        "base_url": raw.get("base_url"),
+    }
+
+
+def _read_job_llm(root: Path, settings: Settings) -> dict[str, str | None]:
+    return _llm_from_job_state(_read_job(root)) or _wiki_llm_defaults(settings)
 
 
 def _job_path(root: Path) -> Path:
@@ -76,16 +108,19 @@ def _write_job(root: Path, state: dict[str, Any]) -> None:
 
 
 def ingest_status(settings: Settings | None = None) -> dict[str, Any]:
+    settings = settings or get_settings()
     root = llm_wiki.wiki_root(settings)
     state = _read_job(root)
     pending = list_pending_raw(settings)
     conflicts = list_ingest_conflicts(settings)
+    job_llm = _llm_from_job_state(state) or _wiki_llm_defaults(settings)
     return {
         **state,
         "pending_count": len(pending),
         "pending_paths": pending[:20],
         "conflict_count": len(conflicts),
         "conflicts": conflicts[:30],
+        "llm": job_llm,
     }
 
 
@@ -420,11 +455,19 @@ async def ingest_one_raw(
     root = llm_wiki.wiki_root(settings)
     max_chars = settings.wiki_ingest_max_chars
 
-    api_key, provider, model, base_url = _resolve_wiki_llm(settings, user_id)
+    job_llm = _read_job_llm(root, settings)
+    api_key, provider, model, base_url = _resolve_wiki_llm(
+        settings,
+        user_id,
+        model_config_id=job_llm.get("model_config_id"),
+        provider=job_llm.get("provider"),
+        model=job_llm.get("model"),
+        base_url=job_llm.get("base_url"),
+    )
     if not api_key:
         raise RuntimeError(
-            "未配置 DeepSeek API Key。请在「模型配置」中为 DeepSeek 保存密钥，"
-            "或在 backend/.env 设置 OPENAI_API_KEY（DeepSeek 兼容接口）。"
+            "未配置 LLM API Key。请在「模型配置」中为所选模型保存密钥，"
+            "或在 backend/.env 设置 OPENAI_API_KEY。"
         )
 
     if is_under_archive(raw_rel):
@@ -504,9 +547,11 @@ async def _run_ingest_job(
     user_id: str = "default",
     *,
     retry_failed_only: bool = False,
+    llm: dict[str, str | None] | None = None,
 ) -> None:
     global _job_task
-    root = llm_wiki.wiki_root(settings)
+    bind_user_context(user_id)
+    root = llm_wiki.wiki_root(settings, user_id)
     ensure_stubs_for_pending(settings)
     if retry_failed_only:
         pending = list_failed_raw_from_job(settings)
@@ -517,6 +562,7 @@ async def _run_ingest_job(
 
     prev = _read_job(root)
     prev_results = list(prev.get("results", [])) if retry_failed_only else []
+    job_llm = llm or _wiki_llm_defaults(settings)
     state: dict[str, Any] = {
         "running": True,
         "started_at": datetime.now(timezone.utc).isoformat(),
@@ -529,6 +575,7 @@ async def _run_ingest_job(
         "mode": "retry_failed" if retry_failed_only else "all_pending",
         "cancel_requested": False,
         "cancelled": False,
+        "llm": job_llm,
     }
     _write_job(root, state)
 
@@ -560,8 +607,7 @@ async def _run_ingest_job(
                 if not is_raw_ingested(root, rel):
                     _rollback_draft_pages_for_raw(root, rel)
                 state["errors"].append({"raw": rel, "error": str(exc)})
-            state = _read_job(root)
-            state["done"] += 1
+            state["done"] = int(state.get("done", 0)) + 1
             state["current"] = None
             _write_job(root, state)
 
@@ -604,6 +650,10 @@ async def start_ingest_job(
     *,
     user_id: str = "default",
     retry_failed_only: bool = False,
+    model_config_id: str | None = None,
+    provider: str | None = None,
+    model: str | None = None,
+    base_url: str | None = None,
 ) -> dict[str, Any]:
     """启动后台 ingest；若已在运行则返回当前状态。"""
     global _job_task
@@ -635,20 +685,34 @@ async def start_ingest_job(
             **ingest_status(settings),
         }
 
+    job_llm = {
+        "model_config_id": model_config_id or settings.wiki_ingest_model_config_id,
+        "provider": provider or settings.wiki_ingest_provider,
+        "model": model or settings.wiki_ingest_model,
+        "base_url": (base_url or settings.wiki_ingest_base_url or "").strip() or None,
+    }
     mode_label = "重试失败项" if retry_failed_only else "批量构建"
     _job_task = asyncio.create_task(
-        _run_ingest_job(settings, user_id, retry_failed_only=retry_failed_only)
+        _run_ingest_job(
+            settings,
+            user_id,
+            retry_failed_only=retry_failed_only,
+            llm=job_llm,
+        )
     )
+    prov = job_llm["provider"] or settings.wiki_ingest_provider
+    mdl = job_llm["model"] or settings.wiki_ingest_model
     return {
         "started": True,
-        "message": f"已开始{mode_label} {len(pending)} 个待处理 raw（DeepSeek / {settings.wiki_ingest_model}）",
+        "message": f"已开始{mode_label} {len(pending)} 个待处理 raw（{prov} / {mdl}）",
         "pending_count": len(pending),
         "running": True,
         "total": len(pending),
         "done": 0,
         "retry_failed_only": retry_failed_only,
-        "model": settings.wiki_ingest_model,
-        "provider": settings.wiki_ingest_provider,
+        "model": mdl,
+        "provider": prov,
+        "model_config_id": job_llm.get("model_config_id"),
     }
 
 
@@ -727,9 +791,17 @@ async def repair_one_orphan(
     node_id = str(node["id"])
     title = str(node.get("title") or Path(node_id).name)
 
-    api_key, provider, model, base_url = _resolve_wiki_llm(settings, user_id)
+    job_llm = _read_job_llm(root, settings)
+    api_key, provider, model, base_url = _resolve_wiki_llm(
+        settings,
+        user_id,
+        model_config_id=job_llm.get("model_config_id"),
+        provider=job_llm.get("provider"),
+        model=job_llm.get("model"),
+        base_url=job_llm.get("base_url"),
+    )
     if not api_key:
-        raise RuntimeError("未配置 DeepSeek API Key")
+        raise RuntimeError("未配置 LLM API Key")
 
     context = _backlink_snippets(root, node_id, edges)
     ptype = llm_wiki._infer_wiki_type_from_path(node.get("path") or f"{node_id}.md", "concept")
@@ -773,13 +845,20 @@ path 须与请求的 target_id 一致（仅改大小写）；type/status: publis
     }
 
 
-async def _run_repair_orphans_job(settings: Settings, user_id: str = "default") -> None:
+async def _run_repair_orphans_job(
+    settings: Settings,
+    user_id: str = "default",
+    *,
+    llm: dict[str, str | None] | None = None,
+) -> None:
     global _job_task
-    root = llm_wiki.wiki_root(settings)
+    bind_user_context(user_id)
+    root = llm_wiki.wiki_root(settings, user_id)
     graph = llm_wiki.load_graph(settings)
     edges = list(graph.get("edges", []))
     orphans = llm_wiki.list_orphan_wiki_nodes(settings)
 
+    job_llm = llm or _wiki_llm_defaults(settings)
     state: dict[str, Any] = {
         "running": True,
         "started_at": datetime.now(timezone.utc).isoformat(),
@@ -792,6 +871,7 @@ async def _run_repair_orphans_job(settings: Settings, user_id: str = "default") 
         "mode": "repair_orphans",
         "cancel_requested": False,
         "cancelled": False,
+        "llm": job_llm,
     }
     _write_job(root, state)
 
@@ -812,8 +892,7 @@ async def _run_repair_orphans_job(settings: Settings, user_id: str = "default") 
             except Exception as exc:
                 state = _read_job(root)
                 state["errors"].append({"raw": nid, "error": str(exc)})
-            state = _read_job(root)
-            state["done"] += 1
+            state["done"] = int(state.get("done", 0)) + 1
             state["current"] = None
             _write_job(root, state)
             await asyncio.sleep(settings.wiki_ingest_retry_delay_sec)
@@ -842,6 +921,10 @@ async def start_repair_orphans_job(
     settings: Settings | None = None,
     *,
     user_id: str = "default",
+    model_config_id: str | None = None,
+    provider: str | None = None,
+    model: str | None = None,
+    base_url: str | None = None,
 ) -> dict[str, Any]:
     global _job_task
     settings = settings or get_settings()
@@ -862,7 +945,13 @@ async def start_repair_orphans_job(
             **ingest_status(settings),
         }
 
-    _job_task = asyncio.create_task(_run_repair_orphans_job(settings, user_id))
+    job_llm = {
+        "model_config_id": model_config_id or settings.wiki_ingest_model_config_id,
+        "provider": provider or settings.wiki_ingest_provider,
+        "model": model or settings.wiki_ingest_model,
+        "base_url": (base_url or settings.wiki_ingest_base_url or "").strip() or None,
+    }
+    _job_task = asyncio.create_task(_run_repair_orphans_job(settings, user_id, llm=job_llm))
     return {
         "started": True,
         "message": f"已开始补全 {len(orphans)} 个未知/断链 wiki 页",

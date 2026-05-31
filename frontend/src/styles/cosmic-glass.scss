@@ -1,0 +1,214 @@
+@use './variables.scss' as *;
+
+/* Aurora Mesh + 高级毛玻璃：渐变填充 + 左上微高光，无完整描边 */
+@mixin cosmic-glass-frost($radius: var(--glass-radius-md, 20px)) {
+  position: relative;
+  overflow: hidden;
+  border-radius: $radius;
+  background: var(--glass-fill-gradient, linear-gradient(135deg, rgba(255, 255, 255, 0.25), rgba(255, 255, 255, 0.05)));
+  backdrop-filter: blur(var(--glass-blur, 24px)) saturate(var(--glass-saturate, 1.35));
+  -webkit-backdrop-filter: blur(var(--glass-blur, 24px)) saturate(var(--glass-saturate, 1.35));
+  border: none;
+  box-shadow:
+    var(--glass-inset-highlight, inset 1px 1px 0 rgba(255, 255, 255, 0.15)),
+    var(--glass-float-shadow, $shadow-md);
+
+  &::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    pointer-events: none;
+    opacity: var(--glass-noise-opacity, 0.035);
+    background-image: var(--glass-noise-image);
+    background-size: 128px 128px;
+    mix-blend-mode: soft-light;
+  }
+
+  @media (prefers-reduced-transparency: reduce) {
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+
+    &::before {
+      display: none;
+    }
+  }
+}
+
+@mixin aurora-mesh-panel {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+  z-index: 0;
+  background: var(--chat-mesh-base);
+}
+
+@mixin aurora-mesh-blob($width, $height, $top: null, $right: null, $bottom: null, $left: null, $color: var(--chat-blob-purple), $animation: chat-aurora-drift-1 14s ease-in-out infinite, $blur: 100px) {
+  position: absolute;
+  width: $width;
+  height: $height;
+  border-radius: 50%;
+  filter: blur($blur);
+  will-change: opacity, transform;
+  background: radial-gradient(circle at center, $color 0%, transparent 70%);
+  animation: $animation;
+
+  @if $top != null { top: $top; }
+  @if $right != null { right: $right; }
+  @if $bottom != null { bottom: $bottom; }
+  @if $left != null { left: $left; }
+}
+
+@keyframes chat-aurora-drift-1 {
+  0%, 100% { opacity: 0.75; transform: translate(0, 0) scale(1); }
+  50% { opacity: 1; transform: translate(3%, -2%) scale(1.06); }
+}
+
+@keyframes chat-aurora-drift-2 {
+  0%, 100% { opacity: 0.7; transform: translate(0, 0) scale(1); }
+  50% { opacity: 0.95; transform: translate(-2%, 3%) scale(1.05); }
+}
+
+@keyframes chat-aurora-drift-3 {
+  0%, 100% { opacity: 0.55; transform: translate(0, 0) scale(1); }
+  50% { opacity: 0.85; transform: translate(2%, 2%) scale(1.04); }
+}
+
+@keyframes chat-aurora-drift-4 {
+  0%, 100% { opacity: 0.45; transform: translate(0, 0) scale(1); }
+  50% { opacity: 0.72; transform: translate(-2%, 1%) scale(1.03); }
+}
+
+@mixin cosmic-glass-surface {
+  @include cosmic-glass-frost(var(--glass-radius-sm, 14px));
+}
+
+@mixin cosmic-glass-hover {
+  background: var(--sidebar-glass-hover-bg, var(--glass-fill-gradient));
+  backdrop-filter: blur(var(--glass-blur, 24px)) saturate(var(--glass-saturate, 1.35));
+  -webkit-backdrop-filter: blur(var(--glass-blur, 24px)) saturate(var(--glass-saturate, 1.35));
+  box-shadow:
+    var(--glass-inset-highlight),
+    var(--glass-float-shadow-hover, var(--glass-float-shadow, $shadow-md));
+}
+
+@mixin cosmic-glass-active {
+  background: var(--sidebar-glass-active-bg, var(--glass-fill-gradient));
+  backdrop-filter: blur(var(--glass-blur, 24px)) saturate(var(--glass-saturate, 1.35));
+  -webkit-backdrop-filter: blur(var(--glass-blur, 24px)) saturate(var(--glass-saturate, 1.35));
+  box-shadow:
+    inset 1px 1px 0 color-mix(in srgb, $accent 18%, rgba(255, 255, 255, 0.15)),
+    var(--glass-float-shadow-hover, var(--glass-float-shadow, $shadow-md));
+}
+
+@mixin cosmic-interactive-item($radius: $radius-sm) {
+  border-radius: $radius;
+  border: none;
+  background: transparent;
+  transition:
+    background 0.18s ease,
+    border-color 0.18s ease,
+    box-shadow 0.18s ease,
+    backdrop-filter 0.18s ease;
+
+  &:hover {
+    @include cosmic-glass-hover;
+  }
+
+  @media (prefers-reduced-transparency: reduce) {
+    &:hover {
+      backdrop-filter: none;
+      -webkit-backdrop-filter: none;
+    }
+  }
+}
+
+@mixin cosmic-interactive-item-active {
+  @include cosmic-glass-active;
+
+  @media (prefers-reduced-transparency: reduce) {
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+}
+
+@mixin cosmic-secondary-action {
+  opacity: 0;
+  transition: opacity 0.15s ease, color 0.15s ease, background 0.15s ease;
+
+  .history-item:hover &,
+  .history-item:focus-within & {
+    opacity: 1;
+  }
+}
+
+@mixin cosmic-modal-overlay($z-index: 2000) {
+  position: fixed;
+  inset: 0;
+  z-index: $z-index;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: color-mix(in srgb, var(--bg-page) 38%, transparent);
+  backdrop-filter: blur(calc(var(--glass-blur, 32px) * 0.65)) saturate(1.2);
+  -webkit-backdrop-filter: blur(calc(var(--glass-blur, 32px) * 0.65)) saturate(1.2);
+}
+
+@mixin cosmic-modal-panel($max-width: 420px) {
+  @include cosmic-glass-frost(var(--glass-radius-lg, 28px));
+  width: fit-content;
+  max-width: min(#{$max-width}, calc(100vw - 48px));
+  min-width: min(280px, calc(100vw - 48px));
+  background: var(--modal-bg, var(--glass-fill-gradient));
+  color: $text-primary;
+}
+
+@mixin cosmic-modal-panel-wide($max-width: 720px) {
+  @include cosmic-modal-panel($max-width);
+  width: min(#{$max-width}, calc(100vw - 48px));
+}
+
+@mixin cosmic-modal-fade-transition($name, $panel-selector: null) {
+  .#{$name}-enter-active,
+  .#{$name}-leave-active {
+    transition: opacity 0.2s ease;
+
+    @if $panel-selector {
+      #{$panel-selector} {
+        transition: transform 0.2s ease, opacity 0.2s ease;
+      }
+    }
+  }
+
+  .#{$name}-enter-from,
+  .#{$name}-leave-to {
+    opacity: 0;
+
+    @if $panel-selector {
+      #{$panel-selector} {
+        transform: scale(0.98) translateY(8px);
+        opacity: 0;
+      }
+    }
+  }
+}
+
+@mixin cosmic-top-toast($z-index: 10000) {
+  @include cosmic-glass-frost(var(--glass-radius-md, 20px));
+  position: fixed;
+  top: 20px;
+  left: 50%;
+  z-index: $z-index;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  width: fit-content;
+  max-width: min(520px, calc(100vw - 48px));
+  padding: 12px 14px;
+  transform: translateX(-50%);
+  pointer-events: auto;
+  background: var(--modal-bg, var(--glass-fill-gradient));
+  color: $text-primary;
+}

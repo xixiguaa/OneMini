@@ -1,13 +1,10 @@
 import axios from 'axios'
-import { getClientUserId } from '../utils/userId'
+import { setupAuthInterceptors } from '../utils/setupAuthInterceptors'
 
-/** 平台 API 客户端：自动附带用户分区头，不传输 API Key */
+/** 平台 API 客户端：JWT + 用户分区头 */
 export const platformApi = axios.create({
   baseURL: '/api/platform',
   timeout: 120000,
 })
 
-platformApi.interceptors.request.use((config) => {
-  config.headers.set('X-User-Id', getClientUserId())
-  return config
-})
+setupAuthInterceptors(platformApi)

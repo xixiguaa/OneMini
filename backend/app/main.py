@@ -4,7 +4,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import get_settings
-from app.routers import agent, chat, conversations, create_history, health, knowledge, secrets, wiki
+from app.routers import agent, auth, chat, conversations, create_history, health, knowledge, secrets, wiki
 from app.services.chat_store import _get_chat_collection
 from app.services.milvus_store import connect_milvus, disconnect_milvus, ping_milvus
 
@@ -44,6 +44,7 @@ app.add_middleware(
 
 API_PREFIX = "/api/platform"
 app.include_router(health.router, prefix=API_PREFIX)
+app.include_router(auth.router, prefix=API_PREFIX)
 app.include_router(secrets.router, prefix=API_PREFIX)
 app.include_router(agent.router, prefix=API_PREFIX)
 app.include_router(knowledge.router, prefix=API_PREFIX)

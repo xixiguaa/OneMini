@@ -3,7 +3,7 @@ import { defineStore } from 'pinia'
 import { computed, ref, watch } from 'vue'
 import { deleteModelSecret, fetchSecretStatuses, saveModelSecret as saveModelSecretApi } from '../api/secrets'
 import { buildDefaultModels, MODEL_CATALOG } from '../config/modelCatalog'
-import { DEFAULT_SKILLS } from '../config/defaults'
+import { CHAT_MODEL_CAPABILITIES, DEFAULT_SKILLS } from '../config/defaults'
 import type {
   AgentSettings,
   GenerationPrefs,
@@ -175,7 +175,14 @@ export const useSettingsStore = defineStore('settings', () => {
     return settings.value.models.filter((m) => m.enabled && m.capability === cap)
   }
 
-  const chatModels = computed(() => modelsByCapability('chat'))
+  /** 对话技能可用：语言模型 + 多模态模型 */
+  function modelsForChat() {
+    return settings.value.models.filter(
+      (m) => m.enabled && CHAT_MODEL_CAPABILITIES.includes(m.capability),
+    )
+  }
+
+  const chatModels = computed(() => modelsForChat())
   const imageModels = computed(() => modelsByCapability('image'))
   const videoModels = computed(() => modelsByCapability('video'))
   const worldModels = computed(() => modelsByCapability('world'))
@@ -190,6 +197,7 @@ export const useSettingsStore = defineStore('settings', () => {
     if (!m) return
     const skillMap: Partial<Record<ModelCapability, SkillId>> = {
       chat: 'chat',
+      multimodal: 'chat',
       image: 'image',
       video: 'video',
       world: 'world',
@@ -333,6 +341,7 @@ export const useSettingsStore = defineStore('settings', () => {
     videoModels,
     worldModels,
     modelsByCapability,
+    modelsForChat,
     getSkill,
     getModel,
     bindModelToSkill,

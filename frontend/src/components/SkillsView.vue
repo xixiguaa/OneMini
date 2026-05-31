@@ -78,10 +78,6 @@ const sectionIcon = {
 }
 
 .card {
-  background: $bg-card;
-  border: 1px solid $glass-border;
-  border-radius: $radius-md;
-  box-shadow: $shadow-sm;
   min-height: 0;
   overflow: hidden;
 }

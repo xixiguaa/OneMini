@@ -143,6 +143,7 @@ function onDeleteCancel() {
 
 <style scoped lang="scss">
 @use '../styles/variables.scss' as *;
+@use '../styles/cosmic-glass.scss' as cosmic;
 
 .history {
   flex: 1;
@@ -155,7 +156,7 @@ function onDeleteCancel() {
 .history-label {
   font-size: 11px;
   font-weight: 600;
-  color: $text-muted;
+  color: var(--text-label, $text-secondary);
   text-transform: uppercase;
   letter-spacing: 0.06em;
   padding: 0 8px 8px;
@@ -173,8 +174,8 @@ function onDeleteCancel() {
   font-weight: 600;
   line-height: 1.2;
   color: $accent-emphasis;
-  background: rgba(90, 70, 140, 0.12);
-  border: 1px solid rgba(90, 70, 140, 0.28);
+  background: $accent-light;
+  border: var(--glass-border-width, 0.5px) solid $border-light;
 
   svg {
     flex-shrink: 0;
@@ -202,7 +203,7 @@ function onDeleteCancel() {
 .group-label {
   font-size: 11px;
   font-weight: 600;
-  color: $text-muted;
+  color: var(--text-label, $text-secondary);
   padding: 4px 10px 2px;
 }
 
@@ -214,26 +215,14 @@ function onDeleteCancel() {
   border-radius: $radius-sm;
   text-align: left;
   width: 100%;
-  border: 1px solid transparent;
   cursor: pointer;
-  transition: all 0.2s;
-
-  &:hover {
-    background: $accent-light;
-    border-color: $glass-border;
-
-    .delete-btn {
-      opacity: 1;
-    }
-  }
+  @include cosmic.cosmic-interactive-item;
 
   &.active {
-    background: $accent-light;
-    border-color: $border-light;
-    box-shadow: inset $active-indicator 0 0 $accent;
+    @include cosmic.cosmic-interactive-item-active;
 
     .item-title {
-      color: $accent;
+      color: $accent-emphasis;
       font-weight: 600;
     }
   }
@@ -247,13 +236,14 @@ function onDeleteCancel() {
 .item-title {
   display: block;
   font-size: 13px;
+  color: $text-primary;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .delete-btn {
-  opacity: 0;
+  @include cosmic.cosmic-secondary-action;
   padding: 4px;
   color: $text-muted;
   border-radius: 4px;

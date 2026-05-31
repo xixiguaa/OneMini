@@ -26,10 +26,13 @@ const hasChatModel = computed(() => settings.chatModels.length > 0)
   gap: 10px;
   margin: 0;
   padding: 10px 14px;
-  background: rgba(255, 248, 220, 0.92);
-  border: 1px solid rgba(184, 134, 11, 0.28);
+  background: color-mix(in srgb, $color-warning 10%, $glass-bg);
+  backdrop-filter: blur(var(--glass-blur, 24px));
+  -webkit-backdrop-filter: blur(var(--glass-blur, 24px));
+  border: var(--glass-border-width, 0.5px) solid color-mix(in srgb, $color-warning 30%, $glass-border);
   border-radius: $radius-sm;
   font-size: 12px;
   color: color-mix(in srgb, $color-warning 75%, $text-primary);
+  box-shadow: var(--glass-float-shadow, $shadow-md);
 }
 </style>

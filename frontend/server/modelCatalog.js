@@ -91,6 +91,26 @@ export const MODEL_CATALOG = {
         },
       ],
     },
+    multimodal: {
+      categories: [
+        {
+          id: 'multimodal',
+          label: '多模态',
+          models: [
+            {
+              id: 'gpt-4o-mm',
+              model: 'gpt-4o',
+              label: 'GPT-4o',
+              baseUrl: OPENAI_BASE,
+              description: '文本、识图、文件读取与图片/视频生成',
+              tags: [{ text: '多模态', variant: 'featured' }],
+            },
+            { id: 'gpt-4.1-mm', model: 'gpt-4.1', label: 'GPT-4.1', baseUrl: OPENAI_BASE },
+            { id: 'gpt-4o-mini-mm', model: 'gpt-4o-mini', label: 'GPT-4o Mini', baseUrl: OPENAI_BASE },
+          ],
+        },
+      ],
+    },
     image: {
       categories: [
         {
@@ -145,6 +165,30 @@ export const MODEL_CATALOG = {
         },
       ],
     },
+    multimodal: {
+      categories: [
+        {
+          id: 'multimodal',
+          label: '多模态',
+          models: [
+            {
+              id: 'claude-sonnet-4-mm',
+              model: 'claude-sonnet-4-20250514',
+              label: 'Claude Sonnet 4',
+              baseUrl: ANTHROPIC_BASE,
+              description: '支持图片与文档理解',
+              tags: [{ text: '多模态', variant: 'featured' }],
+            },
+            {
+              id: 'claude-3-5-sonnet-mm',
+              model: 'claude-3-5-sonnet-20241022',
+              label: 'Claude 3.5 Sonnet',
+              baseUrl: ANTHROPIC_BASE,
+            },
+          ],
+        },
+      ],
+    },
   },
   zhipu: {
     chat: {
@@ -156,6 +200,21 @@ export const MODEL_CATALOG = {
             langModel('glm-5.1', 'GLM-5.1', ZHIPU_BASE, {
               tags: [{ text: '最新', variant: 'featured' }],
             }),
+          ],
+        },
+      ],
+    },
+    multimodal: {
+      categories: [
+        {
+          id: 'multimodal',
+          label: '多模态',
+          models: [
+            langModel('glm-4v-plus', 'GLM-4V Plus', ZHIPU_BASE, {
+              description: '视觉理解、文件与多模态对话',
+              tags: [{ text: '多模态', variant: 'featured' }],
+            }),
+            langModel('glm-4v-flash', 'GLM-4V Flash', ZHIPU_BASE),
           ],
         },
       ],
@@ -186,6 +245,25 @@ export const MODEL_CATALOG = {
         },
       ],
     },
+    multimodal: {
+      categories: [
+        {
+          id: 'multimodal',
+          label: '多模态',
+          models: [
+            {
+              id: 'qwen-vl-max',
+              model: 'qwen-vl-max',
+              label: 'Qwen-VL Max',
+              baseUrl: QWEN_BASE,
+              description: '视觉理解、文件读取与多模态对话',
+              tags: [{ text: '多模态', variant: 'featured' }],
+            },
+            { id: 'qwen-vl-plus', model: 'qwen-vl-plus', label: 'Qwen-VL Plus', baseUrl: QWEN_BASE },
+          ],
+        },
+      ],
+    },
     image: {
       categories: [
         {
@@ -207,6 +285,23 @@ export const MODEL_CATALOG = {
           models: [
             { id: 'qwen-plus', model: 'qwen-plus', label: '百炼 · Qwen Plus', baseUrl: QWEN_BASE },
             { id: 'qwen-max', model: 'qwen-max', label: '百炼 · Qwen Max', baseUrl: QWEN_BASE },
+          ],
+        },
+      ],
+    },
+    multimodal: {
+      categories: [
+        {
+          id: 'multimodal',
+          label: '多模态',
+          models: [
+            {
+              id: 'qwen-vl-max-bailian',
+              model: 'qwen-vl-max',
+              label: '百炼 · Qwen-VL Max',
+              baseUrl: QWEN_BASE,
+              tags: [{ text: '多模态', variant: 'featured' }],
+            },
           ],
         },
       ],
@@ -245,6 +340,21 @@ export const MODEL_CATALOG = {
               baseUrl: ARK_BASE,
               tags: [{ text: '高性价比', variant: 'info' }],
             },
+          ],
+        },
+      ],
+    },
+    multimodal: {
+      categories: [
+        {
+          id: 'multimodal',
+          label: '多模态',
+          models: [
+            langModel('doubao-seed-2.0-pro', 'Doubao Seed 2.0 Pro', ARK_BASE, {
+              description: '文本、识图、文件与 Seedream/Seedance 创作',
+              tags: [{ text: '多模态', variant: 'featured' }],
+            }),
+            langModel('doubao-seed-2.0-lite', 'Doubao Seed 2.0 Lite', ARK_BASE),
           ],
         },
       ],
@@ -381,6 +491,24 @@ export const MODEL_CATALOG = {
         },
       ],
     },
+    multimodal: {
+      categories: [
+        {
+          id: 'multimodal',
+          label: '多模态',
+          models: [
+            {
+              id: 'gemini-2-flash-mm',
+              model: 'gemini-2.0-flash',
+              label: 'Gemini 2.0 Flash',
+              description: '文本、识图、文件与多模态输出',
+              tags: [{ text: '多模态', variant: 'featured' }],
+            },
+            { id: 'gemini-2-5-pro-mm', model: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro' },
+          ],
+        },
+      ],
+    },
   },
   minimax: {
     chat: {
@@ -416,6 +544,7 @@ export const MODEL_CATALOG = {
 
 // bytedance 复用 doubao 的 chat/image/video（需在 doubao 定义之后赋值）
 MODEL_CATALOG.bytedance.chat = { categories: MODEL_CATALOG.doubao.chat.categories }
+MODEL_CATALOG.bytedance.multimodal = { categories: MODEL_CATALOG.doubao.multimodal.categories }
 MODEL_CATALOG.bytedance.image = { categories: MODEL_CATALOG.doubao.image.categories }
 MODEL_CATALOG.bytedance.video = { categories: MODEL_CATALOG.doubao.video.categories }
 
@@ -443,4 +572,4 @@ export function getModelCatalog(provider, capability) {
   }
 }
 
-export const SUPPORTED_CAPABILITIES = ['chat', 'image', 'video', 'world']
+export const SUPPORTED_CAPABILITIES = ['chat', 'multimodal', 'image', 'video', 'world']

@@ -1,8 +1,3 @@
-export const EXTERNAL_LINKS = {
-  chatbotArena: 'https://openlm.ai/chatbot-arena/',
-  jimeng: 'https://jimeng.jianying.com/ai-tool/home',
-} as const
-
 export const ACCEPT_CHAT_FILES =
   'image/*,.pdf,.doc,.docx,.txt,.md,.markdown,.html,.htm,.json,.csv'
 
@@ -22,6 +17,9 @@ export const VIDEO_ASPECT_RATIOS = [
   { id: '4:3', label: '4:3' },
   { id: '3:4', label: '3:4' },
 ] as const
+
+/** 知识图谱构建页：ingest LLM 选择（localStorage） */
+export const WIKI_INGEST_MODEL_STORAGE_KEY = 'onemini-wiki-ingest-model-id'
 
 export const VIDEO_RESOLUTIONS = [
   { id: '480', label: '480P', hint: '短边 480px' },

@@ -134,26 +134,15 @@ onUnmounted(() => {
 
 <style scoped lang="scss">
 @use '../styles/variables.scss' as *;
+@use '../styles/cosmic-glass.scss' as *;
 
 .confirm-overlay {
-  position: fixed;
-  inset: 0;
-  z-index: 2000;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 24px;
-  background: rgba(0, 0, 0, 0.45);
-  backdrop-filter: blur(2px);
+  @include cosmic-modal-overlay;
 }
 
 .confirm-dialog {
-  width: 100%;
+  @include cosmic-modal-panel(420px);
   padding: 22px 22px 18px;
-  background: $bg-card;
-  border: 1px solid $glass-border;
-  border-radius: 14px;
-  box-shadow: $shadow-md;
 }
 
 .confirm-title {
@@ -164,7 +153,7 @@ onUnmounted(() => {
   line-height: 1.35;
 
   &.is-danger {
-    color: #c92a4a;
+    color: $color-danger;
   }
 }
 
@@ -252,12 +241,24 @@ onUnmounted(() => {
 
 .btn-confirm {
   color: $btn-primary-text;
-  background-color: $accent;
-  border: 1px solid transparent;
+  background: var(--btn-primary-gradient, $accent);
+  border: var(--glass-border-width, 0.5px) solid rgba(255, 255, 255, 0.12);
+  box-shadow: var(--btn-primary-shadow, $shadow-glow);
+
+  .om-loading,
+  .om-loading-label {
+    color: inherit;
+  }
 
   &:hover:not(:disabled) {
-    background-color: $btn-primary-hover-bg;
-    box-shadow: $shadow-glow;
+    filter: brightness(1.08);
+    box-shadow: var(--btn-primary-shadow, $shadow-glow), $shadow-glow;
+  }
+
+  &:disabled {
+    opacity: 0.92;
+    cursor: wait;
+    filter: none;
   }
 
   &:focus-visible {
@@ -267,39 +268,30 @@ onUnmounted(() => {
 
   &.btn-confirm--danger {
     color: #fff;
-    background-color: #e03151;
-    border-color: #e03151;
+    background: $color-danger;
+    border-color: $color-danger;
     box-shadow: none;
 
+    .om-loading,
+    .om-loading-label {
+      color: inherit;
+    }
+
     &:hover:not(:disabled) {
-      background-color: #c92a4a;
-      border-color: #c92a4a;
+      filter: brightness(1.06);
       box-shadow: none;
-      filter: none;
+    }
+
+    &:disabled {
+      opacity: 0.92;
+      cursor: wait;
     }
 
     &:focus-visible {
-      box-shadow: 0 0 0 3px rgba(224, 49, 81, 0.35);
+      box-shadow: $shadow-focus-danger;
     }
   }
 }
 
-.confirm-fade-enter-active,
-.confirm-fade-leave-active {
-  transition: opacity 0.2s ease;
-
-  .confirm-dialog {
-    transition: transform 0.2s ease, opacity 0.2s ease;
-  }
-}
-
-.confirm-fade-enter-from,
-.confirm-fade-leave-to {
-  opacity: 0;
-
-  .confirm-dialog {
-    transform: scale(0.96) translateY(8px);
-    opacity: 0;
-  }
-}
+@include cosmic-modal-fade-transition('confirm-fade', '.confirm-dialog');
 </style>

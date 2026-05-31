@@ -198,6 +198,7 @@ onUnmounted(() => {
 
 <style scoped lang="scss">
 @use '../styles/variables.scss' as *;
+@use '../styles/cosmic-glass.scss' as cosmic;
 
 $column-max: 48rem;
 
@@ -224,13 +225,11 @@ $column-max: 48rem;
 }
 
 .attach-item {
+  @include cosmic.cosmic-glass-frost(10px);
   display: flex;
   align-items: center;
   gap: 8px;
   padding: 6px 10px;
-  background: $bg-card;
-  border: 1px solid $glass-border;
-  border-radius: 10px;
   max-width: 200px;
 
   .thumb {
@@ -262,22 +261,22 @@ $column-max: 48rem;
   }
 }
 
-/* Claude 式：固定高度 102px；浅色输入卡，深色模式下也不反转 */
+/* 统一玻璃输入卡：textarea 透明，无内层黑框 */
 .composer-card {
+  @include cosmic.cosmic-glass-frost(22px);
   display: flex;
   flex-direction: column;
   height: 102px;
   box-sizing: border-box;
   padding: 12px 14px 10px;
-  background: var(--composer-bg);
-  border: 1px solid var(--composer-border);
-  border-radius: 20px;
-  box-shadow: $shadow-sm;
-  transition: border-color 0.2s, box-shadow 0.2s;
+  background: var(--composer-bg, var(--glass-fill-gradient));
+  transition: box-shadow 0.2s;
 
   &:focus-within {
-    border-color: var(--composer-border-focus);
-    box-shadow: $shadow-sm;
+    box-shadow:
+      var(--glass-inset-highlight),
+      var(--glass-float-shadow-hover, var(--glass-float-shadow, $shadow-md)),
+      0 0 0 1px color-mix(in srgb, var(--composer-border-focus) 35%, transparent);
   }
 
   :deep(.model-logo) {
@@ -322,14 +321,16 @@ $column-max: 48rem;
   justify-content: space-between;
   gap: 12px;
   flex-shrink: 0;
-  height: 32px;
+  min-height: 32px;
 }
 
 .footer-left {
   display: flex;
   align-items: center;
   gap: 4px;
+  flex: 1;
   min-width: 0;
+  overflow: hidden;
 }
 
 .attach-plus {
@@ -352,7 +353,7 @@ $column-max: 48rem;
   display: flex;
   align-items: center;
   gap: 8px;
-  min-width: 0;
+  flex-shrink: 0;
 }
 
 .model-picker-wrap {
@@ -368,7 +369,9 @@ $column-max: 48rem;
   border-radius: 10px;
   font-size: 13px;
   color: var(--composer-muted);
-  transition: background 0.15s;
+  background: var(--composer-pill-bg);
+  border: var(--glass-border-width, 0.5px) solid var(--composer-pill-border);
+  transition: background 0.15s, border-color 0.15s;
 
   &:hover {
     background: var(--composer-picker-hover);
@@ -393,6 +396,7 @@ $column-max: 48rem;
 }
 
 .model-menu {
+  @include cosmic.cosmic-glass-frost(var(--glass-radius-md, 20px));
   position: absolute;
   right: 0;
   bottom: calc(100% + 8px);
@@ -404,10 +408,7 @@ $column-max: 48rem;
   max-height: 240px;
   overflow-y: auto;
   padding: 6px;
-  background: var(--composer-menu-bg);
-  border: 1px solid var(--composer-border);
-  border-radius: 12px;
-  box-shadow: $shadow-md;
+  background: var(--composer-menu-bg, var(--glass-fill-gradient));
 
   :deep(.model-logo) {
     background: var(--composer-logo-bg);

@@ -2,6 +2,7 @@ import { createPinia } from 'pinia'
 import { createApp } from 'vue'
 import App from './App.vue'
 import { useAgentStore } from './stores/agent'
+import { useAuthStore } from './stores/auth'
 import { useSettingsStore } from './stores/settings'
 import { initUiPrefsFromStorage } from './stores/uiPrefs'
 import './styles/main.scss'
@@ -14,8 +15,15 @@ app.use(pinia)
 
 app.mount('#app')
 
-const settings = useSettingsStore()
-void Promise.all([
-  settings.hydrateSecretStatuses(),
-  useAgentStore().initConversations(),
-]).catch(console.error)
+async function bootstrap() {
+  const auth = useAuthStore()
+  await auth.hydrate()
+  if (!auth.isAuthenticated) return
+  const settings = useSettingsStore()
+  await Promise.all([
+    settings.hydrateSecretStatuses(),
+    useAgentStore().initConversations(),
+  ])
+}
+
+void bootstrap().catch(console.error)

@@ -113,6 +113,12 @@ watch(
     border-radius: 0 8px 8px 0;
   }
 
+  :deep(strong),
+  :deep(b) {
+    color: $accent-emphasis;
+    font-weight: 600;
+  }
+
   :deep(code) {
     font-family: ui-monospace, 'SF Mono', Menlo, monospace;
     font-size: 0.9em;

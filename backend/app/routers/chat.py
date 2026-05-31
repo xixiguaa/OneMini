@@ -4,10 +4,14 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
-from app.deps import get_user_id
+from app.deps import get_current_user
 from app.services import rag
 
-router = APIRouter(prefix="/chat", tags=["chat"])
+router = APIRouter(
+    prefix="/chat",
+    tags=["chat"],
+    dependencies=[Depends(get_current_user)],
+)
 
 
 class ChatMessage(BaseModel):
@@ -27,7 +31,7 @@ class RagChatRequest(BaseModel):
 
 
 @router.post("/rag")
-async def rag_chat(req: RagChatRequest, user_id: str = Depends(get_user_id)):
+async def rag_chat(req: RagChatRequest, user_id: str = Depends(get_current_user)):
     question = req.question.strip()
     if not question:
         raise HTTPException(400, "缺少 question")
@@ -51,7 +55,7 @@ async def rag_chat(req: RagChatRequest, user_id: str = Depends(get_user_id)):
 
 
 @router.post("/rag/stream")
-async def rag_chat_stream(req: RagChatRequest, user_id: str = Depends(get_user_id)):
+async def rag_chat_stream(req: RagChatRequest, user_id: str = Depends(get_current_user)):
     question = req.question.strip()
     if not question:
         raise HTTPException(400, "缺少 question")

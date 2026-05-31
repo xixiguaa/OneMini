@@ -1,11 +1,9 @@
 import axios from 'axios'
-import { getClientUserId } from '../utils/userId'
+import { platformAuthHeaders } from '../utils/authHeaders'
+import { setupAuthInterceptors } from '../utils/setupAuthInterceptors'
 
 const api = axios.create({ baseURL: '/api/platform', timeout: 120000 })
-api.interceptors.request.use((config) => {
-  config.headers.set('X-User-Id', getClientUserId())
-  return config
-})
+setupAuthInterceptors(api)
 
 export interface KnowledgeDocument {
   doc_id: string
@@ -84,7 +82,7 @@ export async function sendRagChatStream(opts: RagStreamOptions): Promise<string>
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'X-User-Id': getClientUserId(),
+      ...platformAuthHeaders(),
     },
     body: JSON.stringify({
       question: opts.question,

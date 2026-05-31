@@ -9,6 +9,7 @@ const LOGO_MAP: Record<string, string> = {
 
 const CAPABILITY_LOGO: Record<string, string> = {
   chat: '/logos/codex-color.svg',
+  multimodal: '/logos/gemini-color.svg',
   image: '/logos/gemini-color.svg',
   video: '/logos/kling-color.svg',
   world: '/logos/hunyuan-color.svg',

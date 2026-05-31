@@ -42,13 +42,23 @@ export const DEFAULT_SKILLS: SkillConfig[] = [
 
 export const CAPABILITY_LABELS: Record<string, string> = {
   chat: '文本对话',
+  multimodal: '多模态',
   image: '图片生成',
   video: '视频生成',
   world: '世界生成',
 }
 
+/** 多模态模型能力说明（模型配置页展示） */
+export const MULTIMODAL_FEATURE_TAGS = [
+  '文本对话',
+  '图片理解',
+  '文件读取',
+  '图片生成',
+  '视频生成',
+] as const
+
 /** 模型配置页侧栏分组 */
-export type ModelConfigGroupId = 'language' | 'vision' | 'embodied'
+export type ModelConfigGroupId = 'language' | 'multimodal' | 'vision' | 'embodied'
 
 export const VISION_MEDIA_TYPES: { value: 'image' | 'video'; label: string }[] = [
   { value: 'image', label: '图片' },
@@ -62,9 +72,18 @@ export const MODEL_CONFIG_GROUPS: {
   defaultCapability: ModelCapability
 }[] = [
   { id: 'language', label: '语言模型', capabilities: ['chat'], defaultCapability: 'chat' },
+  {
+    id: 'multimodal',
+    label: '多模态模型',
+    capabilities: ['multimodal'],
+    defaultCapability: 'multimodal',
+  },
   { id: 'vision', label: '视觉模型', capabilities: ['image', 'video'], defaultCapability: 'image' },
-  { id: 'embodied', label: '物理 / 具身', capabilities: ['world'], defaultCapability: 'world' },
+  { id: 'embodied', label: '世界模型', capabilities: ['world'], defaultCapability: 'world' },
 ]
+
+/** 对话场景可选用：纯语言 + 多模态 */
+export const CHAT_MODEL_CAPABILITIES: ModelCapability[] = ['chat', 'multimodal']
 
 export function getModelConfigGroup(cap: ModelCapability) {
   return MODEL_CONFIG_GROUPS.find((g) => g.capabilities.includes(cap))
@@ -76,6 +95,7 @@ export function getModelConfigGroupById(id: ModelConfigGroupId) {
 
 /** 模型配置中的能力展示名（技能页仍用 CAPABILITY_LABELS） */
 export function getModelCapabilityLabel(cap: ModelCapability): string {
+  if (cap === 'multimodal') return CAPABILITY_LABELS.multimodal
   const group = getModelConfigGroup(cap)
   if (!group) return cap
   if (group.id === 'vision') {

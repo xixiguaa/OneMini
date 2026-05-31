@@ -6,9 +6,10 @@ import {
   deleteConversationApi,
   fetchConversations,
   importConversationsApi,
+  patchMessageFeedbackApi,
   replaceConversationMessages,
 } from '../api/conversations'
-import type { ChatMessage, Conversation } from '../types/agent'
+import type { ChatMessage, Conversation, MessageFeedback } from '../types/agent'
 import { groupConversations } from '../utils/conversationTimeGroup'
 import { randomUUID } from '../utils/uuid'
 
@@ -106,6 +107,7 @@ export const useConversationsStore = defineStore('conversations', () => {
     const messages = conv.messages
     try {
       persistError.value = null
+      await ensureConversationOnServer(conversationId)
       const saved = await replaceConversationMessages(conversationId, messages)
       // 删除后可能仍有在途写入，避免把已删会话写回服务端
       const live = list.value.find((c) => c.id === conversationId)
@@ -134,7 +136,7 @@ export const useConversationsStore = defineStore('conversations', () => {
         // 服务端已有数据时仅丢弃旧 localStorage，避免刷新后重复导入
         clearLegacyStorage()
       }
-      list.value = conversations
+      list.value = conversations.map((c) => ({ ...c, serverSynced: true }))
       activeId.value = conversations[0]?.id ?? null
       hydrated.value = true
     } catch (e) {
@@ -170,23 +172,37 @@ export const useConversationsStore = defineStore('conversations', () => {
     incognitoMessages.value = messages
   }
 
+  /** 同步占位会话，保证发消息时可立即写入 UI */
+  function ensureLocalSession(): void {
+    if (incognitoActive.value) return
+    if (activeId.value && list.value.some((c) => c.id === activeId.value)) return
+    createConversationLocal()
+  }
+
+  async function ensureConversationOnServer(conversationId: string): Promise<void> {
+    if (incognitoActive.value || persistError.value) return
+    const conv = list.value.find((c) => c.id === conversationId)
+    if (!conv || conv.serverSynced !== false) return
+    try {
+      await createConversationApi({ id: conv.id, title: conv.title })
+      conv.serverSynced = true
+    } catch {
+      /* flushPersist 或下次发送再试 */
+    }
+  }
+
+  async function syncActiveConversation(): Promise<void> {
+    const id = activeId.value
+    if (!id) return
+    await ensureConversationOnServer(id)
+  }
+
   /** 保证已 hydrate 且存在可写入的会话（发消息前 await） */
   async function ensureMessagingSession(): Promise<void> {
     if (incognitoActive.value) return
     if (!hydrated.value) await hydrate()
-    const hasActive =
-      activeId.value != null && list.value.some((c) => c.id === activeId.value)
-    if (hasActive) return
-    if (persistError.value) {
-      createConversationLocal()
-      return
-    }
-    try {
-      await createConversation()
-    } catch (e) {
-      persistError.value = e instanceof Error ? e.message : '创建对话失败'
-      createConversationLocal()
-    }
+    ensureLocalSession()
+    await syncActiveConversation()
   }
 
   async function createConversation(): Promise<Conversation> {
@@ -198,6 +214,7 @@ export const useConversationsStore = defineStore('conversations', () => {
       messages: [],
       createdAt: created.createdAt,
       updatedAt: created.updatedAt,
+      serverSynced: true,
     }
     list.value.unshift(conv)
     activeId.value = conv.id
@@ -221,6 +238,44 @@ export const useConversationsStore = defineStore('conversations', () => {
     const derived = deriveConversationTitle(messages)
     if (derived !== '新对话') conv.title = derived
     schedulePersist(id)
+  }
+
+  function patchMessageLocal(
+    conversationId: string,
+    messageId: string,
+    patch: Partial<ChatMessage> & { feedback?: MessageFeedback | null },
+  ) {
+    const conv = list.value.find((c) => c.id === conversationId)
+    if (!conv) return null
+    const idx = conv.messages.findIndex((m) => m.id === messageId)
+    if (idx < 0) return null
+    const prev = conv.messages[idx]
+    const next: ChatMessage = { ...prev, ...patch }
+    if ('feedback' in patch) {
+      if (patch.feedback) next.feedback = patch.feedback
+      else delete next.feedback
+    }
+    conv.messages[idx] = next
+    conv.updatedAt = Date.now()
+    return prev
+  }
+
+  async function updateMessageFeedback(
+    conversationId: string,
+    messageId: string,
+    feedback: MessageFeedback | null,
+  ) {
+    const prev = patchMessageLocal(conversationId, messageId, { feedback })
+    if (!prev) return
+    try {
+      persistError.value = null
+      const saved = await patchMessageFeedbackApi(conversationId, messageId, feedback)
+      patchMessageLocal(conversationId, messageId, { feedback: saved.feedback ?? null })
+    } catch (e) {
+      patchMessageLocal(conversationId, messageId, { feedback: prev.feedback ?? null })
+      persistError.value = e instanceof Error ? e.message : '保存反馈失败'
+      throw e
+    }
   }
 
   /** 发送首问后立即更新侧栏标题（不等待持久化） */
@@ -279,6 +334,7 @@ export const useConversationsStore = defineStore('conversations', () => {
       messages: [],
       createdAt: Date.now(),
       updatedAt: Date.now(),
+      serverSynced: false,
     }
     list.value.unshift(conv)
     activeId.value = conv.id
@@ -307,11 +363,15 @@ export const useConversationsStore = defineStore('conversations', () => {
     selectConversation,
     getMessages,
     setMessages,
+    patchMessageLocal,
+    updateMessageFeedback,
     updateTitleFromText,
     deriveConversationTitle,
     deleteConversation,
     startDraftSession,
     ensureActive,
+    ensureLocalSession,
+    syncActiveConversation,
     ensureMessagingSession,
     setPersistPaused,
     flushPersist,

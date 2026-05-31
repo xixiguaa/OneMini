@@ -20,22 +20,22 @@ const svgRef = ref<SVGSVGElement | null>(null)
 const TYPE_COLORS: Record<string, string> = {
   raw: '#6b6b8a',
   raw_extract: '#5a5a78',
-  entity: '#7b5fff',
-  concept: '#1fffd4',
+  entity: '#7c5fe8',
+  concept: '#1e96be',
   source: '#ffb830',
-  synthesis: '#826afb',
+  synthesis: '#5338c0',
   query: '#ff5c7a',
   meta: '#a0a0c0',
   unknown: '#6b6b8a',
 }
 
-const BG_GRAPH = '#0d0d1a'
+const BG_GRAPH = '#060412'
 /** 默认连线/箭头（无 hover） */
 const DIM_LINK = '#2a2a4a'
 const LINK_IDLE_OPACITY = 0.38
 const ARROW_IDLE_OPACITY = 0.34
 /** 图谱聚焦/悬停高亮色（连线） */
-const OBSIDIAN_FOCUS = '#7b5fff'
+const OBSIDIAN_FOCUS = '#7c5fe8'
 /** Obsidian 图谱悬停/聚焦过渡（偏慢、ease-out） */
 const HOVER_ANIM_MS = 280
 const HOVER_EASE = d3.easeCubicOut
@@ -1143,7 +1143,7 @@ defineExpose({ fitView })
   flex: 1;
   min-height: 0;
   overflow: hidden;
-  background: #0d0d1a;
+  background: #060412;
   box-shadow: inset 0 0 100px rgba(0, 0, 0, 0.38);
 }
 

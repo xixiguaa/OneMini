@@ -1,7 +1,10 @@
 import type { ModelConfig } from '../types/agent'
 import type { OneMiniSkeleton } from '../types/agentConfig'
 
-export function isModelReady(model: ModelConfig | undefined): model is ModelConfig {
+/** 已启用且密钥就绪、可用于 API 调用的模型 */
+export type ReadyModelConfig = ModelConfig & { enabled: true }
+
+export function isModelReady(model: ModelConfig | undefined): model is ReadyModelConfig {
   if (!model?.enabled) return false
   if (model.provider === 'tencent') return true
   return !!model.secretConfigured
@@ -10,7 +13,8 @@ export function isModelReady(model: ModelConfig | undefined): model is ModelConf
 type ChatSettings = {
   getModel: (id: string) => ModelConfig | undefined
   getSkill: (id: 'chat') => { defaultModelId?: string } | undefined
-  modelsByCapability: (cap: 'chat') => ModelConfig[]
+  /** 语言 + 多模态，用于对话回退 */
+  modelsForChat: () => ModelConfig[]
 }
 
 export type ChatModelResolveResult =
@@ -29,8 +33,8 @@ export function resolveChatModel(
 
   if (skill?.defaultModelId) {
     const selected = settings.getModel(skill.defaultModelId)
-    if (isModelReady(selected)) return { ok: true, model: selected }
     if (selected) {
+      if (isModelReady(selected)) return { ok: true, model: selected }
       return {
         ok: false,
         error: `当前选择的「${selected.name}」尚未配置 API Key 或未启用，请在「模型配置」中保存密钥并启用。`,
@@ -47,7 +51,7 @@ export function resolveChatModel(
     if (isModelReady(m)) return { ok: true, model: m }
   }
 
-  const fallback = settings.modelsByCapability('chat').find(isModelReady)
+  const fallback = settings.modelsForChat().find(isModelReady)
   if (fallback) return { ok: true, model: fallback }
 
   return {

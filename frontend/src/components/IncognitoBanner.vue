@@ -49,12 +49,11 @@ const { t } = useLocale()
   box-sizing: border-box;
   padding: 12px 16px;
   border-radius: 12px;
-  border: 1px solid rgba(90, 70, 140, 0.32);
-  background: linear-gradient(
-    135deg,
-    rgba(90, 70, 140, 0.1) 0%,
-    rgba(60, 50, 100, 0.06) 100%
-  );
+  border: var(--glass-border-width, 0.5px) solid $glass-border;
+  background: $glass-bg;
+  backdrop-filter: blur(var(--glass-blur, 24px));
+  -webkit-backdrop-filter: blur(var(--glass-blur, 24px));
+  box-shadow: var(--glass-float-shadow, $shadow-md);
 }
 
 .banner-icon-wrap {
@@ -65,7 +64,7 @@ const { t } = useLocale()
   width: 40px;
   height: 40px;
   border-radius: 10px;
-  background: rgba(90, 70, 140, 0.12);
+  background: $accent-light;
   flex-shrink: 0;
 }
 
@@ -112,13 +111,14 @@ const { t } = useLocale()
   line-height: 1;
   white-space: nowrap;
   color: $accent-emphasis;
-  background: rgba(255, 255, 255, 0.72);
-  border: 1px solid rgba(90, 70, 140, 0.28);
+  background: $btn-ghost-bg;
+  border: var(--glass-border-width, 0.5px) solid $glass-border;
   align-self: center;
 
   &:hover {
-    background: rgba(255, 255, 255, 0.95);
-    border-color: rgba(90, 70, 140, 0.42);
+    background: $btn-ghost-hover-bg;
+    border-color: $accent;
+    color: $accent;
   }
 }
 

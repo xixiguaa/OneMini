@@ -206,6 +206,7 @@ function onDeleteCancel() {
 
 <style scoped lang="scss">
 @use '../styles/variables.scss' as *;
+@use '../styles/cosmic-glass.scss' as cosmic;
 
 .works-section {
   padding: 0;
@@ -222,16 +223,13 @@ function onDeleteCancel() {
 }
 
 .work-card {
-  border-radius: $radius-sm;
+  @include cosmic.cosmic-glass-frost(var(--glass-radius-sm, 14px));
   overflow: hidden;
-  background: $bg-card;
-  border: 1px solid $glass-border;
-  box-shadow: $shadow-sm;
   transition: transform 0.2s, box-shadow 0.2s;
 
   &:not(.pending):not(.failed):hover {
     transform: translateY(-2px);
-    box-shadow: $shadow-md;
+    box-shadow: var(--glass-float-shadow-hover, var(--glass-float-shadow, $shadow-md));
   }
 
   &.pending {

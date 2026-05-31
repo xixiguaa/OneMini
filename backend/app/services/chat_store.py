@@ -102,8 +102,27 @@ def _parse_attachments(raw: str | None) -> dict[str, Any] | None:
         return None
 
 
+def _parse_metadata(raw: str | None) -> dict[str, Any]:
+    if not raw:
+        return {}
+    try:
+        data = json.loads(raw)
+        return data if isinstance(data, dict) else {}
+    except json.JSONDecodeError:
+        return {}
+
+
+def _metadata_json_from_raw(raw: dict[str, Any]) -> str:
+    meta: dict[str, Any] = {}
+    fb = raw.get("feedback")
+    if fb in ("like", "dislike"):
+        meta["feedback"] = fb
+    return json.dumps(meta, ensure_ascii=False) if meta else ""
+
+
 def _row_to_message(row: dict[str, Any]) -> dict[str, Any]:
-    return {
+    meta = _parse_metadata(row.get("metadata_json"))
+    out: dict[str, Any] = {
         "id": row["id"],
         "role": row.get("role") or "user",
         "type": row.get("message_type") or "text",
@@ -112,6 +131,10 @@ def _row_to_message(row: dict[str, Any]) -> dict[str, Any]:
         "timestamp": row.get("created_at") or 0,
         "attachments": _parse_attachments(row.get("attachments_json")),
     }
+    fb = meta.get("feedback")
+    if fb in ("like", "dislike"):
+        out["feedback"] = fb
+    return out
 
 
 def _gen_title(messages: list[dict[str, Any]]) -> str:
@@ -205,6 +228,7 @@ def _load_messages(col: Collection, conversation_id: str) -> list[dict[str, Any]
                 "sort_index",
                 "created_at",
                 "attachments_json",
+                "metadata_json",
             ],
             limit=16384,
         )
@@ -408,7 +432,7 @@ def replace_messages(
                 "attachments_json": json.dumps(attachments, ensure_ascii=False)
                 if attachments
                 else "",
-                "metadata_json": "",
+                "metadata_json": _metadata_json_from_raw(raw),
                 "created_at": int(ts),
                 "updated_at": int(ts),
             }
@@ -459,6 +483,94 @@ def replace_messages(
     col.flush()
 
     return get_conversation(user_id, conversation_id)
+
+
+def set_message_feedback(
+    user_id: str,
+    conversation_id: str,
+    message_id: str,
+    feedback: str | None,
+) -> dict[str, Any] | None:
+    """更新单条消息点赞/点踩；feedback 为 None 表示清除。"""
+    if feedback is not None and feedback not in ("like", "dislike"):
+        raise ValueError("feedback 须为 like、dislike 或 null")
+
+    conv = get_conversation(user_id, conversation_id)
+    if not conv:
+        return None
+
+    settings = get_settings()
+    col = _get_chat_collection(settings)
+    uid = _escape(_ensure_user(user_id))
+    mid = _escape(message_id)
+    cid = _escape(conversation_id)
+    expr = (
+        f'id == "{mid}" '
+        f'and entity_type == "{ENTITY_MESSAGE}" '
+        f'and conversation_id == "{cid}" '
+        f'and user_id == "{uid}" '
+        f'and status == "{STATUS_ACTIVE}"'
+    )
+    try:
+        rows = col.query(
+            expr=expr,
+            output_fields=[
+                "id",
+                "user_id",
+                "entity_type",
+                "conversation_id",
+                "title",
+                "role",
+                "message_type",
+                "skill_id",
+                "content",
+                "sort_index",
+                "status",
+                "attachments_json",
+                "metadata_json",
+                "created_at",
+                "updated_at",
+            ],
+            limit=1,
+        )
+    except MilvusException:
+        return None
+
+    if not rows:
+        return None
+
+    row = rows[0]
+    meta = _parse_metadata(row.get("metadata_json"))
+    if feedback:
+        meta["feedback"] = feedback
+    else:
+        meta.pop("feedback", None)
+
+    t = _now()
+    content = row.get("content") or ""
+    updated = {
+        "id": row["id"],
+        "user_id": row["user_id"],
+        "entity_type": ENTITY_MESSAGE,
+        "conversation_id": row["conversation_id"],
+        "title": row.get("title") or "",
+        "role": row.get("role") or "user",
+        "message_type": row.get("message_type") or "text",
+        "skill_id": row.get("skill_id") or "chat",
+        "content": content,
+        "sort_index": row.get("sort_index") or 0,
+        "status": STATUS_ACTIVE,
+        "attachments_json": row.get("attachments_json") or "",
+        "metadata_json": json.dumps(meta, ensure_ascii=False) if meta else "",
+        "created_at": row.get("created_at") or t,
+        "updated_at": t,
+        "embedding": _embed_one(content),
+    }
+
+    _delete_by_ids(col, [message_id])
+    col.insert([updated])
+    col.flush()
+    return _row_to_message(updated)
 
 
 def import_conversations(user_id: str, conversations: list[dict[str, Any]]) -> dict[str, int]:

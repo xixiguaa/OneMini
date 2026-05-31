@@ -1,8 +1,9 @@
 import { defineStore } from 'pinia'
-import { ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import type { Locale } from '../i18n/messages'
 
-export type ThemeMode = 'light' | 'dark'
+export type ThemeMode = 'light' | 'dark' | 'system'
+export type ResolvedTheme = 'light' | 'dark'
 
 const STORAGE_KEY = 'aji-ui-prefs'
 
@@ -12,13 +13,37 @@ interface UiPrefs {
   sidebarCollapsed: boolean
 }
 
+function resolveSystemTheme(): ResolvedTheme {
+  if (typeof window === 'undefined') return 'dark'
+  return window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark'
+}
+
+export function resolveTheme(mode: ThemeMode): ResolvedTheme {
+  if (mode === 'system') return resolveSystemTheme()
+  return mode
+}
+
+export function applyTheme(mode: ThemeMode) {
+  document.documentElement.dataset.theme = resolveTheme(mode)
+  document.documentElement.dataset.themeMode = mode
+}
+
+export function applyLocale(locale: Locale) {
+  document.documentElement.lang = locale === 'zh' ? 'zh-CN' : 'en'
+}
+
+function normalizeTheme(raw: unknown): ThemeMode {
+  if (raw === 'dark' || raw === 'system' || raw === 'light') return raw
+  return 'dark'
+}
+
 function loadPrefs(): UiPrefs {
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
     if (raw) {
       const parsed = JSON.parse(raw) as Partial<UiPrefs>
       return {
-        theme: parsed.theme === 'dark' ? 'dark' : 'light',
+        theme: normalizeTheme(parsed.theme),
         locale: parsed.locale === 'en' ? 'en' : 'zh',
         sidebarCollapsed: Boolean(parsed.sidebarCollapsed),
       }
@@ -26,15 +51,7 @@ function loadPrefs(): UiPrefs {
   } catch {
     /* ignore */
   }
-  return { theme: 'light', locale: 'zh', sidebarCollapsed: false }
-}
-
-export function applyTheme(theme: ThemeMode) {
-  document.documentElement.dataset.theme = theme
-}
-
-export function applyLocale(locale: Locale) {
-  document.documentElement.lang = locale === 'zh' ? 'zh-CN' : 'en'
+  return { theme: 'dark', locale: 'zh', sidebarCollapsed: false }
 }
 
 /** 在 createApp 之前调用，避免主题闪烁 */
@@ -54,6 +71,23 @@ export const useUiPrefsStore = defineStore('uiPrefs', () => {
   const locale = ref<Locale>(saved.locale)
   const sidebarCollapsed = ref(saved.sidebarCollapsed)
 
+  const resolvedTheme = computed<ResolvedTheme>(() => resolveTheme(theme.value))
+
+  let systemMedia: MediaQueryList | null = null
+
+  function onSystemPrefChange() {
+    if (theme.value === 'system') applyTheme('system')
+  }
+
+  function bindSystemMediaListener() {
+    if (typeof window === 'undefined') return
+    systemMedia?.removeEventListener('change', onSystemPrefChange)
+    systemMedia = null
+    if (theme.value !== 'system') return
+    systemMedia = window.matchMedia('(prefers-color-scheme: light)')
+    systemMedia.addEventListener('change', onSystemPrefChange)
+  }
+
   watch(
     () => ({
       theme: theme.value,
@@ -67,12 +101,18 @@ export const useUiPrefsStore = defineStore('uiPrefs', () => {
       document.documentElement.dataset.sidebarCollapsed = val.sidebarCollapsed
         ? 'true'
         : 'false'
+      bindSystemMediaListener()
     },
     { immediate: true },
   )
 
+  function setTheme(mode: ThemeMode) {
+    theme.value = mode
+  }
+
   function toggleTheme() {
-    theme.value = theme.value === 'light' ? 'dark' : 'light'
+    const current = resolveTheme(theme.value)
+    theme.value = current === 'light' ? 'dark' : 'light'
   }
 
   function setLocale(next: Locale) {
@@ -89,8 +129,10 @@ export const useUiPrefsStore = defineStore('uiPrefs', () => {
 
   return {
     theme,
+    resolvedTheme,
     locale,
     sidebarCollapsed,
+    setTheme,
     toggleTheme,
     setLocale,
     toggleSidebar,

@@ -13,6 +13,9 @@ class Settings(BaseSettings):
     host: str = "0.0.0.0"
     port: int = 8000
 
+    jwt_secret: str = "onemini-dev-jwt-change-in-production"
+    jwt_expire_seconds: int = 60 * 60 * 24 * 7  # 7 天
+
     milvus_host: str = "127.0.0.1"
     milvus_port: int = 19530
     milvus_collection: str = "onemini_knowledge"

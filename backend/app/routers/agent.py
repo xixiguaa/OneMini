@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
-from app.deps import get_user_id
+from app.deps import get_current_user
 from app.services.image_gen import generate_image, supported_image_providers
 from app.services.llm import (
     PROVIDER_BASE_URLS,
@@ -13,7 +13,11 @@ from app.services.llm import (
 )
 from app.services.secrets_store import resolve_model_api_key
 
-router = APIRouter(prefix="/agent", tags=["agent"])
+router = APIRouter(
+    prefix="/agent",
+    tags=["agent"],
+    dependencies=[Depends(get_current_user)],
+)
 
 OPENAI_COMPATIBLE_PROVIDERS = frozenset(
     {
@@ -70,7 +74,7 @@ def _resolve_chat_url(provider: str | None, base_url: str | None) -> str:
 
 
 @router.post("/chat")
-async def agent_chat(req: AgentChatRequest, user_id: str = Depends(get_user_id)):
+async def agent_chat(req: AgentChatRequest, user_id: str = Depends(get_current_user)):
     api_key = resolve_model_api_key(user_id, req.model_config_id)
     if not api_key and req.provider != "tencent":
         raise HTTPException(
@@ -96,7 +100,7 @@ async def agent_chat(req: AgentChatRequest, user_id: str = Depends(get_user_id))
 
 
 @router.post("/chat/stream")
-async def agent_chat_stream(req: AgentChatRequest, user_id: str = Depends(get_user_id)):
+async def agent_chat_stream(req: AgentChatRequest, user_id: str = Depends(get_current_user)):
     if req.provider not in (None, "tencent") and req.provider not in OPENAI_COMPATIBLE_PROVIDERS:
         raise HTTPException(400, f"不支持的服务商: {req.provider}")
 
@@ -133,7 +137,7 @@ async def agent_chat_stream(req: AgentChatRequest, user_id: str = Depends(get_us
 
 
 @router.post("/image")
-async def agent_image(req: ImageGenRequest, user_id: str = Depends(get_user_id)):
+async def agent_image(req: ImageGenRequest, user_id: str = Depends(get_current_user)):
     provider = (req.provider or "").strip()
     if provider and provider not in supported_image_providers() and provider != "tencent":
         raise HTTPException(400, f"暂不支持该图片服务商: {provider}")

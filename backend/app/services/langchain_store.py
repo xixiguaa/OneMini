@@ -96,9 +96,14 @@ def langchain_search_similar(
     query: str,
     top_k: int,
     settings: Settings | None = None,
+    *,
+    user_id: str | None = None,
 ) -> list[dict[str, Any]]:
+    from app.services.milvus_store import user_doc_prefix
+
     store = get_vector_store(settings)
-    results = store.similarity_search_with_score(query, k=top_k)
+    fetch_k = top_k * 4 if user_id else top_k
+    results = store.similarity_search_with_score(query, k=min(fetch_k, 64))
     hits: list[dict[str, Any]] = []
     for doc, score in results:
         meta = doc.metadata or {}
@@ -112,6 +117,10 @@ def langchain_search_similar(
                 "text": doc.page_content,
             }
         )
+    if user_id:
+        prefix = user_doc_prefix(user_id)
+        hits = [h for h in hits if str(h.get("doc_id", "")).startswith(prefix)]
+        hits = hits[:top_k]
     return hits
 
 

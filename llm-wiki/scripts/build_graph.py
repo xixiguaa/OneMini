@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 from datetime import datetime, timezone
 from pathlib import Path
@@ -17,7 +18,7 @@ WIKILINK_RE = re.compile(r"\[\[([^\]|#]+)(?:#[^\]|]*)?(?:\|([^\]]+))?\]\]")
 FRONTMATTER_TYPE_RE = re.compile(r"^type:\s*(\S+)\s*$", re.MULTILINE)
 FRONTMATTER_TITLE_RE = re.compile(r"^title:\s*(.+?)\s*$", re.MULTILINE)
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(os.environ.get("LLM_WIKI_ROOT", "")).resolve() if os.environ.get("LLM_WIKI_ROOT") else Path(__file__).resolve().parents[1]
 WIKI_DIR = ROOT / "wiki"
 GRAPH_FILE = ROOT / "graph" / "links.json"
 

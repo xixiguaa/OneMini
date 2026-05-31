@@ -11,7 +11,7 @@ export type ViewId =
   | 'knowledge'
   | 'wikiGraph'
 export type CreateMode = 'agent' | 'image' | 'video'
-export type ModelCapability = 'chat' | 'image' | 'video' | 'world'
+export type ModelCapability = 'chat' | 'multimodal' | 'image' | 'video' | 'world'
 
 export interface ModelConfig {
   id: string
@@ -49,6 +49,7 @@ export interface FileAttachmentMeta {
 
 export type MessageRole = 'user' | 'assistant' | 'system'
 export type MessageType = 'text' | 'image' | 'video' | 'world' | 'error'
+export type MessageFeedback = 'like' | 'dislike'
 
 export interface ChatMessage {
   id: string
@@ -57,6 +58,7 @@ export interface ChatMessage {
   content: string
   skillId: SkillId
   timestamp: number
+  feedback?: MessageFeedback
   attachments?: {
     url?: string
     previewUrl?: string
@@ -85,6 +87,8 @@ export interface Conversation {
   messages: ChatMessage[]
   createdAt: number
   updatedAt: number
+  /** 是否已在服务端创建（本地占位会话为 false） */
+  serverSynced?: boolean
 }
 
 export interface GenerationPrefs {

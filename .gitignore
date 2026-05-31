@@ -60,7 +60,9 @@ coverage/
 *.temp
 .cache/
 
-# LLM-Wiki：本地知识库内容不入库（保留 README、WIKI.md、templates、scripts、图谱说明）
+# LLM-Wiki：用户私有知识库内容不入库（保留 README、WIKI.md、templates、scripts、graph/README 等脚手架）
+llm-wiki/users/
+# 兼容旧版单用户目录结构
 llm-wiki/wiki/
 llm-wiki/raw/
 llm-wiki/raw/09-archive/
