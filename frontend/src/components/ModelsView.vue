@@ -37,6 +37,8 @@ const deleteTarget = ref<ModelConfig | null>(null)
 const selectedId = ref<string | null>('deepseek-v4-pro')
 const rightMode = ref<'detail' | 'add'>('detail')
 const addGroupId = ref<ModelConfigGroupId>('language')
+/** 每次点「+」递增，强制重建添加面板（避免停在 API Key 步骤时重复点加号无反应） */
+const addPanelSession = ref(0)
 
 const grouped = computed(() =>
   MODEL_CONFIG_GROUPS.map((group) => ({
@@ -62,6 +64,7 @@ function selectModel(m: ModelConfig) {
 function openAdd(groupId: ModelConfigGroupId) {
   addGroupId.value = groupId
   rightMode.value = 'add'
+  addPanelSession.value += 1
 }
 
 function onSaved(id: string) {
@@ -183,6 +186,7 @@ function modelMeta(m: ModelConfig) {
                 enabled: m.enabled,
                 pending: !m.enabled && !!(m.secretConfigured || m.provider === 'tencent'),
               }"
+              :title="m.name"
               @click="selectModel(m)"
             >
               <ModelLogo :model="m" :size="36" />
@@ -208,7 +212,7 @@ function modelMeta(m: ModelConfig) {
       <section class="right-panel card">
         <ModelAddPanel
           v-if="rightMode === 'add'"
-          :key="addGroupId"
+          :key="`${addGroupId}-${addPanelSession}`"
           :group-id="addGroupId"
           @saved="onSaved"
         />

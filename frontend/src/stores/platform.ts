@@ -6,6 +6,12 @@ export type KnowledgeChatMode = 'off' | 'rag' | 'wiki'
 
 const MODE_KEY = 'onemini-knowledge-chat-mode'
 const LEGACY_RAG_KEY = 'onemini-rag-enabled'
+const DEEP_THINKING_KEY = 'onemini-deep-thinking'
+const WEB_SEARCH_KEY = 'onemini-web-search'
+
+function loadBool(key: string): boolean {
+  return localStorage.getItem(key) === '1'
+}
 
 function loadKnowledgeChatMode(): KnowledgeChatMode {
   const v = localStorage.getItem(MODE_KEY)
@@ -16,11 +22,23 @@ function loadKnowledgeChatMode(): KnowledgeChatMode {
 
 export const usePlatformStore = defineStore('platform', () => {
   const knowledgeChatMode = ref<KnowledgeChatMode>(loadKnowledgeChatMode())
+  const deepThinkingEnabled = ref(loadBool(DEEP_THINKING_KEY))
+  const webSearchEnabled = ref(loadBool(WEB_SEARCH_KEY))
   const milvusOk = ref<boolean | null>(null)
   const platformOnline = ref<boolean | null>(null)
 
   const ragEnabled = computed(() => knowledgeChatMode.value === 'rag')
   const wikiChatEnabled = computed(() => knowledgeChatMode.value === 'wiki')
+
+  function setDeepThinkingEnabled(v: boolean) {
+    deepThinkingEnabled.value = v
+    localStorage.setItem(DEEP_THINKING_KEY, v ? '1' : '0')
+  }
+
+  function setWebSearchEnabled(v: boolean) {
+    webSearchEnabled.value = v
+    localStorage.setItem(WEB_SEARCH_KEY, v ? '1' : '0')
+  }
 
   function setKnowledgeChatMode(mode: KnowledgeChatMode) {
     knowledgeChatMode.value = mode
@@ -48,11 +66,15 @@ export const usePlatformStore = defineStore('platform', () => {
 
   return {
     knowledgeChatMode,
+    deepThinkingEnabled,
+    webSearchEnabled,
     ragEnabled,
     wikiChatEnabled,
     milvusOk,
     platformOnline,
     setKnowledgeChatMode,
+    setDeepThinkingEnabled,
+    setWebSearchEnabled,
     setRagEnabled,
     refreshHealth,
   }

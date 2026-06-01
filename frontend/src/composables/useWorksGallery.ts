@@ -13,6 +13,7 @@ export interface GalleryItem {
   url?: string
   sessionId?: string
   parentId?: string
+  aspectRatio?: string
 }
 
 export function useWorksGallery() {
@@ -32,6 +33,7 @@ export function useWorksGallery() {
         url: resolveCreateHistoryImageUrl(item),
         sessionId: item.sessionId,
         parentId: item.parentId,
+        aspectRatio: item.aspectRatio,
       }
       const existing = latestBySession.get(sid)
       if (!existing || item.createdAt >= existing.timestamp) {

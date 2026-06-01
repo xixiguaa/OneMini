@@ -5,7 +5,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from app.deps import get_current_user
-from app.services import rag
+from app.services import rag, web_search
 
 router = APIRouter(
     prefix="/chat",
@@ -89,3 +89,21 @@ async def rag_chat_stream(req: RagChatRequest, user_id: str = Depends(get_curren
         media_type="text/event-stream; charset=utf-8",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
+
+
+class WebSearchRequest(BaseModel):
+    query: str
+    top_k: int | None = 5
+
+
+@router.post("/web-search")
+async def web_search_api(req: WebSearchRequest, user_id: str = Depends(get_current_user)):
+    query = req.query.strip()
+    if not query:
+        raise HTTPException(400, "缺少 query")
+    top_k = req.top_k or 5
+    try:
+        hits = await web_search.search_web(query, top_k=top_k)
+        return {"hits": hits, "userId": user_id}
+    except Exception as exc:
+        raise HTTPException(502, f"联网搜索失败: {exc}") from exc

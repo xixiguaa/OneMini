@@ -10,7 +10,7 @@ export type ViewId =
   | 'skills'
   | 'knowledge'
   | 'wikiGraph'
-export type CreateMode = 'agent' | 'image' | 'video'
+export type CreateMode = 'agent' | 'image' | 'video' | 'digitalHuman'
 export type ModelCapability = 'chat' | 'multimodal' | 'image' | 'video' | 'world'
 
 export interface ModelConfig {
@@ -65,11 +65,18 @@ export interface AgentToolCallRecord {
   summary?: string
 }
 
+/** 深度思考过程（CoT），UI 展示为可折叠「已思考」 */
+export interface ThinkingTrace {
+  content: string
+  durationMs?: number
+}
+
 export interface MessageMetadata {
   action?: 'regenerate' | 'branch' | 'send'
   targetAssistantId?: string
   workingMemory?: WorkingMemoryState
   toolCalls?: AgentToolCallRecord[]
+  thinking?: ThinkingTrace
 }
 
 /** 消息节点 (MessageNode) */
@@ -127,10 +134,20 @@ export interface Conversation {
 export interface GenerationPrefs {
   /** 图片宽高比 */
   aspectRatio: string
+  /** 图片分辨率档位：2k | 4k */
+  imageResolution: string
+  /** 图片输出宽度（px） */
+  imageWidth: number
+  /** 图片输出高度（px） */
+  imageHeight: number
+  /** 宽高比锁定时，修改 W/H 自动联动 */
+  imageSizeLocked: boolean
   /** 视频宽高比 */
   videoAspectRatio: string
   /** 视频分辨率：480 | 720 | 1080 */
   videoResolution: string
+  /** 视频时长（秒） */
+  videoDuration: number
   autoMode: boolean
 }
 
@@ -144,7 +161,12 @@ export const APP_VERSION = 'V1.0.0'
 
 export const DEFAULT_GENERATION_PREFS: GenerationPrefs = {
   aspectRatio: '1:1',
+  imageResolution: '2k',
+  imageWidth: 2048,
+  imageHeight: 2048,
+  imageSizeLocked: true,
   videoAspectRatio: '16:9',
   videoResolution: '720',
+  videoDuration: 5,
   autoMode: true,
 }

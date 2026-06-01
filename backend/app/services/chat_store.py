@@ -143,7 +143,7 @@ def _metadata_json_from_raw(raw: dict[str, Any]) -> str:
             meta["variantIndex"] = val
         elif key == "metadata" and isinstance(val, dict):
             meta.update(val)
-        elif key in ("action", "targetAssistantId", "workingMemory", "toolCalls"):
+        elif key in ("action", "targetAssistantId", "workingMemory", "toolCalls", "thinking"):
             meta[key] = val
     nested = raw.get("metadata")
     if isinstance(nested, dict):
@@ -174,7 +174,7 @@ def _row_to_message(row: dict[str, Any]) -> dict[str, Any]:
     if meta.get("variantIndex") is not None:
         out["variantIndex"] = meta["variantIndex"]
     msg_meta: dict[str, Any] = {}
-    for k in ("action", "targetAssistantId", "workingMemory", "toolCalls"):
+    for k in ("action", "targetAssistantId", "workingMemory", "toolCalls", "thinking"):
         if k in meta:
             msg_meta[k] = meta[k]
     if msg_meta:

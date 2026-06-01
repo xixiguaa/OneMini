@@ -21,12 +21,69 @@ body,
   -webkit-font-smoothing: antialiased;
 }
 
+@keyframes elastic-bounce {
+  0% {
+    transform: scaleX(1) scaleY(1);
+  }
+
+  15% {
+    transform: scaleX(1.18) scaleY(0.82);
+  }
+
+  30% {
+    transform: scaleX(0.88) scaleY(1.15);
+  }
+
+  45% {
+    transform: scaleX(1.08) scaleY(0.93);
+  }
+
+  60% {
+    transform: scaleX(0.97) scaleY(1.05);
+  }
+
+  75% {
+    transform: scaleX(1.02) scaleY(0.98);
+  }
+
+  100% {
+    transform: scaleX(1) scaleY(1);
+  }
+}
+
+.brand-wordmark,
+.elastic-logo {
+  display: inline-block;
+  font-family: $font-brand;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  background: var(--brand-text-gradient);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  transform-origin: center bottom;
+  animation: elastic-bounce 2s cubic-bezier(0.36, 0.07, 0.19, 0.97) infinite;
+
+  @media (prefers-reduced-motion: reduce) {
+    animation: none;
+    transform: none;
+  }
+}
+
 button {
   font-family: inherit;
   cursor: pointer;
   border: none;
   background: none;
   transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+/* Teleport 弹出层：点击遮罩关闭 */
+.anchored-popover-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 9998;
+  background: transparent;
 }
 
 /* 主/次按钮：Cosmic Glassmorphism CTA */
@@ -99,6 +156,11 @@ select {
   font-family: inherit;
   outline: none;
   transition: border-color 0.2s, box-shadow 0.2s;
+
+  &:focus,
+  &:focus-visible {
+    outline: none;
+  }
 }
 
 select {
@@ -118,11 +180,14 @@ select {
   }
 }
 
-input:not([type='checkbox']):not([type='radio']):not([type='range']):not(.composer-input):not(.login-field-input),
-textarea:not(.composer-input) {
-  &:focus {
-    border-color: $accent;
-    box-shadow: $shadow-focus;
+/* 内嵌于外层容器的无边框输入：聚焦时不出现内层描边 */
+.embedded-field input,
+.embedded-field textarea {
+  &:focus,
+  &:focus-visible {
+    outline: none;
+    border: none;
+    box-shadow: none;
   }
 }
 

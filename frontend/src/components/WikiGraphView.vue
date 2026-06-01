@@ -1239,7 +1239,7 @@ watch(selectedNodeId, (id) => expandSectionForNode(id))
           <p v-if="sidebarListStats.total > 0 && !sidebarSearchActive" class="sidebar-hint">
             已构建的 wiki 页（概念、实体等）。「来源摘要」是 LLM 根据 raw 写的摘要，未构建前只在上方 Raw 列表显示，避免重复。
           </p>
-          <label v-if="showSidebarSearch" class="sidebar-search">
+          <label v-if="showSidebarSearch" class="sidebar-search embedded-field">
             <Search :size="14" class="sidebar-search-icon" aria-hidden="true" />
             <input
               v-model="sidebarSearch"
@@ -2131,6 +2131,13 @@ watch(selectedNodeId, (id) => expandSectionForNode(id))
   color: $text-primary;
   outline: none;
 
+  &:focus,
+  &:focus-visible {
+    outline: none;
+    border: none;
+    box-shadow: none;
+  }
+
   &::placeholder {
     color: $text-muted;
   }
@@ -2569,30 +2576,30 @@ watch(selectedNodeId, (id) => expandSectionForNode(id))
   min-width: 280px;
   max-width: 480px;
   height: 100%;
-  /* 图谱区固定深空玻璃阅读面（画布恒为深色） */
-  --text-primary: rgba(255, 255, 255, 0.92);
-  --text-secondary: rgba(255, 255, 255, 0.5);
-  --text-muted: rgba(255, 255, 255, 0.35);
-  --bg-elevated: rgba(255, 255, 255, 0.06);
-  --bg-input: rgba(0, 0, 0, 0.28);
-  --bg-card: rgba(255, 255, 255, 0.07);
-  --border-light: rgba(255, 255, 255, 0.13);
-  --accent: #7c5fe8;
-  --accent-emphasis: #8d72ec;
-  --accent-light: rgba(124, 95, 232, 0.14);
+  /* 图谱预览侧栏：不透明深色阅读面（避免透出浅色页面底） */
+  --text-primary: rgba(255, 255, 255, 0.94);
+  --text-secondary: rgba(255, 255, 255, 0.72);
+  --text-muted: rgba(255, 255, 255, 0.48);
+  --bg-elevated: rgba(255, 255, 255, 0.08);
+  --bg-input: rgba(0, 0, 0, 0.35);
+  --bg-card: rgba(255, 255, 255, 0.06);
+  --border-light: rgba(255, 255, 255, 0.14);
+  --link-color: rgba(167, 145, 255, 0.92);
+  --accent: #9b82f0;
+  --accent-emphasis: #b8a4ff;
+  --accent-light: rgba(124, 95, 232, 0.22);
+  --accent-cyan: #5ee4d0;
   --color-warning: #ffb830;
-  --color-danger: #ff5c7a;
+  --color-danger: #ff7a94;
   color: var(--text-secondary);
-  background: rgba(255, 255, 255, 0.07);
-  backdrop-filter: blur(24px);
-  -webkit-backdrop-filter: blur(24px);
+  background: linear-gradient(180deg, #12102a 0%, #0c0a1e 100%);
   display: flex;
   flex-direction: column;
   overflow: hidden;
   isolation: isolate;
   z-index: 25;
-  border-left: 0.5px solid rgba(255, 255, 255, 0.13);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12);
+  border-left: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: -8px 0 28px rgba(0, 0, 0, 0.28);
 }
 
 .graph-viewport.is-fullscreen .detail-panel {
@@ -2608,7 +2615,7 @@ watch(selectedNodeId, (id) => expandSectionForNode(id))
   gap: 12px;
   min-height: 44px;
   padding: 0 12px 0 14px;
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.05) 0%, transparent 100%);
+  background: rgba(255, 255, 255, 0.04);
   border-bottom: 1px solid var(--border-light);
 }
 
@@ -2618,7 +2625,7 @@ watch(selectedNodeId, (id) => expandSectionForNode(id))
   font-size: 13px;
   font-weight: 600;
   letter-spacing: 0.01em;
-  color: $text-primary;
+  color: var(--text-primary);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -2633,9 +2640,9 @@ watch(selectedNodeId, (id) => expandSectionForNode(id))
   height: 28px;
   padding: 0;
   border-radius: 7px;
-  border: 1px solid $border-light;
-  color: $text-secondary;
-  background: $bg-elevated;
+  border: 1px solid var(--border-light);
+  color: var(--text-secondary);
+  background: var(--bg-elevated);
   outline: none;
   transition:
     color 0.15s ease,
@@ -2643,9 +2650,9 @@ watch(selectedNodeId, (id) => expandSectionForNode(id))
     border-color 0.15s ease;
 
   &:hover {
-    color: $text-primary;
-    background: $accent-light;
-    border-color: color-mix(in srgb, $accent 35%, transparent);
+    color: var(--text-primary);
+    background: var(--accent-light);
+    border-color: color-mix(in srgb, var(--accent) 35%, transparent);
   }
 
   &:focus-visible {

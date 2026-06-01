@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { ArrowUp, ChevronDown, FileText, Loader2, Plus, X } from 'lucide-vue-next'
+import { ArrowUp, ChevronDown, Loader2, Plus } from 'lucide-vue-next'
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { ACCEPT_CHAT_FILES } from '../config/constants'
+import ChatAttachmentCard from './ChatAttachmentCard.vue'
 import ChatKnowledgeModeToggle from './ChatKnowledgeModeToggle.vue'
 import ModelLogo from './ModelLogo.vue'
 import { isModelReady, resolveChatModel } from '../utils/resolveModel'
@@ -38,8 +39,13 @@ const selectedModel = computed(() => {
 
 const isChatBusy = computed(() => agent.isChatProcessing)
 
+const attachmentsLoading = computed(() =>
+  agent.pendingAttachments.some((a) => a.loading),
+)
+
 const canSend = () =>
   !agent.isProcessing &&
+  !attachmentsLoading.value &&
   (agent.inputText.trim().length > 0 || agent.pendingAttachments.length > 0)
 
 const hasInput = () =>
@@ -48,7 +54,7 @@ const hasInput = () =>
 function onKeydown(e: KeyboardEvent) {
   if (e.key === 'Enter' && !e.shiftKey) {
     e.preventDefault()
-    if (agent.isProcessing || !hasInput()) return
+    if (agent.isProcessing || attachmentsLoading.value || !hasInput()) return
     agent.sendMessage('chat')
   }
 }
@@ -108,22 +114,16 @@ onUnmounted(() => {
 <template>
   <div class="chat-input-area" :class="{ centered }">
     <div class="input-inner">
-      <div v-if="agent.pendingAttachments.length" class="attachments">
-        <div
-          v-for="a in agent.pendingAttachments"
-          :key="a.id"
-          class="attach-item"
-        >
-          <img v-if="a.previewUrl" :src="a.previewUrl" alt="" class="thumb" />
-          <FileText v-else :size="18" class="doc-icon" />
-          <span class="name">{{ a.name }}</span>
-          <button type="button" class="remove" @click="agent.removeAttachment(a.id)">
-            <X :size="12" />
-          </button>
-        </div>
-      </div>
-
       <div class="composer-card">
+        <div v-if="agent.pendingAttachments.length" class="attachments">
+          <ChatAttachmentCard
+            v-for="a in agent.pendingAttachments"
+            :key="a.id"
+            :attachment="a"
+            @remove="agent.removeAttachment(a.id)"
+          />
+        </div>
+
         <textarea
           v-model="agent.inputText"
           class="composer-input"
@@ -138,7 +138,7 @@ onUnmounted(() => {
             <button
               type="button"
               class="attach-plus"
-              title="上传图片、Word、PDF、Markdown 等"
+              title="上传图片、Word、PDF、Excel、Markdown 等"
               @click="fileInput?.click()"
             >
               <Plus :size="20" stroke-width="1.75" />
@@ -200,8 +200,6 @@ onUnmounted(() => {
 @use '../styles/variables.scss' as *;
 @use '../styles/cosmic-glass.scss' as cosmic;
 
-$column-max: 48rem;
-
 .chat-input-area {
   flex-shrink: 0;
   padding: 12px 16px 20px;
@@ -213,52 +211,15 @@ $column-max: 48rem;
 }
 
 .input-inner {
-  max-width: $column-max;
+  max-width: $chat-column-max;
   margin: 0 auto;
 }
 
 .attachments {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: 10px;
   margin-bottom: 10px;
-}
-
-.attach-item {
-  @include cosmic.cosmic-glass-frost(10px);
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 6px 10px;
-  max-width: 200px;
-
-  .thumb {
-    width: 36px;
-    height: 36px;
-    object-fit: cover;
-    border-radius: 6px;
-  }
-
-  .doc-icon {
-    color: $accent;
-  }
-
-  .name {
-    font-size: 11px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    flex: 1;
-  }
-
-  .remove {
-    color: $text-muted;
-    padding: 2px;
-
-    &:hover {
-      color: $color-danger;
-    }
-  }
 }
 
 /* 统一玻璃输入卡：textarea 透明，无内层黑框 */
@@ -266,11 +227,13 @@ $column-max: 48rem;
   @include cosmic.cosmic-glass-frost(22px);
   display: flex;
   flex-direction: column;
-  height: 102px;
+  min-height: 102px;
+  height: auto;
   box-sizing: border-box;
   padding: 12px 14px 10px;
   background: var(--composer-bg, var(--glass-fill-gradient));
   transition: box-shadow 0.2s;
+  overflow: visible;
 
   &:focus-within {
     box-shadow:
@@ -330,7 +293,7 @@ $column-max: 48rem;
   gap: 4px;
   flex: 1;
   min-width: 0;
-  overflow: hidden;
+  overflow: visible;
 }
 
 .attach-plus {

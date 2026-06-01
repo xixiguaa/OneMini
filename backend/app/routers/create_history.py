@@ -3,7 +3,7 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
 from app.deps import get_current_user, get_current_user_media
-from app.services import create_history_store
+from app.services import create_history_store, public_gallery_store
 
 router = APIRouter(prefix="/create-history", tags=["create-history"])
 
@@ -21,6 +21,8 @@ class CreateHistoryItemIn(BaseModel):
     createdAt: int | None = None
     sessionId: str | None = None
     parentId: str | None = None
+    aspectRatio: str | None = None
+    editAction: str | None = None
 
     model_config = {"populate_by_name": True, "extra": "ignore"}
 
@@ -36,6 +38,8 @@ class PatchItemBody(BaseModel):
     modelName: str | None = None
     sessionId: str | None = None
     parentId: str | None = None
+    aspectRatio: str | None = None
+    editAction: str | None = None
 
 
 class SyncBody(BaseModel):
@@ -50,8 +54,8 @@ def get_create_history_media(
     """<img> 通过 ?access_token= JWT 鉴权（无法带 Authorization 头）。"""
     path = create_history_store.media_path(user_id, item_id)
     if not path.is_file():
-        raise HTTPException(404, "图片不存在或尚未缓存")
-    media_type = "image/jpeg"
+        raise HTTPException(404, "媒体不存在或尚未缓存")
+    media_type = "application/octet-stream"
     try:
         head = path.read_bytes()[:12]
         if head.startswith(b"\x89PNG"):
@@ -60,9 +64,62 @@ def get_create_history_media(
             media_type = "image/gif"
         elif head.startswith(b"RIFF") and b"WEBP" in head:
             media_type = "image/webp"
+        elif head.startswith(b"\xff\xd8"):
+            media_type = "image/jpeg"
+        elif len(head) >= 8 and head[4:8] == b"ftyp":
+            media_type = "video/mp4"
     except OSError:
         pass
     return FileResponse(path, media_type=media_type)
+
+
+@router.get("/public")
+def list_public_gallery(
+    type: str | None = Query(default=None, alias="type"),
+    _user_id: str = Depends(get_current_user),
+):
+    """发现页 / 公共短片：所有登录用户可见的公共作品。"""
+    items = public_gallery_store.list_items(type)
+    return {"items": items}
+
+
+@router.get("/public/media/{item_id}")
+def get_public_gallery_media(
+    item_id: str,
+    _user_id: str = Depends(get_current_user_media),
+):
+    path = public_gallery_store.media_path(item_id)
+    if not path.is_file():
+        raise HTTPException(404, "媒体不存在")
+    media_type = "application/octet-stream"
+    try:
+        head = path.read_bytes()[:12]
+        if head.startswith(b"\x89PNG"):
+            media_type = "image/png"
+        elif head.startswith(b"GIF"):
+            media_type = "image/gif"
+        elif head.startswith(b"RIFF") and b"WEBP" in head:
+            media_type = "image/webp"
+        elif head.startswith(b"\xff\xd8"):
+            media_type = "image/jpeg"
+        elif len(head) >= 8 and head[4:8] == b"ftyp":
+            media_type = "video/mp4"
+    except OSError:
+        pass
+    return FileResponse(path, media_type=media_type)
+
+
+@router.post("/public/{item_id}", status_code=201)
+def publish_to_public_gallery(
+    item_id: str,
+    user_id: str = Depends(get_current_user),
+):
+    """将个人创作发布到发现页 / 公共短片。"""
+    try:
+        item = public_gallery_store.publish_item(user_id, item_id)
+        return item
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
 
 
 @router.get("")
@@ -121,8 +178,13 @@ def delete_create_session(
 @router.delete("/versions/{version_id}")
 def delete_create_version(
     version_id: str,
+    cascade: bool = Query(default=False),
     user_id: str = Depends(get_current_user),
 ):
+    if cascade:
+        if not create_history_store.delete_version_cascade(user_id, version_id):
+            raise HTTPException(404, "版本不存在或已删除")
+        return {"ok": True, "versionId": version_id, "cascade": True}
     if not create_history_store.is_version_leaf(user_id, version_id):
         raise HTTPException(409, "存在后续编辑版本，无法删除")
     if not create_history_store.delete_version(user_id, version_id):

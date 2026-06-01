@@ -253,7 +253,7 @@ async def wiki_answer_stream(
     messages = build_wiki_query_messages(question, contexts, history, system_extra=system_extra)
 
     async def gen():
-        async for delta in stream_chat_completion(
+        async for event in stream_chat_completion(
             messages,
             model=mdl,
             provider=prov,
@@ -262,6 +262,7 @@ async def wiki_answer_stream(
             temperature=0.2,
             settings=settings,
         ):
-            yield delta
+            if event.get("type") == "content" and event.get("delta"):
+                yield event["delta"]
 
     return contexts, gen()

@@ -36,6 +36,11 @@ export async function deleteCreateSessionApi(sessionId: string): Promise<void> {
   await api.delete(`/sessions/${sessionId}`)
 }
 
-export async function deleteCreateVersionApi(versionId: string): Promise<void> {
-  await api.delete(`/versions/${versionId}`)
+export async function deleteCreateVersionApi(
+  versionId: string,
+  opts?: { cascade?: boolean },
+): Promise<void> {
+  await api.delete(`/versions/${versionId}`, {
+    params: opts?.cascade ? { cascade: true } : undefined,
+  })
 }

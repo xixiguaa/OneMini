@@ -297,19 +297,22 @@ export const useConversationsStore = defineStore('conversations', () => {
     conv.workingMemory = state
   }
 
+  type MessagePatch = Omit<Partial<ChatMessage>, 'feedback'> & { feedback?: MessageFeedback | null }
+
   function patchMessageLocal(
     conversationId: string,
     messageId: string,
-    patch: Partial<ChatMessage> & { feedback?: MessageFeedback | null },
+    patch: MessagePatch,
   ) {
     const conv = list.value.find((c) => c.id === conversationId)
     if (!conv) return null
     const idx = conv.messages.findIndex((m) => m.id === messageId)
     if (idx < 0) return null
     const prev = conv.messages[idx]
-    const next: ChatMessage = { ...prev, ...patch }
+    const { feedback, ...rest } = patch
+    const next: ChatMessage = { ...prev, ...rest }
     if ('feedback' in patch) {
-      if (patch.feedback) next.feedback = patch.feedback
+      if (feedback) next.feedback = feedback
       else delete next.feedback
     }
     conv.messages[idx] = next

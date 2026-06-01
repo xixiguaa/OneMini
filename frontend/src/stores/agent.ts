@@ -1,10 +1,13 @@
 import { defineStore } from 'pinia'
 import { computed, ref, watch } from 'vue'
-import { sendChatStream, generateImage, generateVideo } from '../api/agent'
+import { sendChatStream, generateImage, generateVideo, pollVideoTask } from '../api/agent'
 import { sendRagChatStream } from '../api/platform'
 import { sendWikiChatStream } from '../api/wiki'
 import { queryJob, submitJob } from '../api/hunyuan'
 import { listPluginSkills } from '../config/skillRegistry'
+import { DETAIL_REPAIR_PROMPT } from '../config/imageEditTools'
+import type { ImageEditAction } from '../utils/imageEditHistory'
+import type { DigitalHumanMode } from '../config/digitalHumanModes'
 import {
   runMultiAgentPipeline,
   shouldUseMultiAgent,
@@ -21,6 +24,7 @@ import type {
   WorkingMemoryState,
 } from '../types/agent'
 import {
+  classifyFile,
   formatAttachmentsForPrompt,
   parseFile,
   revokeAttachmentPreviews,
@@ -38,6 +42,7 @@ import {
   resolveLeafForBranch,
 } from '../services/conversationGraph'
 import { searchEpisodicMemory } from '../api/conversations'
+import { searchWeb } from '../api/platform'
 import {
   composeSystemPrompt,
   formatRuntimeModelHint,
@@ -47,12 +52,21 @@ import {
   composeEpisodicMemoryBlock,
   composeWorkingMemoryBlock,
   formatEpisodicSnippet,
-  parseStateUpdate,
   TOOL_AWARENESS_PROTOCOL,
   WORKING_MEMORY_PROTOCOL,
 } from '../utils/workingMemory'
+import {
+  isReasonerModel,
+  runTwoPhaseDeepThinking,
+} from '../services/deepThinkingChat'
+import {
+  composeDeepThinkingBlock,
+  composeWebSearchBlock,
+  parseAssistantReplyWithFallback,
+} from '../utils/deepThinking'
 import { resolveChatBaseUrl } from '../config/providers'
 import { resolveChatModel } from '../utils/resolveModel'
+import { withCreateHistoryMediaToken } from '../utils/createHistoryMedia'
 import { randomUUID } from '../utils/uuid'
 import { resolveVideoDimensions } from '../utils/videoSize'
 import { formatUserError } from '../utils/formatUserError'
@@ -100,6 +114,13 @@ export const useAgentStore = defineStore('agent', () => {
   const imageEditActiveId = ref<string | null>(null)
   const imageEditProcessingSessionId = ref<string | null>(null)
   const imageEditInput = ref('')
+  const imageEditComposeMode = ref<'edit' | 'video' | 'lipsync'>('edit')
+  const lipsyncDialogue = ref('')
+  const lipsyncAction = ref('')
+  const lipsyncVoiceLabel = ref('音色')
+  const lipsyncDigitalMode = ref<DigitalHumanMode>('fast')
+  /** 关闭编辑层后滚动定位到创作瀑布流中的会话卡片 */
+  const createGalleryLocateSessionId = ref<string | null>(null)
 
   let pollTimer: ReturnType<typeof setInterval> | null = null
 
@@ -203,6 +224,19 @@ export const useAgentStore = defineStore('agent', () => {
     },
   )
 
+  watch(createMode, (mode) => {
+    if (mode !== 'digitalHuman') return
+    const images = pendingAttachments.value.filter((a) => a.kind === 'image')
+    if (images.length <= 1) return
+    const keep = images[images.length - 1]!
+    for (const img of images) {
+      if (img.id !== keep.id && img.previewUrl) URL.revokeObjectURL(img.previewUrl)
+    }
+    pendingAttachments.value = pendingAttachments.value.filter(
+      (a) => a.kind !== 'image' || a.id === keep.id,
+    )
+  })
+
   function addMessage(
     msg: Omit<ChatMessage, 'id' | 'timestamp'>,
     opts?: { parentId?: string | null; activate?: boolean },
@@ -237,11 +271,40 @@ export const useAgentStore = defineStore('agent', () => {
     }
   }
 
-  function finalizeAssistantContent(messageId: string, raw: string) {
-    const { displayContent, workingMemory: wm } = parseStateUpdate(raw)
+  function finalizeAssistantContent(
+    messageId: string,
+    raw: string,
+    opts?: { thinkingStartedAt?: number; forceDeepThink?: boolean },
+  ) {
+    const parsed = parseAssistantReplyWithFallback(raw, opts)
+    const prev = getAllGraphMessages().find((m) => m.id === messageId)
+    const meta = { ...prev?.metadata }
+    if (parsed.thinking?.content?.trim()) {
+      meta.thinking = parsed.thinking
+    } else if (prev?.metadata?.thinking?.content?.trim()) {
+      meta.thinking = prev.metadata.thinking
+    }
+    if (parsed.workingMemory) meta.workingMemory = parsed.workingMemory
     patchMessage(messageId, {
-      content: displayContent || raw,
-      metadata: wm ? { workingMemory: wm } : undefined,
+      content: parsed.displayContent || raw,
+      metadata: Object.keys(meta).length ? meta : undefined,
+    })
+  }
+
+  function patchThinkingContent(
+    messageId: string,
+    thinkingContent: string,
+    answerContent: string,
+    durationMs?: number,
+  ) {
+    const prev = getAllGraphMessages().find((m) => m.id === messageId)
+    const meta = { ...prev?.metadata }
+    if (thinkingContent.trim()) {
+      meta.thinking = { content: thinkingContent, durationMs }
+    }
+    patchMessage(messageId, {
+      content: answerContent,
+      metadata: meta.thinking ? meta : prev?.metadata,
     })
   }
 
@@ -256,9 +319,37 @@ export const useAgentStore = defineStore('agent', () => {
   }
 
   async function addAttachments(files: FileList | File[]) {
-    const list = Array.from(files)
-    for (const file of list) {
-      pendingAttachments.value.push(await parseFile(file))
+    let queue = Array.from(files)
+    if (createMode.value === 'digitalHuman') {
+      const imageFiles = queue.filter(
+        (f) => classifyFile(f) === 'image' || f.type.startsWith('image/'),
+      )
+      if (!imageFiles.length) return
+      pendingAttachments.value = pendingAttachments.value.filter((a) => a.kind !== 'image')
+      queue = imageFiles.slice(0, 1)
+    }
+
+    for (const file of queue) {
+      const placeholderId = randomUUID()
+      pendingAttachments.value.push({
+        id: placeholderId,
+        name: file.name,
+        mime: file.type,
+        size: file.size,
+        kind: classifyFile(file),
+        loading: true,
+      })
+      try {
+        const parsed = await parseFile(file)
+        const idx = pendingAttachments.value.findIndex((a) => a.id === placeholderId)
+        if (idx < 0) {
+          if (parsed.previewUrl) URL.revokeObjectURL(parsed.previewUrl)
+          continue
+        }
+        pendingAttachments.value[idx] = { ...parsed, id: placeholderId, loading: false }
+      } catch {
+        removeAttachment(placeholderId)
+      }
     }
   }
 
@@ -327,6 +418,16 @@ export const useAgentStore = defineStore('agent', () => {
       }
     }
 
+    let webSearchBlock = ''
+    if (platform.webSearchEnabled && !conversations.isIncognito) {
+      try {
+        const webHits = await searchWeb(fullContent.slice(0, 300), 5)
+        webSearchBlock = composeWebSearchBlock(webHits)
+      } catch {
+        /* 联网搜索失败时继续对话 */
+      }
+    }
+
     const wmBlock = composeWorkingMemoryBlock(workingMemory.value)
     const systemPrompt = [
       composeSystemPrompt(
@@ -337,8 +438,10 @@ export const useAgentStore = defineStore('agent', () => {
       ),
       WORKING_MEMORY_PROTOCOL,
       TOOL_AWARENESS_PROTOCOL,
+      composeDeepThinkingBlock(platform.deepThinkingEnabled),
       wmBlock,
       composeEpisodicMemoryBlock(episodicSnippets),
+      webSearchBlock,
       runtimeHint,
     ]
       .filter(Boolean)
@@ -370,7 +473,10 @@ export const useAgentStore = defineStore('agent', () => {
       return assistantId
     }
 
-    const temperature = agentConfig.skeleton.models.temperature
+    let temperature = agentConfig.skeleton.models.temperature
+    if (platform.deepThinkingEnabled) {
+      temperature = Math.min(temperature, 0.25)
+    }
 
     if (shouldUseMultiAgent(fullContent, agentConfig.skeleton.multiAgent)) {
       isStreaming.value = true
@@ -485,26 +591,151 @@ export const useAgentStore = defineStore('agent', () => {
         trackToolCall(aid, { id: 'wiki', name: 'LLM-Wiki', status: 'done' })
         finalizeAssistantContent(aid, accumulated)
       } else {
-        await sendChatStream({
-          messages: [
-            { role: 'system', content: systemPrompt },
-            ...history,
-            { role: 'user', content: fullContent },
-          ],
+        const aid = ensureAssistantMessage()
+        if (platform.webSearchEnabled && webSearchBlock) {
+          trackToolCall(aid, { id: 'web-search', name: '联网搜索', status: 'done' })
+          patchMessage(aid, { content: '🌐 联网检索完成，正在生成回答…\n\n' })
+          accumulated = '🌐 联网检索完成，正在生成回答…\n\n'
+        }
+
+        const chatMessages = [
+          { role: 'system', content: systemPrompt },
+          ...history,
+          { role: 'user', content: fullContent },
+        ]
+        const streamBase = {
+          messages: chatMessages,
           model: model.model,
           provider: model.provider,
           baseUrl: resolveChatBaseUrl(model.provider, model.baseUrl),
           modelConfigId: model.id,
           temperature,
-          onDelta: (chunk) => {
-            accumulated += chunk
-            patchMessage(ensureAssistantMessage(), { content: accumulated })
-          },
-        })
-        if (assistantId) finalizeAssistantContent(assistantId, accumulated)
+        }
+
+        const deepThinkStart = platform.deepThinkingEnabled ? Date.now() : 0
+        let thinkingAcc = ''
+        let thinkingClosed = false
+
+        if (platform.deepThinkingEnabled) {
+          patchThinkingContent(aid, '正在分析问题…', accumulated)
+
+          if (isReasonerModel(model)) {
+            await sendChatStream({
+              ...streamBase,
+              onThinkingDelta: (chunk) => {
+                thinkingAcc += chunk
+                patchThinkingContent(aid, thinkingAcc, accumulated)
+              },
+              onDelta: (chunk) => {
+                if (thinkingAcc && !thinkingClosed) {
+                  thinkingClosed = true
+                  const elapsed = Date.now() - deepThinkStart
+                  patchThinkingContent(aid, thinkingAcc, accumulated, elapsed)
+                }
+                accumulated += chunk
+                patchThinkingContent(
+                  aid,
+                  thinkingAcc,
+                  accumulated,
+                  thinkingClosed ? Date.now() - deepThinkStart : undefined,
+                )
+              },
+            })
+          } else {
+            let thinkDurationMs = 0
+            const twoPhase = await runTwoPhaseDeepThinking({
+              ...streamBase,
+              userQuestion: fullContent,
+              handlers: {
+                onThinkingDelta: (chunk) => {
+                  thinkingAcc += chunk
+                  patchThinkingContent(aid, thinkingAcc, accumulated)
+                },
+                onAnswerDelta: (chunk) => {
+                  if (!thinkDurationMs && thinkingAcc) {
+                    thinkDurationMs = Date.now() - deepThinkStart
+                  }
+                  accumulated += chunk
+                  patchThinkingContent(
+                    aid,
+                    thinkingAcc,
+                    accumulated,
+                    thinkDurationMs || undefined,
+                  )
+                },
+              },
+            })
+            thinkingAcc = twoPhase.thinking || thinkingAcc
+            accumulated = twoPhase.answer || accumulated
+            thinkDurationMs = twoPhase.thinkingDurationMs || thinkDurationMs
+            patchThinkingContent(
+              aid,
+              thinkingAcc,
+              accumulated,
+              thinkDurationMs,
+            )
+          }
+
+          if (assistantId) {
+            if (!accumulated.trim() && thinkingAcc.trim()) {
+              accumulated = thinkingAcc
+            }
+            finalizeAssistantContent(assistantId, accumulated, {
+              thinkingStartedAt: deepThinkStart,
+              forceDeepThink: false,
+            })
+            const after = getAllGraphMessages().find((m) => m.id === assistantId)
+            if (thinkingAcc && !after?.metadata?.thinking?.content) {
+              patchMessage(assistantId, {
+                content: after?.content || accumulated,
+                metadata: {
+                  ...after?.metadata,
+                  thinking: {
+                    content: thinkingAcc,
+                    durationMs: Date.now() - deepThinkStart,
+                  },
+                },
+              })
+            } else if (thinkingAcc && after) {
+              patchThinkingContent(
+                assistantId,
+                thinkingAcc,
+                after.content || accumulated,
+                after.metadata?.thinking?.durationMs ?? Date.now() - deepThinkStart,
+              )
+            }
+          }
+        } else {
+          await sendChatStream({
+            ...streamBase,
+            onDelta: (chunk) => {
+              accumulated += chunk
+              patchMessage(aid, { content: accumulated })
+            },
+          })
+          if (assistantId) {
+            finalizeAssistantContent(assistantId, accumulated)
+          }
+        }
       }
     } finally {
       isStreaming.value = false
+    }
+  }
+
+  function imageGenParams(prompt: string, model?: ModelConfig, imageUrl?: string) {
+    const prefs = settings.settings.generationPrefs
+    return {
+      prompt,
+      imageUrl,
+      model: model?.model,
+      provider: model?.provider,
+      modelConfigId: model?.id,
+      baseUrl: model?.baseUrl,
+      aspectRatio: prefs.aspectRatio,
+      resolution: prefs.imageResolution,
+      width: prefs.imageWidth,
+      height: prefs.imageHeight,
     }
   }
 
@@ -515,14 +746,7 @@ export const useAgentStore = defineStore('agent', () => {
     }
     const prompt = buildUserContent(content)
     const imageAtt = pendingAttachments.value.find((a) => a.kind === 'image')
-    const result = await generateImage({
-      prompt,
-      model: model.model,
-      provider: model.provider,
-      modelConfigId: model.id,
-      baseUrl: model.baseUrl,
-      aspectRatio: settings.settings.generationPrefs.aspectRatio,
-    })
+    const result = await generateImage(imageGenParams(prompt, model))
     addMessage({
       role: 'assistant',
       type: 'image',
@@ -544,6 +768,7 @@ export const useAgentStore = defineStore('agent', () => {
       modelConfigId: model?.id,
       aspectRatio: prefs.videoAspectRatio,
       resolution: prefs.videoResolution,
+      duration: prefs.videoDuration,
       width,
       height,
     }
@@ -895,8 +1120,14 @@ export const useAgentStore = defineStore('agent', () => {
       status: 'RUNNING',
       modelId: model?.id,
       modelName: model?.name,
+      editAction: skill === 'video' ? 'video-generate' : 'generate',
+      aspectRatio:
+        skill === 'video'
+          ? settings.settings.generationPrefs.videoAspectRatio
+          : settings.settings.generationPrefs.aspectRatio,
     })
 
+    openImageEdit(entry)
     inputText.value = ''
 
     try {
@@ -909,14 +1140,7 @@ export const useAgentStore = defineStore('agent', () => {
       }
 
       if (skill === 'image') {
-        const result = await generateImage({
-          prompt,
-          model: model.model,
-          provider: model.provider,
-          modelConfigId: model.id,
-          baseUrl: model.baseUrl,
-          aspectRatio: settings.settings.generationPrefs.aspectRatio,
-        })
+        const result = await generateImage(imageGenParams(prompt, model))
         await createHistory.complete(entry.id, {
           url: result.url,
           previewUrl: result.url,
@@ -925,18 +1149,36 @@ export const useAgentStore = defineStore('agent', () => {
         })
       } else {
         const imageAtt = pendingAttachments.value.find((a) => a.base64)
-        const result = await generateVideo(
-          videoGenParams(prompt, imageAtt?.base64, model),
-        )
+        const videoParams = videoGenParams(prompt, imageAtt?.base64, model)
+        const submitted = await generateVideo({
+          ...videoParams,
+          modelConfigId: model.id,
+          baseUrl: model.baseUrl,
+        })
+        if (!submitted.jobId) {
+          throw new Error('视频 API 未返回任务 ID')
+        }
+        createHistory.update(entry.id, { jobId: submitted.jobId, status: 'RUNNING' })
+
+        const done = await pollVideoTask({
+          jobId: submitted.jobId,
+          modelConfigId: model.id,
+          provider: model.provider,
+          baseUrl: model.baseUrl,
+        })
         await createHistory.complete(entry.id, {
-          url: result.url,
-          previewUrl: result.url,
-          jobId: result.jobId,
+          url: done.url,
+          previewUrl: done.url,
+          jobId: submitted.jobId,
           status: 'DONE',
+          sessionId: entry.id,
         })
       }
     } catch (err: unknown) {
       await createHistory.discard(entry.id)
+      if (imageEditSessionId.value === (entry.sessionId || entry.id)) {
+        closeImageEdit()
+      }
       notifyError(err, skill === 'image' ? '图片生成失败' : '视频生成失败')
       throw err
     } finally {
@@ -946,19 +1188,127 @@ export const useAgentStore = defineStore('agent', () => {
     }
   }
 
+  async function blobToBase64(blob: Blob): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader()
+      reader.onload = () => {
+        const result = reader.result as string
+        resolve(result.split(',')[1] ?? '')
+      }
+      reader.onerror = reject
+      reader.readAsDataURL(blob)
+    })
+  }
+
+  async function setReferenceImageFromUrl(url: string, name = 'reference.jpg') {
+    clearAttachments()
+    const fetchUrl = withCreateHistoryMediaToken(url)
+    const response = await fetch(fetchUrl)
+    if (!response.ok) {
+      throw new Error('参考图加载失败')
+    }
+    const blob = await response.blob()
+    const base64 = await blobToBase64(blob)
+    pendingAttachments.value.push({
+      id: randomUUID(),
+      name,
+      mime: blob.type || 'image/jpeg',
+      size: blob.size,
+      kind: 'image',
+      previewUrl: fetchUrl,
+      base64,
+    })
+  }
+
+  async function startVideoComposeFromImageEdit(imageUrl: string, prompt = '') {
+    createMode.value = 'video'
+    inputText.value = prompt
+    imageEditComposeMode.value = 'video'
+    await setReferenceImageFromUrl(imageUrl)
+  }
+
+  async function commitVideoComposeFromImageEdit() {
+    createMode.value = 'video'
+    imageEditComposeMode.value = 'edit'
+    try {
+      await generateCreateMedia('video')
+    } catch (err: unknown) {
+      console.error('[video-compose]', err)
+    }
+  }
+
+  function cancelVideoComposeFromImageEdit() {
+    if (imageEditComposeMode.value !== 'video') return
+    imageEditComposeMode.value = 'edit'
+    clearAttachments()
+    inputText.value = ''
+    createMode.value = imageEditActive.value?.type === 'video' ? 'video' : 'image'
+  }
+
+  async function startLipsyncFromImageEdit(imageUrl: string, dialogue = '') {
+    if (imageEditComposeMode.value === 'video') {
+      cancelVideoComposeFromImageEdit()
+    }
+    imageEditComposeMode.value = 'lipsync'
+    lipsyncDialogue.value = dialogue
+    lipsyncAction.value = ''
+    lipsyncVoiceLabel.value = '音色'
+    inputText.value = ''
+    await setReferenceImageFromUrl(imageUrl)
+  }
+
+  function cancelLipsyncFromImageEdit() {
+    if (imageEditComposeMode.value !== 'lipsync') return
+    imageEditComposeMode.value = 'edit'
+    lipsyncDialogue.value = ''
+    lipsyncAction.value = ''
+    lipsyncVoiceLabel.value = '音色'
+    clearAttachments()
+    createMode.value = imageEditActive.value?.type === 'video' ? 'video' : 'image'
+  }
+
+  async function commitLipsyncFromImageEdit() {
+    if (!lipsyncDialogue.value.trim()) {
+      throw new Error('请输入角色台词')
+    }
+    closeImageEdit()
+    setCurrentView('create')
+    inputText.value = lipsyncDialogue.value.trim()
+    lipsyncDialogue.value = ''
+    lipsyncAction.value = ''
+    imageEditComposeMode.value = 'edit'
+  }
+
   function openImageEdit(item: CreateHistoryItem) {
-    if (item.type !== 'image' || item.status !== 'DONE' || !item.url) return
+    if (item.type !== 'image' && item.type !== 'video') return
+    const canOpen =
+      item.status === 'RUNNING' || (item.status === 'DONE' && !!item.url)
+    if (!canOpen) return
+
     const sessionId = item.sessionId || item.id
     imageEditSessionId.value = sessionId
     imageEditActiveId.value = item.id
     imageEditInput.value = ''
-    createMode.value = 'image'
+    inputText.value = ''
+    imageEditComposeMode.value = 'edit'
+    lipsyncDialogue.value = ''
+    lipsyncAction.value = ''
+    createMode.value = item.type === 'video' ? 'video' : 'image'
   }
 
   function closeImageEdit() {
     imageEditSessionId.value = null
     imageEditActiveId.value = null
     imageEditInput.value = ''
+    imageEditComposeMode.value = 'edit'
+    lipsyncDialogue.value = ''
+    lipsyncAction.value = ''
+  }
+
+  function locateCreateGallerySession(sessionId: string) {
+    closeImageEdit()
+    setCurrentView('create')
+    createGalleryLocateSessionId.value = sessionId
   }
 
   function selectImageEditVersion(id: string) {
@@ -982,10 +1332,17 @@ export const useAgentStore = defineStore('agent', () => {
   async function deleteImageEditVersion(versionId: string) {
     const createHistory = useCreateHistoryStore()
     const sessionId = imageEditSessionId.value
-    if (!sessionId || !createHistory.isVersionLeaf(versionId)) return false
+    if (!sessionId) return false
 
-    const wasActive = imageEditActiveId.value === versionId
-    const ok = await createHistory.removeVersion(versionId)
+    const sessionVersions = createHistory.sessionItems(sessionId)
+    const target = sessionVersions.find((v) => v.id === versionId)
+    if (!target) return false
+
+    const subtreeIds = new Set(createHistory.versionSubtreeIds(versionId, sessionVersions))
+    const activeId = imageEditActiveId.value
+    const activeInSubtree = activeId != null && subtreeIds.has(activeId)
+
+    const ok = await createHistory.removeVersionCascade(versionId)
     if (!ok) return false
 
     const remaining = createHistory.sessionItems(sessionId)
@@ -994,8 +1351,13 @@ export const useAgentStore = defineStore('agent', () => {
       return true
     }
 
-    if (wasActive) {
+    if (activeInSubtree) {
+      const parent =
+        target.parentId != null
+          ? remaining.find((v) => v.id === target.parentId)
+          : undefined
       const next =
+        parent ??
         [...remaining].reverse().find((v) => v.status === 'DONE') ??
         remaining[remaining.length - 1]
       imageEditActiveId.value = next.id
@@ -1004,63 +1366,188 @@ export const useAgentStore = defineStore('agent', () => {
   }
 
   function canDeleteImageEditVersion(versionId: string) {
-    return useCreateHistoryStore().isVersionLeaf(versionId)
+    const sessionId = imageEditSessionId.value
+    if (!sessionId) return false
+    return useCreateHistoryStore()
+      .sessionItems(sessionId)
+      .some((v) => v.id === versionId)
   }
 
-  async function submitImageEdit() {
-    const prompt = imageEditInput.value.trim()
-    const active = imageEditActive.value
+  async function submitImageEdit(
+    overridePrompt?: string,
+    referenceVersionId?: string,
+    editAction: ImageEditAction = 'prompt-edit',
+  ): Promise<boolean> {
+    const prompt = (overridePrompt ?? imageEditInput.value).trim()
     const sessionId = imageEditSessionId.value
-    if (!prompt || !active?.url || !sessionId) return
+    if (!prompt || !sessionId) return false
+
+    const versions = imageEditVersions.value
+    const reference =
+      (referenceVersionId ? versions.find((v) => v.id === referenceVersionId) : null) ??
+      imageEditActive.value
+    if (!reference?.url) return false
 
     const createHistory = useCreateHistoryStore()
-    if (createHistory.sessionItems(sessionId).some((v) => v.status === 'RUNNING')) return
-    if (imageEditProcessingSessionId.value === sessionId) return
+    if (createHistory.sessionItems(sessionId).some((v) => v.status === 'RUNNING')) return false
+    if (imageEditProcessingSessionId.value === sessionId) return false
+
+    if (reference.type === 'video') {
+      await submitVideoEdit(prompt, reference, sessionId)
+      return true
+    }
 
     imageEditProcessingSessionId.value = sessionId
     const model =
-      (active.modelId ? settings.getModel(active.modelId) : null) ??
+      (reference.modelId ? settings.getModel(reference.modelId) : null) ??
       requireModelForSkill('image')
+
+    const aspectRatio =
+      reference.aspectRatio ?? settings.settings.generationPrefs.aspectRatio
 
     const entry = createHistory.add({
       prompt,
       type: 'image',
       status: 'RUNNING',
-      parentId: active.id,
+      parentId: reference.id,
       sessionId,
       modelId: model?.id,
       modelName: model?.name,
+      aspectRatio,
+      editAction,
     })
     imageEditActiveId.value = entry.id
     imageEditInput.value = ''
 
     try {
       if (!model) throw new Error('请在「模型配置」添加图片生成模型并填写 API Key')
+      const prefs = settings.settings.generationPrefs
       const result = await generateImage({
-        prompt,
-        imageUrl: active.url,
-        model: model.model,
-        provider: model.provider,
-        modelConfigId: model.id,
-        baseUrl: model.baseUrl,
-        aspectRatio: settings.settings.generationPrefs.aspectRatio,
+        ...imageGenParams(prompt, model, reference.url),
+        aspectRatio,
+        resolution: prefs.imageResolution,
       })
       await createHistory.complete(entry.id, {
         url: result.url,
         previewUrl: result.url,
         status: 'DONE',
       })
+      return true
+    } catch (err: unknown) {
+      await createHistory.discard(entry.id)
+      imageEditActiveId.value = reference.id
+      notifyError(err, '图片编辑失败')
+      console.error('[image-edit]', err)
+      return false
+    } finally {
+      imageEditProcessingSessionId.value = null
+    }
+  }
+
+  async function submitDetailRepair(): Promise<boolean> {
+    const active = imageEditActive.value
+    const sessionId = imageEditSessionId.value
+    if (!active?.url || !sessionId || active.type === 'video') return false
+
+    const createHistory = useCreateHistoryStore()
+    if (createHistory.sessionItems(sessionId).some((v) => v.status === 'RUNNING')) return false
+    if (imageEditProcessingSessionId.value === sessionId) return false
+
+    imageEditComposeMode.value = 'edit'
+    return submitImageEdit(DETAIL_REPAIR_PROMPT, undefined, 'detail-repair')
+  }
+
+  function reeditImageEditVersion(versionId: string) {
+    selectImageEditVersion(versionId)
+    imageEditComposeMode.value = 'edit'
+    const version = imageEditVersions.value.find((v) => v.id === versionId)
+    if (!version) return
+    inputText.value =
+      version.prompt.trim() === DETAIL_REPAIR_PROMPT ? '' : version.prompt
+  }
+
+  async function regenerateImageEditVersion(versionId: string): Promise<boolean> {
+    const versions = imageEditVersions.value
+    const version = versions.find((v) => v.id === versionId)
+    if (!version?.parentId || !version.prompt.trim()) return false
+    const parent = versions.find((v) => v.id === version.parentId)
+    if (!parent?.url) return false
+
+    imageEditComposeMode.value = 'edit'
+    const action = version.editAction as ImageEditAction | undefined
+    return submitImageEdit(
+      version.prompt,
+      parent.id,
+      action === 'detail-repair' || version.prompt.trim() === DETAIL_REPAIR_PROMPT
+        ? 'detail-repair'
+        : action ?? 'prompt-edit',
+    )
+  }
+
+  async function submitVideoEdit(
+    prompt: string,
+    active: CreateHistoryItem,
+    sessionId: string,
+  ) {
+    const createHistory = useCreateHistoryStore()
+    imageEditProcessingSessionId.value = sessionId
+    const model =
+      (active.modelId ? settings.getModel(active.modelId) : null) ??
+      requireModelForSkill('video')
+
+    const entry = createHistory.add({
+      prompt,
+      type: 'video',
+      status: 'RUNNING',
+      parentId: active.id,
+      sessionId,
+      modelId: model?.id,
+      modelName: model?.name,
+      aspectRatio: settings.settings.generationPrefs.videoAspectRatio,
+      editAction: 'video-edit',
+    })
+    imageEditActiveId.value = entry.id
+    imageEditInput.value = ''
+
+    try {
+      if (!model) throw new Error('请配置视频生成模型 API Key')
+      const videoParams = videoGenParams(prompt, undefined, model)
+      const submitted = await generateVideo({
+        ...videoParams,
+        modelConfigId: model.id,
+        baseUrl: model.baseUrl,
+      })
+      if (!submitted.jobId) throw new Error('视频 API 未返回任务 ID')
+      createHistory.update(entry.id, { jobId: submitted.jobId, status: 'RUNNING' })
+
+      const done = await pollVideoTask({
+        jobId: submitted.jobId,
+        modelConfigId: model.id,
+        provider: model.provider,
+        baseUrl: model.baseUrl,
+      })
+      await createHistory.complete(entry.id, {
+        url: done.url,
+        previewUrl: done.url,
+        jobId: submitted.jobId,
+        status: 'DONE',
+      })
     } catch (err: unknown) {
       await createHistory.discard(entry.id)
       imageEditActiveId.value = active.id
-      notifyError(err, '图片编辑失败')
-      console.error('[image-edit]', err)
+      notifyError(err, '短片编辑失败')
+      console.error('[video-edit]', err)
     } finally {
       imageEditProcessingSessionId.value = null
     }
   }
 
   async function generateFromStudio() {
+    if (createMode.value === 'digitalHuman') {
+      useToastStore().show({ message: '数字人即将推出', kind: 'info' })
+      return
+    }
+
     const skill = skillFromCreateMode(createMode.value)
     if (skill === 'chat') {
       currentView.value = 'chat'
@@ -1199,10 +1686,18 @@ export const useAgentStore = defineStore('agent', () => {
     worldStatus,
     worldPreviewUrl,
     imageEditOpen,
+    imageEditSessionId,
     imageEditVersions,
     imageEditActive,
     imageEditLoading,
     imageEditInput,
+    imageEditComposeMode,
+    lipsyncDialogue,
+    lipsyncAction,
+    lipsyncVoiceLabel,
+    lipsyncDigitalMode,
+    createGalleryLocateSessionId,
+    locateCreateGallerySession,
     openImageEdit,
     closeImageEdit,
     selectImageEditVersion,
@@ -1211,6 +1706,15 @@ export const useAgentStore = defineStore('agent', () => {
     deleteImageEditVersion,
     canDeleteImageEditVersion,
     submitImageEdit,
+    submitDetailRepair,
+    reeditImageEditVersion,
+    regenerateImageEditVersion,
+    startVideoComposeFromImageEdit,
+    commitVideoComposeFromImageEdit,
+    cancelVideoComposeFromImageEdit,
+    startLipsyncFromImageEdit,
+    cancelLipsyncFromImageEdit,
+    commitLipsyncFromImageEdit,
     addAttachments,
     removeAttachment,
     clearAttachments,

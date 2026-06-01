@@ -16,15 +16,6 @@ const isEmpty = computed(() => !agent.messages.length)
 
 <template>
   <div class="chat-view">
-    <div class="chat-aurora" aria-hidden="true">
-      <div class="chat-aurora__mesh" />
-      <div class="chat-aurora__blob chat-aurora__blob--purple" />
-      <div class="chat-aurora__blob chat-aurora__blob--pink" />
-      <div class="chat-aurora__blob chat-aurora__blob--blue" />
-      <div class="chat-aurora__blob chat-aurora__blob--lavender" />
-      <div class="chat-aurora__grain" />
-    </div>
-
     <div class="chat-view__body">
       <div v-if="isEmpty" class="chat-empty">
         <div class="empty-hero" :class="{ 'empty-hero--incognito': agent.isIncognito }">
@@ -57,7 +48,6 @@ const isEmpty = computed(() => !agent.messages.length)
 
 <style scoped lang="scss">
 @use '../styles/variables.scss' as *;
-@use '../styles/cosmic-glass.scss' as cosmic;
 
 .chat-view {
   flex: 1;
@@ -68,85 +58,6 @@ const isEmpty = computed(() => !agent.messages.length)
   min-height: 0;
   position: relative;
   overflow: hidden;
-}
-
-.chat-aurora {
-  @include cosmic.aurora-mesh-panel;
-}
-
-.chat-aurora__mesh {
-  position: absolute;
-  inset: 0;
-  background: var(--chat-mesh-overlay);
-  opacity: 0.92;
-}
-
-.chat-aurora__grain {
-  position: absolute;
-  inset: 0;
-  opacity: 0.025;
-  background-image: var(--glass-noise-image);
-  background-size: 180px 180px;
-  mix-blend-mode: soft-light;
-}
-
-.chat-aurora__blob {
-  position: absolute;
-  border-radius: 50%;
-
-  &--purple {
-    @include cosmic.aurora-mesh-blob(
-      min(62vw, 560px),
-      min(56vh, 520px),
-      $bottom: -18%,
-      $left: -12%,
-      $color: var(--chat-blob-purple),
-      $animation: chat-aurora-drift-1 16s ease-in-out infinite,
-      $blur: 110px
-    );
-  }
-
-  &--pink {
-    @include cosmic.aurora-mesh-blob(
-      min(54vw, 500px),
-      min(50vh, 460px),
-      $top: -14%,
-      $right: -6%,
-      $color: var(--chat-blob-pink),
-      $animation: chat-aurora-drift-2 18s ease-in-out infinite,
-      $blur: 105px
-    );
-  }
-
-  &--blue {
-    @include cosmic.aurora-mesh-blob(
-      min(46vw, 420px),
-      min(44vh, 400px),
-      $top: 42%,
-      $left: 32%,
-      $color: var(--chat-blob-blue),
-      $animation: chat-aurora-drift-3 20s ease-in-out infinite,
-      $blur: 95px
-    );
-  }
-
-  &--lavender {
-    @include cosmic.aurora-mesh-blob(
-      min(38vw, 360px),
-      min(36vh, 340px),
-      $top: 8%,
-      $left: 12%,
-      $color: var(--chat-blob-lavender),
-      $animation: chat-aurora-drift-4 22s ease-in-out infinite,
-      $blur: 90px
-    );
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .chat-aurora__blob {
-    animation: none !important;
-  }
 }
 
 .chat-view__body {
@@ -167,7 +78,7 @@ const isEmpty = computed(() => !agent.messages.length)
 
 .banner-wrap {
   flex-shrink: 0;
-  max-width: 48rem;
+  max-width: $chat-column-max;
   width: 100%;
   margin: 0 auto;
   padding: 12px 20px 0;
@@ -184,7 +95,7 @@ const isEmpty = computed(() => !agent.messages.length)
 
 .empty-hero {
   width: 100%;
-  max-width: 48rem;
+  max-width: $chat-column-max;
   display: flex;
   flex-direction: column;
   align-items: stretch;

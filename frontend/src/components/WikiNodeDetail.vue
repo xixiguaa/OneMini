@@ -250,15 +250,15 @@ const propertyRows = computed((): PropRow[] => {
   padding: 2px 8px;
   border-radius: 4px;
   font-size: 12px;
-  background: rgba(124, 95, 232, 0.18);
-  color: color-mix(in srgb, $accent 85%, white);
-  border: 0.5px solid rgba(124, 95, 232, 0.32);
+  background: rgba(124, 95, 232, 0.26);
+  color: rgba(210, 198, 255, 0.95);
+  border: 0.5px solid rgba(155, 130, 240, 0.4);
   word-break: break-all;
 
   &.path {
-    background: rgba(124, 95, 232, 0.14);
-    color: var(--link-color, rgba(140, 110, 255, 0.75));
-    border-color: rgba(124, 95, 232, 0.28);
+    background: rgba(124, 95, 232, 0.18);
+    color: var(--link-color, rgba(167, 145, 255, 0.92));
+    border-color: rgba(124, 95, 232, 0.35);
     font-family: ui-monospace, monospace;
     font-size: 11px;
   }
@@ -313,15 +313,15 @@ const propertyRows = computed((): PropRow[] => {
   }
 
   :deep(code) {
-    background: rgba(30, 150, 190, 0.1);
-    color: $accent-cyan;
-    border: 0.5px solid rgba(30, 150, 190, 0.18);
+    background: rgba(30, 150, 190, 0.18);
+    color: var(--accent-cyan, #5ee4d0);
+    border: 0.5px solid rgba(30, 150, 190, 0.28);
     font-size: 0.88em;
   }
 
   :deep(pre) {
-    background: #1a1a35;
-    border: 1px solid $border-light;
+    background: rgba(0, 0, 0, 0.35);
+    border: 1px solid var(--border-light, rgba(255, 255, 255, 0.14));
   }
 
   :deep(pre code) {

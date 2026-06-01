@@ -1,6 +1,7 @@
 import { getAuthToken } from './authToken'
 
 const MEDIA_PATH = '/api/platform/create-history/media/'
+const PUBLIC_MEDIA_PATH = '/api/platform/create-history/public/media/'
 
 /** 浏览器 <img> 无法带 Authorization，使用 access_token 查询参数 */
 export function createHistoryMediaUrl(itemId: string): string {
@@ -10,8 +11,15 @@ export function createHistoryMediaUrl(itemId: string): string {
   return `${MEDIA_PATH}${id}?access_token=${encodeURIComponent(token)}`
 }
 
+export function publicGalleryMediaUrl(itemId: string): string {
+  const id = encodeURIComponent(itemId)
+  const token = getAuthToken()
+  if (!token) return ''
+  return `${PUBLIC_MEDIA_PATH}${id}?access_token=${encodeURIComponent(token)}`
+}
+
 export function withCreateHistoryMediaToken(url: string): string {
-  if (!url.includes(MEDIA_PATH)) return url
+  if (!url.includes(MEDIA_PATH) && !url.includes(PUBLIC_MEDIA_PATH)) return url
   const token = getAuthToken()
   if (!token) return url
   try {
@@ -35,11 +43,32 @@ export function resolveCreateHistoryImageUrl(item: {
   previewUrl?: string
 }): string | undefined {
   const raw = item.url || item.previewUrl
-  if (item.type !== 'image') return raw
   if (item.status !== 'DONE' || !item.id) return raw
   if (raw && !raw.includes(MEDIA_PATH) && (raw.startsWith('http') || raw.startsWith('data:'))) {
     return raw
   }
   if (raw?.includes(MEDIA_PATH)) return withCreateHistoryMediaToken(raw)
-  return createHistoryMediaUrl(item.id)
+  if (item.type === 'image' || item.type === 'video') {
+    return createHistoryMediaUrl(item.id)
+  }
+  return raw
+}
+
+export function resolvePublicGalleryMediaUrl(item: {
+  id: string
+  type: string
+  status: string
+  url?: string
+  previewUrl?: string
+}): string | undefined {
+  const raw = item.url || item.previewUrl
+  if (item.status !== 'DONE' || !item.id) return raw
+  if (raw && !raw.includes(PUBLIC_MEDIA_PATH) && (raw.startsWith('http') || raw.startsWith('data:'))) {
+    return raw
+  }
+  if (raw?.includes(PUBLIC_MEDIA_PATH)) return withCreateHistoryMediaToken(raw)
+  if (item.type === 'image' || item.type === 'video') {
+    return publicGalleryMediaUrl(item.id)
+  }
+  return raw
 }

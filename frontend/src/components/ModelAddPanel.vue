@@ -79,6 +79,7 @@ function syncGroupDefaults() {
 watch(
   () => props.groupId,
   () => {
+    savedModelId.value = null
     syncGroupDefaults()
   },
   { immediate: true },
@@ -399,6 +400,11 @@ label {
     border-radius: 8px;
     font-size: 13px;
     color: $text-primary;
+
+    &:focus {
+      border-color: $accent;
+      box-shadow: $shadow-focus;
+    }
   }
 
   select {

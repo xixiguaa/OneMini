@@ -99,9 +99,9 @@ def cache_media_from_url(user_id: str, item_id: str, url: str | None) -> bool:
 
 
 def _apply_served_url_to_record(user_id: str, record: dict[str, Any]) -> dict[str, Any]:
-    """若本地已缓存图片，将记录中的 url 改写为可长期访问的代理地址。"""
+    """若本地已缓存媒体，将记录中的 url 改写为可长期访问的代理地址。"""
     norm = _normalize_item(record)
-    if norm.get("type") == "image" and media_exists(user_id, norm["id"]):
+    if norm.get("type") in ("image", "video") and media_exists(user_id, norm["id"]):
         served = media_public_url(user_id, norm["id"])
         return {**record, "url": served, "previewUrl": served}
     return record
@@ -115,7 +115,7 @@ def _finalize_item(user_id: str, record: dict[str, Any]) -> dict[str, Any]:
 
 
 def _maybe_cache_item_media(user_id: str, item: dict[str, Any]) -> None:
-    if item.get("type") != "image":
+    if item.get("type") not in ("image", "video"):
         return
     remote = item.get("url") or item.get("previewUrl")
     if remote and not media_exists(user_id, item["id"]):
@@ -123,8 +123,8 @@ def _maybe_cache_item_media(user_id: str, item: dict[str, Any]) -> None:
 
 
 def _with_served_url(user_id: str, item: dict[str, Any]) -> dict[str, Any]:
-    """若本地已缓存图片，返回可长期访问的代理 URL。"""
-    if item.get("type") == "image" and media_exists(user_id, item["id"]):
+    """若本地已缓存媒体，返回可长期访问的代理 URL。"""
+    if item.get("type") in ("image", "video") and media_exists(user_id, item["id"]):
         served = media_public_url(user_id, item["id"])
         return {**item, "url": served, "previewUrl": served}
     return item
@@ -168,6 +168,8 @@ def _normalize_item(raw: dict[str, Any]) -> dict[str, Any]:
         "createdAt": int(raw.get("createdAt") or raw.get("created_at") or _now_ms()),
         "sessionId": raw.get("sessionId") or raw.get("session_id"),
         "parentId": raw.get("parentId") or raw.get("parent_id"),
+        "aspectRatio": raw.get("aspectRatio") or raw.get("aspect_ratio"),
+        "editAction": raw.get("editAction") or raw.get("edit_action"),
     }
 
 
@@ -227,6 +229,8 @@ def _upsert_item_unlocked(user_id: str, item: dict[str, Any]) -> dict[str, Any]:
         "createdAt": item["createdAt"] or prev.get("createdAt") or _now_ms(),
         "sessionId": item.get("sessionId") or prev.get("sessionId"),
         "parentId": item.get("parentId") or prev.get("parentId"),
+        "aspectRatio": item.get("aspectRatio") or prev.get("aspectRatio"),
+        "editAction": item.get("editAction") or prev.get("editAction"),
     }
     if idx >= 0:
         items[idx] = {**items[idx], **payload}
@@ -282,6 +286,8 @@ def _sync_items_unlocked(user_id: str, incoming: list[dict[str, Any]]) -> dict[s
             "createdAt": item["createdAt"] or prev.get("createdAt") or _now_ms(),
             "sessionId": item.get("sessionId") or prev.get("sessionId"),
             "parentId": item.get("parentId") or prev.get("parentId"),
+            "aspectRatio": item.get("aspectRatio") or prev.get("aspectRatio"),
+            "editAction": item.get("editAction") or prev.get("editAction"),
         }
     merged = list(existing.values())
     finalized: list[dict[str, Any]] = []
@@ -329,6 +335,36 @@ def is_version_leaf(user_id: str, version_id: str) -> bool:
     with _user_lock(user_id):
         items = _load_raw(user_id)
         return not any(i.get("parentId") == version_id for i in items)
+
+
+def _subtree_delete_order(items: list[dict[str, Any]], root_id: str) -> list[str]:
+    by_id = {str(_normalize_item(raw)["id"]): _normalize_item(raw) for raw in items}
+    if root_id not in by_id:
+        return []
+
+    order: list[str] = []
+
+    def walk(version_id: str) -> None:
+        for item in by_id.values():
+            if item.get("parentId") == version_id:
+                walk(str(item["id"]))
+        order.append(version_id)
+
+    walk(root_id)
+    return order
+
+
+def delete_version_cascade(user_id: str, version_id: str) -> bool:
+    with _user_lock(user_id):
+        items = _load_raw(user_id)
+        order = _subtree_delete_order(items, version_id)
+        if not order:
+            return False
+        for vid in order:
+            items = _load_raw(user_id)
+            if not _delete_version_unlocked(user_id, vid, items):
+                return False
+        return True
 
 
 def delete_version(user_id: str, version_id: str) -> bool:

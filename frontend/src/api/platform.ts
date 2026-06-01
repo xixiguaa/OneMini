@@ -145,3 +145,17 @@ export async function sendRagChatStream(opts: RagStreamOptions): Promise<string>
 
   return full
 }
+
+export interface WebSearchHit {
+  title: string
+  snippet: string
+  url?: string
+}
+
+export async function searchWeb(query: string, topK = 5): Promise<WebSearchHit[]> {
+  const { data } = await api.post<{ hits: WebSearchHit[] }>('/chat/web-search', {
+    query,
+    top_k: topK,
+  })
+  return data.hits ?? []
+}

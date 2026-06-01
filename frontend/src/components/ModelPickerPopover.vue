@@ -124,7 +124,10 @@ onUnmounted(() => document.removeEventListener('click', onDocClick))
         width="20"
         height="20"
       />
-      <span class="trigger-text">{{ displayLabel }}</span>
+      <span
+        class="trigger-text"
+        :title="matchedPreset || selectedLabel ? displayLabel : undefined"
+      >{{ displayLabel }}</span>
       <ChevronDown :size="16" class="chevron" :class="{ open }" />
     </button>
 
@@ -132,7 +135,7 @@ onUnmounted(() => document.removeEventListener('click', onDocClick))
       <header class="panel-head">
         <h4>选择预设模型</h4>
         <div class="head-actions">
-          <div class="search-wrap">
+          <div class="search-wrap embedded-field">
             <Search :size="14" />
             <input v-model="query" type="search" placeholder="搜索" @click.stop />
           </div>
@@ -329,6 +332,13 @@ onUnmounted(() => document.removeEventListener('click', onDocClick))
     font-size: 12px;
     color: $text-primary;
     outline: none;
+
+    &:focus,
+    &:focus-visible {
+      outline: none;
+      border: none;
+      box-shadow: none;
+    }
 
     &::placeholder {
       color: $text-muted;

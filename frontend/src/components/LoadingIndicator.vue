@@ -6,12 +6,15 @@ withDefaults(
     /** 加载提示文案；省略则仅显示转圈 */
     label?: string
     size?: number
+    /** 思考中已用秒数；传入时在 label 后显示计时 */
+    elapsedSec?: number
     /** inline：行内；block：居中块级；button：按钮内紧凑行；thinking：对话思考态 */
     variant?: 'inline' | 'block' | 'button' | 'thinking'
   }>(),
   {
     label: '',
     size: 14,
+    elapsedSec: undefined,
     variant: 'inline',
   },
 )
@@ -25,7 +28,10 @@ withDefaults(
     :aria-label="label || '加载中'"
   >
     <Loader2 :size="size" class="om-loading-spinner" aria-hidden="true" />
-    <span v-if="label" class="om-loading-label">{{ label }}…</span>
+    <span v-if="label" class="om-loading-label">
+      <template v-if="elapsedSec != null && elapsedSec > 0">{{ label }} ({{ elapsedSec }} 秒)</template>
+      <template v-else>{{ label }}…</template>
+    </span>
   </span>
 </template>
 

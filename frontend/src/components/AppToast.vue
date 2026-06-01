@@ -2,8 +2,10 @@
 import { AlertCircle, Check, Info, X } from 'lucide-vue-next'
 import { storeToRefs } from 'pinia'
 import { computed } from 'vue'
+import { useAgentStore } from '../stores/agent'
 import { useToastStore } from '../stores/toast'
 
+const agent = useAgentStore()
 const toast = useToastStore()
 const { message, kind, visible } = storeToRefs(toast)
 
@@ -19,7 +21,13 @@ const Icon = computed(() => {
     <div
       v-if="visible"
       class="app-toast"
-      :class="`app-toast--${kind}`"
+      :class="[
+        `app-toast--${kind}`,
+        {
+          'app-toast--in-edit': agent.imageEditOpen,
+          'app-toast--in-edit-rail': agent.imageEditOpen && agent.imageEditVersions.length > 0,
+        },
+      ]"
       role="alert"
       aria-live="assertive"
     >
@@ -36,8 +44,21 @@ const Icon = computed(() => {
 @use '../styles/variables.scss' as *;
 @use '../styles/cosmic-glass.scss' as *;
 
+// 与 ImageEditOverlay 侧栏/版本轨宽度保持一致，使 Toast 对齐主图区域中心
+$edit-rail-w: 108px;
+$edit-side-w: 400px;
+$edit-stage-shift: 32px;
+
 .app-toast {
   @include cosmic-top-toast;
+
+  &--in-edit-rail {
+    left: calc(#{$edit-rail-w} + (100vw - #{$edit-rail-w} - #{$edit-side-w}) / 2 + #{$edit-stage-shift});
+  }
+
+  &--in-edit:not(.app-toast--in-edit-rail) {
+    left: calc((100vw - #{$edit-side-w}) / 2 + #{$edit-stage-shift});
+  }
 
   &--error {
     border-color: color-mix(in srgb, $color-danger 45%, $glass-border);
@@ -100,5 +121,21 @@ const Icon = computed(() => {
 .app-toast-leave-to {
   opacity: 0;
   transform: translateX(-50%) translateY(-12px);
+}
+
+@media (max-width: 900px) {
+  .app-toast--in-edit-rail {
+    left: calc(#{$edit-rail-w} + (100vw - #{$edit-rail-w}) / 2 + #{$edit-stage-shift});
+  }
+
+  .app-toast--in-edit:not(.app-toast--in-edit-rail) {
+    left: 50%;
+  }
+}
+
+@media (max-width: 720px) {
+  .app-toast--in-edit-rail {
+    left: calc(88px + (100vw - 88px) / 2 + #{$edit-stage-shift});
+  }
 }
 </style>

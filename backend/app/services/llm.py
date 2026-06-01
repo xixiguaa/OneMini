@@ -150,7 +150,8 @@ async def stream_chat_completion(
     base_url: str | None = None,
     temperature: float = 0.3,
     settings: Settings | None = None,
-) -> AsyncIterator[str]:
+) -> AsyncIterator[dict[str, str]]:
+    """产出 SSE 事件：type=thinking|content, delta=文本片段"""
     settings = settings or get_settings()
     resolved_base, key = resolve_llm_endpoint(
         provider=provider,
@@ -168,7 +169,7 @@ async def stream_chat_completion(
             base_url=base_url,
             settings=settings,
         )
-        yield text
+        yield {"type": "content", "delta": text}
         return
 
     url = resolved_base + "/chat/completions"
@@ -206,8 +207,12 @@ async def stream_chat_completion(
                     break
                 try:
                     chunk = json.loads(payload_str)
-                    delta = chunk["choices"][0]["delta"].get("content")
-                    if delta:
-                        yield delta
+                    delta_obj = chunk["choices"][0].get("delta") or {}
+                    reasoning = delta_obj.get("reasoning_content")
+                    content = delta_obj.get("content")
+                    if reasoning:
+                        yield {"type": "thinking", "delta": reasoning}
+                    if content:
+                        yield {"type": "content", "delta": content}
                 except (json.JSONDecodeError, KeyError, IndexError):
                     continue

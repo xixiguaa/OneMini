@@ -9,13 +9,17 @@ import {
   ThumbsUp,
 } from 'lucide-vue-next'
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
+import { useElapsedSeconds } from '../composables/useElapsedSeconds'
 import { useAgentStore } from '../stores/agent'
+import { usePlatformStore } from '../stores/platform'
 import { useToastStore } from '../stores/toast'
 import type { ChatMessage, MessageFeedback } from '../types/agent'
+import ChatThinkingBlock from './ChatThinkingBlock.vue'
 import LoadingIndicator from './LoadingIndicator.vue'
 import MarkdownContent from './MarkdownContent.vue'
 
 const agent = useAgentStore()
+const platform = usePlatformStore()
 const toast = useToastStore()
 const scrollRef = ref<HTMLElement | null>(null)
 const stickToBottom = ref(true)
@@ -25,6 +29,8 @@ const STATUS_PREFIXES = [
   '📚 Milvus RAG 检索中…',
   '🕸️ LLM-Wiki 检索中…',
   '🦞 多智能体协作中',
+  '🌐 联网检索完成',
+  '🧠 深度思考中',
 ]
 
 function isAwaitingReply(content: string): boolean {
@@ -46,16 +52,36 @@ function isLastMessage(id: string): boolean {
   return msgs.length > 0 && msgs[msgs.length - 1]?.id === id
 }
 
+function hasThinkingTrace(msg: ChatMessage): boolean {
+  const t = msg.metadata?.thinking
+  if (!t) return false
+  if (t.content.trim().length > 0) return true
+  return thinkingStreaming(msg)
+}
+
+function thinkingStreaming(msg: ChatMessage): boolean {
+  if (!platform.deepThinkingEnabled) return false
+  if (!isLastMessage(msg.id) || !agent.isStreaming) return false
+  const t = msg.metadata?.thinking
+  if (!t) return false
+  return t.durationMs == null
+}
+
 function shouldShowThinking(msg: ChatMessage): boolean {
+  if (hasThinkingTrace(msg)) return false
   if (!agent.isChatProcessing || !isLastMessage(msg.id)) return false
   if (msg.role !== 'assistant' || msg.type !== 'text') return false
   return isAwaitingReply(msg.content)
 }
 
+function hasAnswerContent(msg: ChatMessage): boolean {
+  return Boolean(msg.content?.trim())
+}
+
 function canShowActions(msg: ChatMessage): boolean {
   if (msg.role !== 'assistant' || msg.type !== 'text') return false
-  if (shouldShowThinking(msg)) return false
-  if (!msg.content.trim()) return false
+  if (shouldShowThinking(msg) || thinkingStreaming(msg)) return false
+  if (!hasAnswerContent(msg)) return false
   if (isLastMessage(msg.id) && (agent.isChatProcessing || agent.isStreaming)) return false
   return true
 }
@@ -66,12 +92,38 @@ const showThinkingForUserTurn = computed(() => {
   return last?.role === 'user'
 })
 
+const thinkingTimerActive = computed(() => {
+  if (showThinkingForUserTurn.value) return true
+  for (const msg of agent.messages) {
+    if (shouldShowThinking(msg) || thinkingStreaming(msg)) return true
+  }
+  return false
+})
+
+const thinkingElapsedSec = useElapsedSeconds(thinkingTimerActive)
+
 const lastAssistantContent = computed(() => {
   const msgs = agent.messages
   for (let i = msgs.length - 1; i >= 0; i--) {
     if (msgs[i].role === 'assistant') return msgs[i].content
   }
   return ''
+})
+
+/** 思考区/正文流式更新时也要滚到底（不仅 messages.length 变化） */
+const scrollAnchor = computed(() => {
+  const msgs = agent.messages
+  const last = msgs[msgs.length - 1]
+  if (!last) return `len:${msgs.length}`
+  return [
+    msgs.length,
+    last.id,
+    last.content?.length ?? 0,
+    last.metadata?.thinking?.content?.length ?? 0,
+    last.metadata?.thinking?.durationMs ?? '',
+    agent.isStreaming,
+    agent.isChatProcessing,
+  ].join('|')
 })
 
 function isNearBottom(el: HTMLElement, threshold = 80) {
@@ -146,7 +198,7 @@ function setContinuation(msg: ChatMessage) {
 }
 
 watch(
-  () => agent.messages.length,
+  scrollAnchor,
   async () => {
     await nextTick()
     scrollToBottom()
@@ -202,18 +254,37 @@ onMounted(() => {
             }"
           >
             <div class="assistant-body">
+          <ChatThinkingBlock
+            v-if="hasThinkingTrace(msg)"
+            :content="msg.metadata!.thinking!.content"
+            :duration-ms="msg.metadata!.thinking!.durationMs"
+            :streaming="thinkingStreaming(msg)"
+            :elapsed-sec="thinkingStreaming(msg) ? thinkingElapsedSec : undefined"
+          />
           <LoadingIndicator
             v-if="shouldShowThinking(msg)"
             label="思考中"
             variant="thinking"
             :size="16"
+            :elapsed-sec="thinkingElapsedSec"
           />
             <MarkdownContent
-              v-else-if="msg.type === 'text' && msg.content"
+              v-if="msg.type === 'text' && hasAnswerContent(msg)"
               class="content"
+              :class="{ 'content--after-thinking': hasThinkingTrace(msg) }"
               :content="msg.content"
             />
-            <p v-else-if="msg.content" class="content" :class="{ error: msg.type === 'error' }">
+            <p
+              v-else-if="msg.content && !hasThinkingTrace(msg)"
+              class="content"
+              :class="{ error: msg.type === 'error' }"
+            >
+              {{ msg.content }}
+            </p>
+            <p
+              v-else-if="msg.content && msg.type === 'error'"
+              class="content error"
+            >
               {{ msg.content }}
             </p>
 
@@ -334,7 +405,12 @@ onMounted(() => {
 
       <article v-if="showThinkingForUserTurn" class="turn assistant">
         <div class="assistant-bubble assistant-bubble--thinking">
-          <LoadingIndicator label="思考中" variant="thinking" :size="16" />
+          <LoadingIndicator
+            label="思考中"
+            variant="thinking"
+            :size="16"
+            :elapsed-sec="thinkingElapsedSec"
+          />
         </div>
       </article>
     </div>
@@ -344,8 +420,6 @@ onMounted(() => {
 <style scoped lang="scss">
 @use '../styles/variables.scss' as *;
 @use '../styles/cosmic-glass.scss' as cosmic;
-
-$messages-max: 48rem;
 
 .messages-scroll {
   flex: 1;
@@ -358,9 +432,9 @@ $messages-max: 48rem;
 }
 
 .messages-inner {
-  max-width: $messages-max;
+  max-width: $chat-column-max;
   margin: 0 auto;
-  padding: 28px 20px 32px;
+  padding: 28px 16px 32px;
   display: flex;
   flex-direction: column;
   gap: 28px;
@@ -381,7 +455,7 @@ $messages-max: 48rem;
 
 .user-bubble {
   @include cosmic.cosmic-glass-frost(22px);
-  max-width: min(85%, 32rem);
+  max-width: 100%;
   padding: 12px 18px;
   background: var(--chat-user-bubble-bg, var(--glass-fill-gradient));
   border-radius: 22px 22px 6px 22px;
@@ -394,7 +468,8 @@ $messages-max: 48rem;
 }
 
 .assistant-turn {
-  max-width: min(92%, 42rem);
+  width: 100%;
+  max-width: 100%;
 
   &:hover .msg-actions,
   &:focus-within .msg-actions {
@@ -523,6 +598,10 @@ $messages-max: 48rem;
 .content {
   &.error {
     color: $color-warning;
+  }
+
+  &--after-thinking {
+    margin-top: 12px;
   }
 }
 

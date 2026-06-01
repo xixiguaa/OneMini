@@ -1,4 +1,7 @@
+import { extractFileText } from '../api/agent'
 import { randomUUID } from './uuid'
+
+const MAX_TEXT_CHARS = 50_000
 
 export interface ParsedAttachment {
   id: string
@@ -9,6 +12,8 @@ export interface ParsedAttachment {
   previewUrl?: string
   textContent?: string
   base64?: string
+  /** 本地解析/读取中 */
+  loading?: boolean
 }
 
 const TEXT_TYPES = new Set([
@@ -45,8 +50,17 @@ export async function parseFile(file: File): Promise<ParsedAttachment> {
 
   if (kind === 'text') {
     const text = await file.text()
-    base.textContent = text.slice(0, 50000)
+    base.textContent = text.slice(0, MAX_TEXT_CHARS)
     return base
+  }
+
+  try {
+    const { text } = await extractFileText(file)
+    if (text?.trim()) {
+      base.textContent = text.slice(0, MAX_TEXT_CHARS)
+    }
+  } catch {
+    /* 解析失败时保留文档占位，发送时会提示未能提取正文 */
   }
 
   return base
@@ -67,10 +81,11 @@ export function fileToBase64(file: File): Promise<string> {
 export function formatAttachmentsForPrompt(files: ParsedAttachment[]): string {
   const parts: string[] = []
   for (const f of files) {
-    if (f.kind === 'text' && f.textContent) {
-      parts.push(`\n--- 文件: ${f.name} ---\n${f.textContent}\n---`)
+    if (f.loading) continue
+    if (f.textContent?.trim()) {
+      parts.push(`\n--- 文件: ${f.name} ---\n${f.textContent.trim()}\n---`)
     } else if (f.kind === 'document') {
-      parts.push(`\n[附件文档: ${f.name} (${formatSize(f.size)})]`)
+      parts.push(`\n[附件文档: ${f.name} (${formatSize(f.size)})，未能提取正文，请确认格式或粘贴关键内容]`)
     } else if (f.kind === 'image') {
       parts.push(`\n[附件图片: ${f.name}]`)
     }
@@ -88,4 +103,10 @@ export function revokeAttachmentPreviews(files: ParsedAttachment[]) {
   files.forEach((f) => {
     if (f.previewUrl) URL.revokeObjectURL(f.previewUrl)
   })
+}
+
+export function fileExtensionBadge(name: string): string {
+  const ext = name.split('.').pop()?.toUpperCase()
+  if (!ext || ext.length > 5) return 'FILE'
+  return ext
 }

@@ -1,55 +1,208 @@
 <script setup lang="ts">
 import {
   ArrowUp,
+  Check,
   ChevronDown,
-  FileText,
+  ChevronsUp,
+  Compass,
   Image,
+  LayoutGrid,
   Loader2,
   Plus,
+  Search,
+  ScanFace,
   Sparkles,
   Video,
   X,
 } from 'lucide-vue-next'
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, provide, reactive, ref, watch, type VNodeRef } from 'vue'
 import { ACCEPT_CHAT_FILES } from '../config/constants'
-import BrandLogo from './BrandLogo.vue'
+import { useAnchoredPopover } from '../composables/useAnchoredPopover'
+import { usePublicGallery } from '../composables/usePublicGallery'
+import { useTypewriter } from '../composables/useTypewriter'
+import {
+  composerSubmenuOpenKey,
+  createComposerMenuCloseAllKey,
+  createMenuCloseSignalKey,
+  toggleExclusiveComposerMenu,
+} from '../composables/useCreateComposerMenus'
+import ChatAttachmentCard from './ChatAttachmentCard.vue'
+import CreateGenerationPill from './CreateGenerationPill.vue'
+import ReferenceImageStack from './ReferenceImageStack.vue'
 import CreativeSkillsMenu from './CreativeSkillsMenu.vue'
 import GenPreferencesPopover from './GenPreferencesPopover.vue'
 import ModelLogo from './ModelLogo.vue'
 import ImageEditOverlay from './ImageEditOverlay.vue'
+import LipSyncComposerCard from './LipSyncComposerCard.vue'
 import WorksWaterfall from './WorksWaterfall.vue'
 import { isModelReady } from '../utils/resolveModel'
-import { useWorksGallery } from '../composables/useWorksGallery'
 import { useAgentStore } from '../stores/agent'
+import { useCreateHistoryStore } from '../stores/createHistory'
 import { useSettingsStore } from '../stores/settings'
 import type { CreateMode, SkillId } from '../types/agent'
+import { applyAspectRatioToPrompt, applyVideoPrefsToPrompt } from '../utils/aspectRatioPrompt'
 
 const agent = useAgentStore()
-const { hasItems } = useWorksGallery()
 const settings = useSettingsStore()
+const studioRoot = ref<HTMLElement | null>(null)
+const composerAnchor = ref<HTMLElement | null>(null)
+const gallerySection = ref<HTMLElement | null>(null)
 const fileInput = ref<HTMLInputElement | null>(null)
-const modeWrapRef = ref<HTMLElement | null>(null)
-const modelPickerRef = ref<HTMLElement | null>(null)
-const showModeMenu = ref(false)
-const showModelMenu = ref(false)
+const menuCloseSignal = ref(0)
+const galleryMainTab = ref<'mine' | 'discover' | 'video'>('mine')
+const galleryMediaTab = ref<'image' | 'video'>('image')
+const gallerySearch = ref('')
+const showFloatingComposer = ref(false)
+const floatingExpanded = ref(false)
+const floatingBarRef = ref<HTMLElement | null>(null)
+const floatingInputRef = ref<HTMLTextAreaElement | null>(null)
+const suspendFloatingCollapse = ref(false)
+const showScrollTop = ref(false)
+let floatingCollapseTimer: ReturnType<typeof setTimeout> | null = null
+
+/** 浮动输入框折叠动画时长（与 CSS 保持一致） */
+const FLOATING_ANIM_MS = 520
+
+const modePopover = useAnchoredPopover({ minWidth: 220, fitContent: true, placement: 'below' })
+const modelPopover = useAnchoredPopover({
+  align: 'right',
+  minWidth: 240,
+  maxPanelHeight: 280,
+  placement: 'below',
+})
+const floatingModePopover = useAnchoredPopover({ minWidth: 220, fitContent: true, placement: 'above' })
+const floatingModelPopover = useAnchoredPopover({
+  align: 'right',
+  minWidth: 240,
+  maxPanelHeight: 280,
+  placement: 'above',
+})
+const modeMenuOpen = modePopover.open
+const modelMenuOpen = modelPopover.open
+const floatingModeMenuOpen = floatingModePopover.open
+const floatingModelMenuOpen = floatingModelPopover.open
+
+const openSubmenus = reactive(new Set<string>())
+provide(composerSubmenuOpenKey, (id: string, open: boolean) => {
+  if (open) openSubmenus.add(id)
+  else openSubmenus.delete(id)
+})
+
+const composerMenuActive = computed(
+  () =>
+    modePopover.open.value ||
+    modelPopover.open.value ||
+    floatingModePopover.open.value ||
+    floatingModelPopover.open.value ||
+    openSubmenus.size > 0,
+)
+
+const bindModeTrigger: VNodeRef = (el) => {
+  modePopover.triggerRef.value = el as HTMLElement | null
+}
+
+const bindModePanel: VNodeRef = (el) => {
+  modePopover.panelRef.value = el as HTMLElement | null
+}
+
+const bindModelTrigger: VNodeRef = (el) => {
+  modelPopover.triggerRef.value = el as HTMLElement | null
+}
+
+const bindModelPanel: VNodeRef = (el) => {
+  modelPopover.panelRef.value = el as HTMLElement | null
+}
+
+const bindFloatingModeTrigger: VNodeRef = (el) => {
+  floatingModePopover.triggerRef.value = el as HTMLElement | null
+}
+
+const bindFloatingModePanel: VNodeRef = (el) => {
+  floatingModePopover.panelRef.value = el as HTMLElement | null
+}
+
+const bindFloatingModelTrigger: VNodeRef = (el) => {
+  floatingModelPopover.triggerRef.value = el as HTMLElement | null
+}
+
+const bindFloatingModelPanel: VNodeRef = (el) => {
+  floatingModelPopover.panelRef.value = el as HTMLElement | null
+}
+
+const modePanelStyle = computed(() => modePopover.panelStyle.value)
+const modelPanelStyle = computed(() => modelPopover.panelStyle.value)
+const floatingModePanelStyle = computed(() => floatingModePopover.panelStyle.value)
+const floatingModelPanelStyle = computed(() => floatingModelPopover.panelStyle.value)
+
+provide(createMenuCloseSignalKey, menuCloseSignal)
+
+function closeAllComposerMenus() {
+  modePopover.close()
+  modelPopover.close()
+  floatingModePopover.close()
+  floatingModelPopover.close()
+  menuCloseSignal.value += 1
+}
+
+provide(createComposerMenuCloseAllKey, closeAllComposerMenus)
 
 const modes = [
-  { id: 'agent' as const, label: 'Agent 模式', icon: Sparkles },
-  { id: 'image' as const, label: '图片生成', icon: Image },
-  { id: 'video' as const, label: '视频生成', icon: Video },
+  { id: 'agent' as const, label: 'Agent 创作', desc: '与 Agent 一起创作', icon: Sparkles },
+  { id: 'image' as const, label: '图片生成', desc: '智能美学提升', icon: Image },
+  { id: 'video' as const, label: '视频生成', desc: '一镜到底', icon: Video },
+  { id: 'digitalHuman' as const, label: '数字人', desc: '角色对口型说话', icon: ScanFace },
 ]
+
+const galleryMainTabs = [
+  { id: 'mine' as const, label: '我的创作', icon: LayoutGrid },
+  { id: 'discover' as const, label: '发现', icon: Compass },
+  { id: 'video' as const, label: '创意视频', icon: Video },
+]
+
+const galleryMineSubTabs = [
+  { id: 'image' as const, label: '图片', icon: Image },
+  { id: 'video' as const, label: '短片', icon: Video },
+]
+
+const gallerySource = computed(() => (galleryMainTab.value === 'mine' ? 'mine' : 'public'))
+
+const galleryEffectiveMediaType = computed(() => {
+  if (galleryMainTab.value === 'discover') return 'image' as const
+  if (galleryMainTab.value === 'video') return 'video' as const
+  return galleryMediaTab.value
+})
+
+const gallerySearchPlaceholder = computed(() => {
+  if (galleryMainTab.value === 'mine') {
+    return galleryMediaTab.value === 'video' ? '搜索我的短片…' : '搜索我的图片…'
+  }
+  if (galleryMainTab.value === 'discover') return '搜索发现图片…'
+  return '搜索创意视频…'
+})
+
+const { hydrate: hydratePublicGallery } = usePublicGallery()
 
 const currentMode = computed(() => modes.find((m) => m.id === agent.createMode))
 
+const heroModeLabel = computed(() => currentMode.value?.label ?? 'Agent 创作')
+const { displayText: heroModeText } = useTypewriter(heroModeLabel, {
+  speed: 88,
+  startDelay: 200,
+  loop: true,
+  pauseAfterType: 2200,
+  deleteSpeed: 52,
+  pauseAfterDelete: 500,
+})
+
 const skillForMode = computed((): SkillId => {
-  if (agent.createMode === 'video') return 'video'
+  if (agent.createMode === 'video' || agent.createMode === 'digitalHuman') return 'video'
   if (agent.createMode === 'image') return 'image'
   return 'chat'
 })
 
 const availableModels = computed(() => {
   let list = settings.chatModels
-  if (agent.createMode === 'video') list = settings.videoModels
+  if (agent.createMode === 'video' || agent.createMode === 'digitalHuman') list = settings.videoModels
   else if (agent.createMode === 'image') list = settings.imageModels
   else if (agent.createMode === 'agent') list = settings.chatModels
   return list.filter(isModelReady)
@@ -66,33 +219,164 @@ const selectedModel = computed(() => {
   return models[0] ?? null
 })
 
-const greeting = computed(() => {
-  const h = new Date().getHours()
-  const period = h < 12 ? '早上好' : h < 18 ? '下午好' : '晚上好'
-  return `${period}，开始你的创作`
+const inputPlaceholder = computed(() => {
+  if (agent.createMode === 'agent') {
+    return '输入想法、脚本或上传参考，支持「/」使用技能，和 Agent 一起创作'
+  }
+  if (agent.createMode === 'video') {
+    return '描述你想生成的视频画面、镜头与时长，例如：小猫咪玩球，5 秒'
+  }
+  if (agent.createMode === 'digitalHuman') {
+    return '上传角色参考图，输入台词与动作描述，生成对口型视频…'
+  }
+  return '描述你想生成的图片内容、风格与构图…'
 })
 
 async function onFiles(e: Event) {
   const files = (e.target as HTMLInputElement).files
   if (files?.length) await agent.addAttachments(files)
+  if (fileInput.value) fileInput.value.value = ''
+  suspendFloatingCollapse.value = false
+}
+
+function triggerFileInput() {
+  if (showFloatingComposer.value) {
+    floatingExpanded.value = true
+    suspendFloatingCollapse.value = true
+  }
+  fileInput.value?.click()
+}
+
+function scrollToTop() {
+  studioRoot.value?.scrollTo({ top: 0, behavior: 'smooth' })
+}
+
+function onStudioScroll() {
+  const el = studioRoot.value
+  if (!el) return
+  showScrollTop.value = el.scrollTop > 240
+  collapseFloatingComposer()
+}
+
+function shouldKeepFloatingExpanded() {
+  if (composerMenuActive.value || suspendFloatingCollapse.value) return true
+  const active = document.activeElement
+  if (floatingBarRef.value && active && floatingBarRef.value.contains(active)) return true
+  if (active instanceof Element && active.closest('.create-composer-popover')) return true
+  return false
+}
+
+function scheduleFloatingCollapseIfUnfocused() {
+  if (!floatingExpanded.value) return
+  if (floatingCollapseTimer) clearTimeout(floatingCollapseTimer)
+  floatingCollapseTimer = window.setTimeout(() => {
+    floatingCollapseTimer = null
+    if (shouldKeepFloatingExpanded()) return
+    collapseFloatingComposer()
+  }, 120)
+}
+
+function onFloatingInputBlur() {
+  scheduleFloatingCollapseIfUnfocused()
+}
+
+function onFloatingWindowRefocus() {
+  if (suspendFloatingCollapse.value) {
+    suspendFloatingCollapse.value = false
+    if (floatingExpanded.value) {
+      void nextTick(() => floatingInputRef.value?.focus())
+    }
+    return
+  }
+  scheduleFloatingCollapseIfUnfocused()
+}
+
+function expandFloatingComposer() {
+  if (!showFloatingComposer.value || floatingExpanded.value) return
+  floatingExpanded.value = true
+  void nextTick(() => {
+    requestAnimationFrame(() => floatingInputRef.value?.focus())
+  })
+}
+
+function collapseFloatingComposer() {
+  if (!floatingExpanded.value) return
+  floatingExpanded.value = false
+  closeComposerMenus()
+  window.setTimeout(() => floatingInputRef.value?.blur(), FLOATING_ANIM_MS)
+}
+
+function onFloatingBarClick(e: MouseEvent) {
+  if (floatingExpanded.value) return
+  const el = e.target as HTMLElement
+  if (el.closest('.floating-send')) return
+  expandFloatingComposer()
 }
 
 function onKeydown(e: KeyboardEvent) {
   if (e.key === 'Enter' && !e.shiftKey) {
     e.preventDefault()
-    agent.generateFromStudio()
+    sendFromStudio()
   }
+}
+
+function focusGalleryTab(tab: 'image' | 'video') {
+  galleryMainTab.value = 'mine'
+  galleryMediaTab.value = tab
+  void nextTick().then(() => {
+    gallerySection.value?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  })
+}
+
+function highlightGallerySession(sessionId: string) {
+  const card = gallerySection.value?.querySelector(
+    `[data-gallery-session="${CSS.escape(sessionId)}"]`,
+  ) as HTMLElement | null
+  if (!card) return false
+  card.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  card.classList.add('work-card--located')
+  window.setTimeout(() => card.classList.remove('work-card--located'), 2400)
+  return true
+}
+
+async function locateSessionInGallery(sessionId: string) {
+  const createHistory = useCreateHistoryStore()
+  const items = createHistory.sessionItems(sessionId)
+  const pick =
+    [...items].reverse().find((item) => item.status === 'DONE') ??
+    items[items.length - 1]
+  const tab = pick?.type === 'video' ? 'video' : 'image'
+  galleryMainTab.value = 'mine'
+  galleryMediaTab.value = tab
+  await nextTick()
+  gallerySection.value?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  await nextTick()
+  requestAnimationFrame(() => {
+    highlightGallerySession(sessionId)
+    agent.createGalleryLocateSessionId = null
+  })
+}
+
+function selectGalleryMainTab(tab: 'mine' | 'discover' | 'video') {
+  galleryMainTab.value = tab
+  if (tab === 'discover') galleryMediaTab.value = 'image'
+  else if (tab === 'video') galleryMediaTab.value = 'video'
+}
+
+function sendFromStudio() {
+  if (!canSend()) return
+  void agent.generateFromStudio()
 }
 
 function pickMode(id: CreateMode) {
   agent.createMode = id
-  showModeMenu.value = false
+  closeComposerMenus()
   ensureDefaultModel()
 }
 
 function selectModel(id: string) {
   settings.updateSkill(skillForMode.value, { defaultModelId: id })
-  showModelMenu.value = false
+  closeComposerMenus()
 }
 
 function ensureDefaultModel() {
@@ -106,43 +390,76 @@ function ensureDefaultModel() {
   }
 }
 
+function closeComposerMenus() {
+  closeAllComposerMenus()
+}
+
 function toggleModelMenu(e: MouseEvent) {
-  e.stopPropagation()
   if (!availableModels.value.length) {
+    e.stopPropagation()
     agent.setCurrentView('models')
     return
   }
-  showModelMenu.value = !showModelMenu.value
-  showModeMenu.value = false
-  agent.showSkillsMenu = false
-  agent.showPrefsMenu = false
-}
-
-function closeComposerMenus() {
-  showModeMenu.value = false
-  showModelMenu.value = false
-  agent.showSkillsMenu = false
-  agent.showPrefsMenu = false
+  toggleExclusiveComposerMenu(menuCloseSignal, modelPopover, e)
 }
 
 function toggleModeMenu(e: MouseEvent) {
-  e.stopPropagation()
-  agent.showSkillsMenu = false
-  agent.showPrefsMenu = false
-  showModelMenu.value = false
-  showModeMenu.value = !showModeMenu.value
+  toggleExclusiveComposerMenu(menuCloseSignal, modePopover, e)
+}
+
+function toggleFloatingModeMenu(e: MouseEvent) {
+  toggleExclusiveComposerMenu(menuCloseSignal, floatingModePopover, e)
+}
+
+function toggleFloatingModelMenu(e: MouseEvent) {
+  if (!availableModels.value.length) {
+    e.stopPropagation()
+    agent.setCurrentView('models')
+    return
+  }
+  toggleExclusiveComposerMenu(menuCloseSignal, floatingModelPopover, e)
+}
+
+function shouldIgnoreComposerMenuClose(target: EventTarget | null) {
+  const el = target as HTMLElement | null
+  if (!el?.closest) return false
+  return !!el.closest('.create-composer-trigger, .create-composer-popover')
 }
 
 function onDocClick(e: MouseEvent) {
-  if (showModeMenu.value && !modeWrapRef.value?.contains(e.target as Node)) {
-    showModeMenu.value = false
-  }
-  if (showModelMenu.value && !modelPickerRef.value?.contains(e.target as Node)) {
-    showModelMenu.value = false
-  }
+  if (shouldIgnoreComposerMenuClose(e.target)) return
+  closeComposerMenus()
 }
 
-watch(() => agent.createMode, ensureDefaultModel)
+function onEscape(e: KeyboardEvent) {
+  if (e.key !== 'Escape') return
+  closeComposerMenus()
+}
+
+watch(
+  () => menuCloseSignal.value,
+  () => {
+    modePopover.close()
+    modelPopover.close()
+    floatingModePopover.close()
+    floatingModelPopover.close()
+  },
+)
+
+watch(() => agent.createMode, (mode, prev) => {
+  ensureDefaultModel()
+  const prefs = settings.settings.generationPrefs
+  if (mode === 'image' && prev === 'video') {
+    agent.inputText = applyAspectRatioToPrompt(agent.inputText, prefs.aspectRatio)
+  } else if (mode === 'video' && prev === 'image') {
+    agent.inputText = applyVideoPrefsToPrompt(
+      agent.inputText,
+      prefs.videoAspectRatio,
+      prefs.videoResolution,
+      prefs.videoDuration,
+    )
+  }
+})
 watch(availableModels, ensureDefaultModel, { deep: true })
 watch(
   () => agent.currentView,
@@ -151,98 +468,488 @@ watch(
   },
 )
 
-onMounted(() => {
-  document.addEventListener('click', onDocClick)
-  ensureDefaultModel()
-  // 进入创作页时 agent.setCurrentView 已 hydrate(true)，此处不重复拉取
-})
-onUnmounted(() => document.removeEventListener('click', onDocClick))
+watch(
+  [() => agent.createGalleryLocateSessionId, () => agent.currentView],
+  ([sessionId, view]) => {
+    if (!sessionId || view !== 'create') return
+    void locateSessionInGallery(sessionId)
+  },
+)
 
-const canSend = () =>
-  !agent.isProcessing &&
-  (agent.inputText.trim().length > 0 || agent.pendingAttachments.length > 0)
+watch(
+  () => agent.createMode,
+  (mode) => {
+    if (mode === 'digitalHuman') {
+      showFloatingComposer.value = false
+      collapseFloatingComposer()
+    }
+  },
+)
+
+watch(showFloatingComposer, (visible) => {
+  if (!visible) collapseFloatingComposer()
+})
+
+watch(composerMenuActive, (active) => {
+  if (active && showFloatingComposer.value) {
+    floatingExpanded.value = true
+  } else if (showFloatingComposer.value) {
+    scheduleFloatingCollapseIfUnfocused()
+  }
+})
+
+let composerObserver: IntersectionObserver | undefined
+
+function setupComposerObserver() {
+  composerObserver?.disconnect()
+  if (!composerAnchor.value || !studioRoot.value) return
+  composerObserver = new IntersectionObserver(
+    ([entry]) => {
+      showFloatingComposer.value =
+        !entry.isIntersecting && agent.createMode !== 'digitalHuman'
+    },
+    { root: studioRoot.value, threshold: 0, rootMargin: '-8px 0px 0px 0px' },
+  )
+  composerObserver.observe(composerAnchor.value)
+}
+
+onMounted(async () => {
+  document.addEventListener('click', onDocClick)
+  document.addEventListener('keydown', onEscape)
+  window.addEventListener('focus', onFloatingWindowRefocus)
+  ensureDefaultModel()
+
+  studioRoot.value?.addEventListener('scroll', onStudioScroll, { passive: true })
+  await nextTick()
+  setupComposerObserver()
+  void hydratePublicGallery()
+})
+onUnmounted(() => {
+  document.removeEventListener('click', onDocClick)
+  document.removeEventListener('keydown', onEscape)
+  window.removeEventListener('focus', onFloatingWindowRefocus)
+  composerObserver?.disconnect()
+  studioRoot.value?.removeEventListener('scroll', onStudioScroll)
+  if (floatingCollapseTimer) clearTimeout(floatingCollapseTimer)
+})
+
+const canSend = () => {
+  if (agent.isProcessing) return false
+  if (agent.pendingAttachments.some((a) => a.loading)) return false
+  if (agent.createMode === 'digitalHuman') {
+    return agent.lipsyncDialogue.trim().length > 0
+  }
+  return agent.inputText.trim().length > 0 || agent.pendingAttachments.length > 0
+}
 
 const isCreateBusy = computed(() => agent.isCreateProcessing)
 
-function fileBadge(name: string) {
-  const ext = name.split('.').pop()?.toUpperCase()
-  if (!ext || ext.length > 5) return 'FILE'
-  return ext
-}
+const imageAttachments = computed(() =>
+  agent.pendingAttachments.filter((a) => a.kind === 'image'),
+)
+
+const digitalHumanImageUrl = computed(
+  () => imageAttachments.value.find((a) => a.previewUrl)?.previewUrl ?? '',
+)
+
+const docAttachments = computed(() =>
+  agent.pendingAttachments.filter((a) => a.kind !== 'image'),
+)
 </script>
 
 <template>
-  <div class="create-studio" @click="closeComposerMenus">
-    <div class="create-body">
-      <section class="create-top">
-        <div class="greeting">
-          <BrandLogo :size="52" />
-          <h1>{{ greeting }}</h1>
+  <div ref="studioRoot" class="create-studio">
+    <div class="create-hero-zone">
+      <!-- ① 标题区 -->
+      <header class="hero">
+        <h1 class="hero-title">
+          开启你的
+          <span class="hero-mode-slot">
+            <span class="hero-mode-ghost" aria-hidden="true">{{ heroModeLabel }}</span>
+            <span class="hero-mode-live">
+              <span class="hero-mode-text">{{ heroModeText }}</span>
+              <span class="hero-mode-cursor" aria-hidden="true"></span>
+            </span>
+          </span>
+          之旅
+        </h1>
+      </header>
+
+      <!-- ② 输入区（与对话页 ChatInput 一致） -->
+      <section
+        ref="composerAnchor"
+        class="composer-wrap"
+        :class="{ 'composer-menu-active': composerMenuActive }"
+      >
+        <div v-if="!showFloatingComposer" class="composer-gen-pill-slot">
+          <CreateGenerationPill @view="locateSessionInGallery" />
         </div>
-
-        <div class="composer card">
-          <div v-if="agent.pendingAttachments.length" class="attachments">
-            <div
-              v-for="a in agent.pendingAttachments"
-              :key="a.id"
-              class="attach-card"
-            >
-              <button type="button" class="attach-remove" title="移除" @click="agent.removeAttachment(a.id)">
-                <X :size="12" />
-              </button>
-              <div class="attach-preview">
-                <img v-if="a.previewUrl" :src="a.previewUrl" :alt="a.name" class="attach-img" />
-                <FileText v-else :size="28" class="attach-doc-icon" />
-              </div>
-              <span class="attach-badge">{{ fileBadge(a.name) }}</span>
-            </div>
+        <div class="composer-inner">
+          <div
+            v-if="agent.createMode === 'digitalHuman'"
+            class="composer-card composer-card--digital-human"
+          >
+            <LipSyncComposerCard
+              embedded
+              :image-url="digitalHumanImageUrl"
+              :busy="isCreateBusy"
+              @send="sendFromStudio"
+            />
           </div>
+          <div v-else class="composer-card">
+            <div v-if="docAttachments.length" class="attachments">
+              <ChatAttachmentCard
+                v-for="a in docAttachments"
+                :key="a.id"
+                :attachment="a"
+                @remove="agent.removeAttachment(a.id)"
+              />
+            </div>
 
-          <textarea
-            v-model="agent.inputText"
-            class="composer-input"
-            placeholder="今天想创作什么？"
-            rows="3"
-            @keydown="onKeydown"
-          />
-
-          <div class="composer-bar">
-            <button type="button" class="icon-btn" title="上传" @click="fileInput?.click()">
-              <Plus :size="18" />
-            </button>
-
-            <div class="bar-pills">
-              <div ref="modeWrapRef" class="mode-wrap">
-                <button type="button" class="pill" @click.stop="toggleModeMenu">
-                  <component :is="currentMode?.icon ?? Sparkles" :size="14" />
-                  {{ currentMode?.label ?? 'Agent 模式' }}
-                  <ChevronDown :size="12" />
+            <div class="composer-body">
+              <div class="ref-upload-wrap ref-upload-wrap--inline">
+                <ReferenceImageStack
+                  v-if="imageAttachments.length"
+                  :attachments="imageAttachments"
+                  @add="triggerFileInput"
+                  @remove="agent.removeAttachment"
+                />
+                <button
+                  v-else
+                  type="button"
+                  class="ref-upload-card"
+                  title="上传参考内容"
+                  @click="triggerFileInput"
+                >
+                  <Plus :size="16" stroke-width="1.75" />
+                  <span>参考内容</span>
                 </button>
-                <div v-if="showModeMenu" class="mode-menu card" @click.stop>
+              </div>
+              <textarea
+                v-model="agent.inputText"
+                class="composer-input"
+                :placeholder="inputPlaceholder"
+                rows="3"
+                @keydown="onKeydown"
+              />
+            </div>
+
+            <div class="composer-footer">
+                <div class="footer-left">
                   <button
-                    v-for="m in modes"
-                    :key="m.id"
+                    :ref="bindModeTrigger"
                     type="button"
-                    class="mode-item"
-                    :class="{ active: agent.createMode === m.id }"
-                    @click="pickMode(m.id)"
+                    class="composer-pill create-composer-trigger mode-pill"
+                    :class="{ active: modeMenuOpen }"
+                    @click="toggleModeMenu"
                   >
-                    <component :is="m.icon" :size="16" />
-                    {{ m.label }}
+                    <component :is="currentMode?.icon ?? Sparkles" :size="14" />
+                    {{ currentMode?.label ?? 'Agent 创作' }}
+                    <ChevronDown :size="12" class="chevron" :class="{ open: modeMenuOpen }" />
+                  </button>
+                  <Teleport to="body">
+                    <div
+                      v-if="modeMenuOpen"
+                      :ref="bindModePanel"
+                      class="composer-popover create-composer-popover mode-menu"
+                      :style="modePanelStyle"
+                      @click.stop
+                    >
+                      <p class="menu-kicker">创作类型</p>
+                      <button
+                        v-for="m in modes"
+                        :key="m.id"
+                        type="button"
+                        class="mode-item"
+                        :class="{ active: agent.createMode === m.id }"
+                        @click="pickMode(m.id)"
+                      >
+                        <component :is="m.icon" :size="16" />
+                        <span class="mode-text">
+                          <span class="mode-label">{{ m.label }}</span>
+                          <span class="mode-desc">{{ m.desc }}</span>
+                        </span>
+                        <Check v-if="agent.createMode === m.id" :size="16" class="mode-check" />
+                      </button>
+                    </div>
+                  </Teleport>
+                  <GenPreferencesPopover v-if="agent.createMode !== 'agent'" />
+                  <CreativeSkillsMenu v-if="agent.createMode !== 'agent'" />
+                </div>
+
+                <div class="footer-right">
+                  <button
+                    v-if="agent.createMode !== 'agent'"
+                    :ref="bindModelTrigger"
+                    type="button"
+                    class="model-picker create-composer-trigger"
+                    :class="{ active: modelMenuOpen }"
+                    @click="toggleModelMenu"
+                  >
+                    <ModelLogo v-if="selectedModel" :model="selectedModel" :size="18" />
+                    <span class="model-name">{{ selectedModel?.name ?? '选择模型' }}</span>
+                    <ChevronDown :size="14" class="chevron" :class="{ open: modelMenuOpen }" />
+                  </button>
+                  <Teleport to="body">
+                    <div
+                      v-if="modelMenuOpen && availableModels.length"
+                      :ref="bindModelPanel"
+                      class="composer-popover create-composer-popover mode-menu model-menu"
+                      :style="modelPanelStyle"
+                      @click.stop
+                    >
+                      <div class="popover-head">
+                        <span>选择模型</span>
+                        <button type="button" class="popover-close" title="关闭" @click.stop="closeComposerMenus">
+                          <X :size="16" />
+                        </button>
+                      </div>
+                      <button
+                        v-for="m in availableModels"
+                        :key="m.id"
+                        type="button"
+                        class="model-option"
+                        :class="{ active: selectedModel?.id === m.id }"
+                        @click="selectModel(m.id)"
+                      >
+                        <ModelLogo :model="m" :size="20" />
+                        <span>{{ m.name }}</span>
+                        <Check v-if="selectedModel?.id === m.id" :size="16" class="mode-check" />
+                      </button>
+                    </div>
+                  </Teleport>
+
+                  <button
+                    type="button"
+                    class="send-btn"
+                    :class="{ ready: canSend(), waiting: isCreateBusy }"
+                    :disabled="!canSend() && !isCreateBusy"
+                    title="生成"
+                    @click="sendFromStudio()"
+                  >
+                    <Loader2 v-if="isCreateBusy" :size="18" class="om-loading-spinner" />
+                    <ArrowUp v-else :size="18" stroke-width="2.5" />
                   </button>
                 </div>
               </div>
-              <GenPreferencesPopover v-if="agent.createMode !== 'agent'" />
-              <CreativeSkillsMenu v-if="agent.createMode !== 'agent'" />
             </div>
+          </div>
+      </section>
+    </div>
 
-            <div ref="modelPickerRef" class="model-picker-wrap">
-              <button type="button" class="model-picker" @click.stop="toggleModelMenu">
-                <ModelLogo v-if="selectedModel" :model="selectedModel" :size="18" />
-                <span class="model-name">{{ selectedModel?.name ?? '选择模型' }}</span>
-                <ChevronDown :size="12" class="chevron" :class="{ open: showModelMenu }" />
+    <!-- ③ 作品区：全宽拉通 -->
+    <section ref="gallerySection" class="gallery-section">
+        <div class="gallery-nav">
+          <div class="gallery-nav-top">
+            <div class="gallery-tabs">
+              <button
+                v-for="tab in galleryMainTabs"
+                :key="tab.id"
+                type="button"
+                class="gallery-tab"
+                :class="{ active: galleryMainTab === tab.id }"
+                @click="selectGalleryMainTab(tab.id)"
+              >
+                <component :is="tab.icon" :size="14" />
+                {{ tab.label }}
               </button>
-              <div v-if="showModelMenu && availableModels.length" class="model-menu card" @click.stop>
+            </div>
+            <label class="gallery-search embedded-field">
+              <Search :size="14" />
+              <input
+                v-model="gallerySearch"
+                type="search"
+                :placeholder="gallerySearchPlaceholder"
+              />
+            </label>
+          </div>
+          <div v-if="galleryMainTab === 'mine'" class="gallery-nav-sub">
+            <div class="gallery-subtabs">
+              <button
+                v-for="tab in galleryMineSubTabs"
+                :key="tab.id"
+                type="button"
+                class="gallery-subtab"
+                :class="{ active: galleryMediaTab === tab.id }"
+                @click="galleryMediaTab = tab.id"
+              >
+                <component :is="tab.icon" :size="12" />
+                {{ tab.label }}
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <WorksWaterfall
+          :search-query="gallerySearch"
+          :media-type="galleryEffectiveMediaType"
+          :source="gallerySource"
+        />
+    </section>
+
+    <ImageEditOverlay />
+
+    <!-- 下滑后底部浮动输入条（数字人模式使用专用输入框，不显示浮动条） -->
+    <div
+      v-if="agent.createMode !== 'digitalHuman'"
+      class="floating-composer"
+      :class="{
+        visible: showFloatingComposer,
+        expanded: floatingExpanded,
+        'composer-menu-active': floatingExpanded && composerMenuActive,
+      }"
+      aria-hidden="false"
+    >
+      <div v-if="showFloatingComposer" class="composer-gen-pill-slot composer-gen-pill-slot--float">
+        <CreateGenerationPill @view="locateSessionInGallery" />
+      </div>
+      <div
+        ref="floatingBarRef"
+        class="floating-bar"
+        :class="{
+          expanded: floatingExpanded,
+          'floating-bar--has-docs': floatingExpanded && docAttachments.length > 0,
+        }"
+        @click="onFloatingBarClick"
+      >
+        <div
+          class="floating-expand-slot floating-attachments-slot"
+          :class="{ open: floatingExpanded && docAttachments.length > 0 }"
+        >
+          <div class="floating-expand-inner">
+            <div v-if="docAttachments.length" class="attachments floating-attachments">
+              <ChatAttachmentCard
+                v-for="a in docAttachments"
+                :key="a.id"
+                :attachment="a"
+                @remove="agent.removeAttachment(a.id)"
+              />
+            </div>
+          </div>
+        </div>
+
+        <div class="floating-main-row">
+          <div class="floating-body">
+            <div
+              v-if="floatingExpanded"
+              class="ref-upload-wrap ref-upload-wrap--inline"
+            >
+              <ReferenceImageStack
+                v-if="imageAttachments.length"
+                :attachments="imageAttachments"
+                @add="triggerFileInput"
+                @remove="agent.removeAttachment"
+              />
+              <button
+                v-else
+                type="button"
+                class="ref-upload-card"
+                title="上传参考内容"
+                @click="triggerFileInput"
+              >
+                <Plus :size="16" stroke-width="1.75" />
+                <span>参考内容</span>
+              </button>
+            </div>
+            <textarea
+              ref="floatingInputRef"
+              v-model="agent.inputText"
+              class="floating-input"
+              :class="{ expanded: floatingExpanded }"
+              :placeholder="inputPlaceholder"
+              rows="1"
+              @focus="expandFloatingComposer"
+              @blur="onFloatingInputBlur"
+              @keydown="onKeydown"
+            />
+          </div>
+
+          <button
+            type="button"
+            class="send-btn floating-send"
+            :class="{ 'floating-send--hidden': floatingExpanded, ready: canSend(), waiting: isCreateBusy }"
+            :disabled="!canSend() && !isCreateBusy"
+            title="生成"
+            tabindex="-1"
+            @click="sendFromStudio()"
+          >
+            <Loader2 v-if="isCreateBusy" :size="18" class="om-loading-spinner" />
+            <ArrowUp v-else :size="18" stroke-width="2.5" />
+          </button>
+        </div>
+
+        <div class="floating-expand-slot floating-footer-slot" :class="{ open: floatingExpanded }">
+          <div class="floating-expand-inner">
+            <div class="composer-footer floating-footer">
+          <div class="footer-left">
+            <button
+              :ref="bindFloatingModeTrigger"
+              type="button"
+              class="composer-pill create-composer-trigger mode-pill"
+              :class="{ active: floatingModeMenuOpen }"
+              @click="toggleFloatingModeMenu"
+            >
+              <component :is="currentMode?.icon ?? Sparkles" :size="14" />
+              {{ currentMode?.label ?? 'Agent 创作' }}
+              <ChevronDown :size="12" class="chevron" :class="{ open: floatingModeMenuOpen }" />
+            </button>
+            <Teleport to="body">
+              <div
+                v-if="floatingModeMenuOpen"
+                :ref="bindFloatingModePanel"
+                class="composer-popover create-composer-popover mode-menu"
+                :style="floatingModePanelStyle"
+                @click.stop
+              >
+                <p class="menu-kicker">创作类型</p>
+                <button
+                  v-for="m in modes"
+                  :key="m.id"
+                  type="button"
+                  class="mode-item"
+                  :class="{ active: agent.createMode === m.id }"
+                  @click="pickMode(m.id)"
+                >
+                  <component :is="m.icon" :size="16" />
+                  <span class="mode-text">
+                    <span class="mode-label">{{ m.label }}</span>
+                    <span class="mode-desc">{{ m.desc }}</span>
+                  </span>
+                  <Check v-if="agent.createMode === m.id" :size="16" class="mode-check" />
+                </button>
+              </div>
+            </Teleport>
+            <GenPreferencesPopover v-if="agent.createMode !== 'agent'" popover-placement="above" />
+            <CreativeSkillsMenu v-if="agent.createMode !== 'agent'" popover-placement="above" />
+          </div>
+
+          <div class="footer-right">
+            <button
+              v-if="agent.createMode !== 'agent'"
+              :ref="bindFloatingModelTrigger"
+              type="button"
+              class="model-picker create-composer-trigger"
+              :class="{ active: floatingModelMenuOpen }"
+              @click="toggleFloatingModelMenu"
+            >
+              <ModelLogo v-if="selectedModel" :model="selectedModel" :size="18" />
+              <span class="model-name">{{ selectedModel?.name ?? '选择模型' }}</span>
+              <ChevronDown :size="14" class="chevron" :class="{ open: floatingModelMenuOpen }" />
+            </button>
+            <Teleport to="body">
+              <div
+                v-if="floatingModelMenuOpen && availableModels.length"
+                :ref="bindFloatingModelPanel"
+                class="composer-popover create-composer-popover mode-menu model-menu"
+                :style="floatingModelPanelStyle"
+                @click.stop
+              >
+                <div class="popover-head">
+                  <span>选择模型</span>
+                  <button type="button" class="popover-close" title="关闭" @click.stop="closeComposerMenus">
+                    <X :size="16" />
+                  </button>
+                </div>
                 <button
                   v-for="m in availableModels"
                   :key="m.id"
@@ -253,46 +960,68 @@ function fileBadge(name: string) {
                 >
                   <ModelLogo :model="m" :size="20" />
                   <span>{{ m.name }}</span>
+                  <Check v-if="selectedModel?.id === m.id" :size="16" class="mode-check" />
                 </button>
               </div>
-            </div>
+            </Teleport>
 
             <button
               type="button"
               class="send-btn"
               :class="{ ready: canSend(), waiting: isCreateBusy }"
               :disabled="!canSend() && !isCreateBusy"
-              title="发送"
-              @click="agent.generateFromStudio()"
+              title="生成"
+              @click="sendFromStudio()"
             >
-              <Loader2 v-if="isCreateBusy" :size="18" class="om-loading-spinner" aria-hidden="true" />
+              <Loader2 v-if="isCreateBusy" :size="18" class="om-loading-spinner" />
               <ArrowUp v-else :size="18" stroke-width="2.5" />
             </button>
           </div>
-
-          <input
-            ref="fileInput"
-            type="file"
-            :accept="ACCEPT_CHAT_FILES"
-            multiple
-            hidden
-            @change="onFiles"
-          />
+            </div>
+          </div>
         </div>
-      </section>
-
-      <section class="gallery">
-        <div v-if="hasItems" class="gallery-label">创作历史</div>
-        <WorksWaterfall />
-      </section>
+      </div>
     </div>
 
-    <ImageEditOverlay />
+    <button
+      type="button"
+      class="scroll-top-btn"
+      :class="{ visible: showScrollTop }"
+      title="回到顶部"
+      aria-label="回到顶部"
+      @click="scrollToTop"
+    >
+      <ChevronsUp :size="18" />
+    </button>
+
+    <input
+      ref="fileInput"
+      type="file"
+      :accept="ACCEPT_CHAT_FILES"
+      multiple
+      hidden
+      @change="onFiles"
+    />
+
+    <Teleport to="body">
+      <div
+        v-if="composerMenuActive"
+        class="anchored-popover-backdrop create-composer-backdrop"
+        aria-hidden="true"
+        @click="closeComposerMenus"
+      />
+    </Teleport>
   </div>
 </template>
 
 <style scoped lang="scss">
 @use '../styles/variables.scss' as *;
+@use '../styles/cosmic-glass.scss' as cosmic;
+
+$floating-ease-expand: cubic-bezier(0.22, 1, 0.36, 1);
+$floating-ease-collapse: cubic-bezier(0.36, 0, 0.12, 1);
+$floating-duration-expand: 0.44s;
+$floating-duration-collapse: 0.52s;
 
 .create-studio {
   flex: 1;
@@ -300,306 +1029,735 @@ function fileBadge(name: string) {
   overflow-y: auto;
   width: 100%;
   display: flex;
-  justify-content: center;
-  padding: 48px 24px 32px;
+  flex-direction: column;
+  gap: 28px;
+  padding: 32px 0 120px;
 }
 
-.create-body {
+.create-hero-zone {
   width: 100%;
-  max-width: 800px;
+  max-width: $chat-column-max;
+  margin: 0 auto;
+  padding: 0 24px;
   display: flex;
   flex-direction: column;
   gap: 20px;
-  margin-top: min(6vh, 56px);
+  overflow: visible;
 }
 
-.create-top {
+.hero {
+  text-align: center;
+  padding-top: min(4vh, 32px);
+}
+
+.hero-title {
+  font-size: clamp(22px, 3.2vw, 30px);
+  font-weight: 600;
+  color: $text-primary;
+  letter-spacing: -0.02em;
+  line-height: 1.4;
+}
+
+.hero-mode-slot {
+  display: inline-grid;
+  margin: 0 4px;
+  vertical-align: baseline;
+  letter-spacing: normal;
+}
+
+.hero-mode-ghost,
+.hero-mode-live {
+  grid-area: 1 / 1;
+}
+
+.hero-mode-ghost {
+  visibility: hidden;
+  user-select: none;
+  pointer-events: none;
+  font-weight: 700;
+}
+
+.hero-mode-live {
+  justify-self: start;
+  display: inline-flex;
+  align-items: center;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.hero-mode-text {
+  display: inline-block;
+  background: var(--brand-text-gradient);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.hero-mode-cursor {
+  flex: none;
+  display: block;
+  width: 2px;
+  height: 0.88em;
+  margin-left: 10px;
+  background: $accent;
+  border-radius: 1px;
+  animation: hero-cursor-blink 1s step-end infinite;
+}
+
+@keyframes hero-cursor-blink {
+  0%,
+  49% {
+    opacity: 1;
+  }
+
+  50%,
+  100% {
+    opacity: 0.35;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hero-mode-cursor {
+    animation: none;
+    opacity: 1;
+  }
+}
+
+.composer-wrap {
+  position: relative;
+  overflow: visible;
+
+  &.composer-menu-active {
+    z-index: 10002;
+  }
+}
+
+.composer-gen-pill-slot {
+  position: absolute;
+  top: 0;
+  right: 0;
+  z-index: 6;
+  transform: translateY(calc(-100% - 10px));
+  pointer-events: none;
+
+  :deep(.create-gen-pill) {
+    pointer-events: auto;
+  }
+
+  &--float {
+    position: absolute;
+    top: auto;
+    bottom: calc(100% + 10px);
+    right: 0;
+    transform: none;
+  }
+}
+
+.composer-inner {
+  width: 100%;
+  overflow: visible;
+}
+
+.composer-body {
   display: flex;
-  flex-direction: column;
-  gap: 16px;
+  align-items: flex-start;
+  gap: 14px;
+  flex: 1;
+  padding: 8px 0 0 12px;
+  overflow: visible;
 }
 
-.greeting {
+.ref-upload-wrap {
+  position: relative;
+  flex-shrink: 0;
+  z-index: 4;
+  overflow: visible;
+
+  &--inline {
+    align-self: flex-start;
+    margin-top: 0;
+  }
+
+  &--float {
+    flex-shrink: 0;
+    z-index: 5;
+    align-self: center;
+    display: flex;
+    align-items: center;
+
+    :deep(.ref-image-stack) {
+      transform-origin: center center;
+    }
+
+    &:hover :deep(.ref-image-stack:not(.expanded)) {
+      transform: rotate(-8deg) scale(1.06);
+    }
+  }
+
+  &:hover {
+    z-index: 20;
+  }
+
+  :deep(.ref-image-stack) {
+    transform: rotate(-8deg);
+    transform-origin: center bottom;
+    transition:
+      transform 0.52s cubic-bezier(0.22, 1, 0.36, 1),
+      box-shadow 0.25s ease,
+      filter 0.36s ease;
+
+    &.expanded {
+      transform: none;
+    }
+  }
+
+  &:hover :deep(.ref-image-stack) {
+    z-index: 30;
+    filter: drop-shadow(0 8px 16px rgba(15, 23, 42, 0.12));
+  }
+
+  &:hover :deep(.ref-image-stack:not(.expanded)) {
+    transform: rotate(-8deg) scale(1.08);
+  }
+
+  &:hover :deep(.ref-image-stack.expanded) {
+    transform: none;
+  }
+}
+
+.ref-upload-card {
+  position: relative;
+  z-index: 1;
   display: flex;
   flex-direction: column;
   align-items: center;
-  text-align: center;
-  gap: 12px;
+  justify-content: center;
+  gap: 4px;
+  width: 52px;
+  height: 68px;
+  border-radius: 10px;
+  border: 1.5px dashed color-mix(in srgb, var(--composer-muted) 55%, transparent);
+  background: var(--composer-pill-bg);
+  color: var(--composer-muted);
+  font-size: 9px;
+  line-height: 1.2;
+  transform: rotate(-8deg);
+  transform-origin: center bottom;
+  transition:
+    transform 0.28s cubic-bezier(0.34, 1.45, 0.64, 1),
+    box-shadow 0.25s ease,
+    border-color 0.2s ease,
+    color 0.2s ease,
+    z-index 0s;
 
-  h1 {
-    font-size: 24px;
-    font-weight: 500;
-    color: $text-primary;
-    letter-spacing: -0.02em;
-    line-height: 1.3;
+  span {
+    max-width: 40px;
+    text-align: center;
+  }
+
+  &:hover {
+    z-index: 30;
+    transform: rotate(-8deg) scale(1.12) translateY(-12px);
+    box-shadow: var(--glass-float-shadow, $shadow-md);
+    border-color: rgba($accent, 0.45);
+    color: var(--composer-text);
   }
 }
 
-.composer.card {
-  width: 100%;
-  padding: 18px 20px 14px;
-  border-radius: 16px;
-  background: var(--composer-bg);
-  backdrop-filter: blur(var(--glass-blur, 24px));
-  -webkit-backdrop-filter: blur(var(--glass-blur, 24px));
-  border: var(--glass-border-width, 0.5px) solid var(--composer-border);
+.ref-upload-wrap--float .ref-upload-card {
+  width: 38px;
+  height: 50px;
+  gap: 3px;
+  font-size: 7px;
+  border-radius: 8px;
+  transform: rotate(-8deg);
+  transform-origin: center center;
+  transition:
+    width $floating-duration-expand $floating-ease-expand,
+    height $floating-duration-expand $floating-ease-expand,
+    font-size $floating-duration-expand $floating-ease-expand,
+    border-radius $floating-duration-expand $floating-ease-expand,
+    transform 0.28s cubic-bezier(0.34, 1.45, 0.64, 1),
+    box-shadow 0.25s ease,
+    border-color 0.2s ease,
+    color 0.2s ease;
+
+  span {
+    max-width: 34px;
+  }
+
+  &:hover {
+    transform: rotate(-8deg) scale(1.1) translateY(-8px);
+  }
+}
+
+.composer-card {
+  @include cosmic.cosmic-glass-frost(22px);
+  display: flex;
+  flex-direction: column;
+  min-height: $composer-min-height;
+  box-sizing: border-box;
+  padding: 12px 14px 10px;
+  background: var(--composer-bg, var(--glass-fill-gradient));
+  transition: box-shadow 0.2s;
+  overflow: visible;
+  border: none;
   box-shadow: var(--glass-float-shadow, $shadow-md);
-  transition: border-color 0.2s, box-shadow 0.2s;
 
   &:focus-within {
-    border-color: var(--composer-border-focus);
-    box-shadow: $shadow-sm;
+    box-shadow: var(--glass-float-shadow-hover, var(--glass-float-shadow, $shadow-md));
   }
+
+  :deep(.model-logo) {
+    background: var(--composer-logo-bg);
+  }
+
+  &--digital-human {
+    padding: 12px 14px 10px;
+    min-height: $composer-min-height;
+    overflow: visible;
+
+    :deep(.lipsync-composer--embedded) {
+      min-height: 0;
+      height: auto;
+    }
+  }
+}
+
+.attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 10px;
 }
 
 .composer-input {
+  flex: 1;
+  min-width: 0;
   width: 100%;
-  min-height: 80px;
+  min-height: 68px;
   resize: none;
+  overflow-y: auto;
+  padding: 2px 4px 6px 0;
   font-size: 15px;
-  line-height: 1.6;
-  color: var(--composer-text);
+  line-height: 1.55;
   background: transparent;
   border: none;
+  outline: none;
+  box-shadow: none;
+  color: var(--composer-text);
+  scrollbar-width: none;
+
+  &:focus,
+  &:focus-visible {
+    outline: none;
+    border: none;
+    box-shadow: none;
+  }
+
+  &::-webkit-scrollbar {
+    display: none;
+    width: 0;
+    height: 0;
+  }
 
   &::placeholder {
     color: var(--composer-placeholder);
   }
 }
 
-
-.attachments {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-  margin-bottom: 14px;
-}
-
-.attach-card {
-  position: relative;
-  width: 112px;
-  height: 112px;
-  border-radius: 12px;
-  overflow: hidden;
-  background: $bg-input;
-  border: 1px solid $glass-border;
-  box-shadow: $shadow-sm;
-}
-
-.attach-preview {
-  width: 100%;
-  height: 100%;
+.composer-footer {
   display: flex;
   align-items: center;
-  justify-content: center;
-  background: $bg-elevated;
+  justify-content: space-between;
+  gap: 12px;
+  flex-shrink: 0;
+  min-height: 32px;
 }
 
-.attach-img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  display: block;
-}
-
-.attach-doc-icon {
-  color: $text-muted;
-}
-
-.attach-badge {
-  position: absolute;
-  left: 8px;
-  bottom: 8px;
-  padding: 2px 6px;
-  border-radius: 6px;
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  color: #fff;
-  background: rgba(0, 0, 0, 0.55);
-}
-
-.attach-remove {
-  position: absolute;
-  top: 6px;
-  right: 6px;
-  z-index: 2;
-  width: 22px;
-  height: 22px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 50%;
-  color: #fff;
-  background: rgba(0, 0, 0, 0.5);
-
-  &:hover {
-    background: rgba(220, 53, 69, 0.85);
-  }
-}
-
-.composer-bar {
+.footer-left,
+.footer-right {
   display: flex;
   align-items: center;
   gap: 8px;
-  margin-top: 12px;
-  padding-top: 10px;
-  border-top: 1px solid var(--composer-border);
-}
-
-.icon-btn {
-  width: 32px;
-  height: 32px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 8px;
-  color: var(--composer-muted);
-  flex-shrink: 0;
-
-  &:hover {
-    background: var(--composer-picker-hover);
-    color: var(--composer-text);
-  }
-}
-
-.bar-pills {
-  flex: 1;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  align-items: center;
   min-width: 0;
 }
 
-.mode-wrap {
-  position: relative;
+.footer-left {
+  flex: 1;
+  flex-wrap: wrap;
 }
 
-.pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 6px 12px;
-  border-radius: 18px;
-  border: 1px solid var(--composer-pill-border);
-  background: var(--composer-pill-bg);
-  font-size: 12px;
-  color: var(--composer-pill-text);
+.floating-composer {
+  position: fixed;
+  bottom: 20px;
+  --sidebar-offset: #{$sidebar-expanded-width};
+  left: calc(var(--sidebar-offset) + (100vw - var(--sidebar-offset)) * 0.5);
+  z-index: 10001;
+  width: min($chat-column-max, calc(100vw - var(--sidebar-offset) - 48px));
+  transform: translateX(-50%) translateY(calc(100% + 32px));
+  opacity: 0;
+  pointer-events: none;
+  overflow: visible;
+  transition:
+    transform 0.52s $floating-ease-expand,
+    opacity 0.44s $floating-ease-expand;
 
-  &:hover {
-    border-color: $accent;
-    background: var(--composer-pill-hover-bg);
-    color: $accent;
+  &.visible {
+    transform: translateX(-50%) translateY(0);
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+  &.composer-menu-active {
+    z-index: 10002;
+  }
+
+  .composer-gen-pill-slot--float {
+    pointer-events: none;
+
+    :deep(.create-gen-pill) {
+      pointer-events: auto;
+    }
   }
 }
 
-.mode-menu {
-  position: absolute;
-  bottom: calc(100% + 6px);
-  left: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  min-width: 160px;
-  padding: 6px;
-  z-index: 40;
-  background: var(--composer-menu-bg);
-  border: 1px solid var(--composer-border);
+html[data-sidebar-collapsed='true'] .floating-composer {
+  --sidebar-offset: #{$sidebar-collapsed-width};
 }
 
-.mode-item {
+.floating-bar {
+  flex: 1;
+  min-width: 0;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  max-height: $floating-composer-collapsed-height;
+  padding: 0 12px 0 16px;
+  border-radius: 24px;
+  @include cosmic.cosmic-glass-frost(24px);
+  background: var(--composer-bg, var(--glass-fill-gradient));
+  box-shadow: var(--glass-float-shadow, $shadow-md);
+  overflow: hidden;
+  border: none;
+  transition:
+    max-height $floating-duration-collapse $floating-ease-collapse,
+    min-height $floating-duration-collapse $floating-ease-collapse,
+    padding $floating-duration-collapse $floating-ease-collapse,
+    border-radius $floating-duration-collapse $floating-ease-collapse,
+    box-shadow 0.35s ease;
+
+  &:focus-within {
+    box-shadow: var(--glass-float-shadow-hover, var(--glass-float-shadow, $shadow-md));
+  }
+
+  &.expanded {
+    max-height: $composer-min-height;
+    min-height: $composer-min-height;
+    padding: 12px 14px 12px;
+    border-radius: 22px;
+    transition:
+      max-height $floating-duration-expand $floating-ease-expand,
+      min-height $floating-duration-expand $floating-ease-expand,
+      padding $floating-duration-expand $floating-ease-expand,
+      border-radius $floating-duration-expand $floating-ease-expand,
+      box-shadow 0.35s ease;
+  }
+
+  &.expanded.floating-bar--has-docs {
+    max-height: calc(#{$composer-min-height} + 128px);
+  }
+}
+
+.floating-footer-slot {
+  flex-shrink: 0;
+  order: 2;
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows $floating-duration-collapse $floating-ease-collapse;
+
+  &.open {
+    grid-template-rows: 1fr;
+    transition: grid-template-rows $floating-duration-expand $floating-ease-expand;
+
+    .floating-expand-inner {
+      padding-top: 12px;
+    }
+  }
+}
+
+.floating-expand-slot {
+  flex-shrink: 0;
+  overflow: hidden;
+}
+
+.floating-attachments-slot {
+  order: 0;
+
+  &:not(.open) {
+    max-height: 0;
+    overflow: hidden;
+    margin: 0;
+  }
+}
+
+.floating-expand-inner {
+  min-height: 0;
+  overflow: hidden;
+}
+
+.floating-attachments {
+  margin-bottom: 10px;
+}
+
+.floating-main-row {
+  order: 1;
+  position: relative;
   display: flex;
   align-items: center;
   gap: 10px;
-  width: 100%;
-  padding: 10px 12px;
-  border-radius: 8px;
-  font-size: 13px;
-  text-align: left;
+  min-height: $floating-composer-collapsed-height;
+  flex-shrink: 0;
+  transition:
+    min-height $floating-duration-collapse $floating-ease-collapse,
+    gap $floating-duration-collapse $floating-ease-collapse;
+
+  .floating-bar.expanded & {
+    align-items: flex-start;
+    min-height: 102px;
+    gap: 0;
+    transition:
+      min-height $floating-duration-expand $floating-ease-expand,
+      gap $floating-duration-expand $floating-ease-expand;
+  }
+}
+
+.floating-body {
+  display: flex;
+  flex: 1;
+  align-items: stretch;
+  gap: 10px;
+  min-width: 0;
+  padding: 0;
+  transition:
+    gap $floating-duration-collapse $floating-ease-collapse,
+    padding $floating-duration-collapse $floating-ease-collapse;
+
+  .floating-bar.expanded & {
+    align-items: flex-start;
+    gap: 14px;
+    padding: 8px 0 0 12px;
+    transition:
+      gap $floating-duration-expand $floating-ease-expand,
+      padding $floating-duration-expand $floating-ease-expand;
+  }
+}
+
+.ref-upload-icon {
+  display: inline-flex;
+  transform: scale(0.72);
+  transform-origin: center center;
+
+  &.expanded {
+    transform: scale(1);
+  }
+}
+
+.floating-input {
+  flex: 1;
+  min-width: 0;
+  height: $floating-composer-collapsed-height;
+  min-height: $floating-composer-collapsed-height;
+  max-height: $floating-composer-collapsed-height;
+  resize: none;
+  border: none;
+  outline: none;
+  box-shadow: none;
+  background: transparent;
+  font-size: 14px;
+  line-height: $floating-composer-collapsed-height;
+  color: var(--composer-text);
+  padding: 0 4px 0 0;
+  overflow: hidden;
+  box-sizing: border-box;
+  scrollbar-width: none;
+  transition:
+    height $floating-duration-collapse $floating-ease-collapse,
+    min-height $floating-duration-collapse $floating-ease-collapse,
+    max-height $floating-duration-collapse $floating-ease-collapse,
+    font-size $floating-duration-collapse $floating-ease-collapse,
+    line-height $floating-duration-collapse $floating-ease-collapse,
+    padding $floating-duration-collapse $floating-ease-collapse;
+
+  &:focus,
+  &:focus-visible {
+    outline: none;
+    border: none;
+    box-shadow: none;
+  }
+
+  &::-webkit-scrollbar {
+    display: none;
+  }
+
+  &::placeholder {
+    color: var(--composer-placeholder);
+  }
+
+  &.expanded {
+    height: auto;
+    min-height: 68px;
+    max-height: none;
+    font-size: 15px;
+    line-height: 1.55;
+    padding: 2px 4px 6px 0;
+    overflow-y: auto;
+    transition:
+      height $floating-duration-expand $floating-ease-expand,
+      min-height $floating-duration-expand $floating-ease-expand,
+      max-height $floating-duration-expand $floating-ease-expand,
+      font-size $floating-duration-expand $floating-ease-expand,
+      line-height $floating-duration-expand $floating-ease-expand,
+      padding $floating-duration-expand $floating-ease-expand;
+  }
+}
+
+.floating-footer {
+  pointer-events: none;
+
+  .floating-bar.expanded & {
+    pointer-events: auto;
+  }
+}
+
+.floating-send {
+  flex-shrink: 0;
+  transition:
+    opacity $floating-duration-collapse $floating-ease-collapse,
+    transform $floating-duration-collapse $floating-ease-collapse,
+    visibility 0s linear $floating-duration-collapse;
+
+  &--hidden {
+    position: absolute;
+    right: 0;
+    top: 50%;
+    opacity: 0;
+    transform: translateY(-50%) scale(0.82);
+    pointer-events: none;
+    visibility: hidden;
+    transition:
+      opacity $floating-duration-expand $floating-ease-expand,
+      transform $floating-duration-expand $floating-ease-expand,
+      visibility 0s linear $floating-duration-expand;
+  }
+
+  .floating-bar.expanded & {
+    transition:
+      opacity $floating-duration-expand $floating-ease-expand,
+      transform $floating-duration-expand $floating-ease-expand,
+      visibility 0s linear $floating-duration-expand;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .floating-bar,
+  .floating-main-row,
+  .floating-body,
+  .floating-input,
+  .floating-footer-slot,
+  .floating-send {
+    transition-duration: 0.01ms !important;
+    transition-delay: 0ms !important;
+  }
+}
+
+.scroll-top-btn {
+  position: fixed;
+  right: 24px;
+  bottom: 96px;
+  z-index: 10000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
   color: var(--composer-menu-text);
+  background: var(--composer-menu-bg);
+  border: var(--glass-border-width, 0.5px) solid $border-light;
+  box-shadow: var(--glass-float-shadow, $shadow-sm);
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(12px);
+  transition:
+    opacity 0.25s ease,
+    transform 0.28s cubic-bezier(0.34, 1.2, 0.64, 1),
+    background 0.15s ease;
+
+  &.visible {
+    opacity: 1;
+    pointer-events: auto;
+    transform: translateY(0);
+  }
 
   &:hover {
     background: var(--composer-option-hover);
   }
-
-  &.active {
-    color: $accent;
-    font-weight: 600;
-    background: var(--composer-option-hover);
-  }
 }
 
-.model-picker-wrap {
-  position: relative;
-  flex-shrink: 0;
+.composer-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border-radius: 10px;
+  border: var(--glass-border-width, 0.5px) solid var(--composer-pill-border);
+  background: var(--composer-pill-bg);
+  font-size: 12px;
+  color: var(--composer-pill-text);
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+
+  &:hover,
+  &.active {
+    background: var(--composer-pill-hover-bg);
+    color: var(--composer-text);
+    border-color: color-mix(in srgb, var(--composer-border-focus) 45%, transparent);
+  }
 }
 
 .model-picker {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  max-width: 160px;
+  max-width: 180px;
   padding: 6px 10px;
-  border-radius: 18px;
-  border: 1px solid var(--composer-pill-border);
-  background: var(--composer-pill-bg);
-  font-size: 12px;
-  color: var(--composer-pill-text);
-
-  &:hover {
-    border-color: $accent;
-    background: var(--composer-pill-hover-bg);
-  }
-}
-
-.model-name {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.chevron {
-  flex-shrink: 0;
-  transition: transform 0.15s;
-
-  &.open {
-    transform: rotate(180deg);
-  }
-}
-
-.model-menu {
-  position: absolute;
-  bottom: calc(100% + 6px);
-  right: 0;
-  min-width: 200px;
-  max-height: 240px;
-  overflow-y: auto;
-  padding: 6px;
-  z-index: 40;
-  background: var(--composer-menu-bg);
-  border: 1px solid var(--composer-border);
-}
-
-.model-option {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  width: 100%;
-  padding: 8px 10px;
-  border-radius: 8px;
+  border-radius: 10px;
   font-size: 13px;
-  text-align: left;
-  color: var(--composer-menu-text);
+  color: var(--composer-muted);
+  background: var(--composer-pill-bg);
+  border: var(--glass-border-width, 0.5px) solid var(--composer-pill-border);
+  transition: background 0.15s, border-color 0.15s;
 
-  &:hover {
-    background: var(--composer-option-hover);
+  &:hover,
+  &.active {
+    background: var(--composer-picker-hover);
+    color: var(--composer-text);
   }
 
-  &.active {
-    color: $accent;
-    font-weight: 600;
-    background: var(--composer-option-hover);
+  .model-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .chevron {
+    flex-shrink: 0;
+    opacity: 0.55;
+    transition: transform 0.2s;
+
+    &.open {
+      transform: rotate(180deg);
+    }
   }
 }
 
@@ -635,17 +1793,295 @@ function fileBadge(name: string) {
   }
 }
 
-.gallery {
-  flex-shrink: 0;
-  width: 100%;
+.quick-card {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 168px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  border: 1px solid $border-light;
+  background: var(--bg-card);
+  text-align: left;
+  transition: border-color 0.15s, box-shadow 0.15s, transform 0.15s;
+
+  &:hover {
+    transform: translateY(-1px);
+    box-shadow: $shadow-sm;
+  }
+
+  &.active {
+    border-color: rgba($accent-cyan, 0.45);
+    box-shadow: 0 0 0 1px rgba($accent-cyan, 0.2);
+  }
 }
 
-.gallery-label {
+.quick-icon {
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 12px;
+  background: rgba($accent, 0.1);
+  color: $accent;
+  flex-shrink: 0;
+}
+
+.quick-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.quick-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  color: $text-primary;
+}
+
+.quick-badge {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: rgba($accent-cyan, 0.15);
+  color: $accent-cyan;
+}
+
+.quick-desc {
+  font-size: 11px;
+  color: $text-muted;
+}
+
+.gallery-section {
+  width: 100%;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 0 24px;
+  box-sizing: border-box;
+}
+
+.gallery-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.gallery-nav-top {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.gallery-nav-sub {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding-left: 2px;
+}
+
+.gallery-tabs {
+  display: flex;
+  gap: 4px;
+}
+
+.gallery-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 8px 14px;
+  border-radius: 999px;
+  font-size: 13px;
+  color: $text-secondary;
+
+  &.active {
+    background: var(--bg-card);
+    color: $text-primary;
+    font-weight: 600;
+    box-shadow: $shadow-sm;
+  }
+}
+
+.gallery-subtabs {
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  border-radius: 999px;
+  background: rgba($text-muted, 0.06);
+  border: 1px solid $border-light;
+}
+
+.gallery-subtab {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 11px;
+  border-radius: 999px;
+  font-size: 12px;
+  color: $text-muted;
+
+  &.active {
+    background: var(--bg-card);
+    color: $text-primary;
+    font-weight: 600;
+    box-shadow: $shadow-sm;
+  }
+}
+
+.gallery-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 310px;
+  flex-shrink: 0;
+  padding: 8px 12px;
+  border-radius: 999px;
+  border: 1px solid $border-light;
+  background: var(--bg-card);
+  color: $text-muted;
+
+  input {
+    flex: 1;
+    border: none;
+    background: transparent;
+    font-size: 13px;
+    color: $text-primary;
+    outline: none;
+
+    &:focus,
+    &:focus-visible {
+      outline: none;
+      border: none;
+      box-shadow: none;
+    }
+
+    &::placeholder {
+      color: $text-muted;
+    }
+  }
+}
+
+.menu-kicker {
   font-size: 11px;
   font-weight: 600;
-  color: $text-muted;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  margin-bottom: 12px;
+  color: var(--composer-muted);
+  letter-spacing: 0.04em;
+  padding: 6px 10px 4px;
+}
+
+.mode-menu {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px;
+  min-width: 220px;
+}
+
+.mode-item,
+.model-option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: 10px;
+  font-size: 13px;
+  text-align: left;
+  color: var(--composer-menu-text);
+
+  &:hover {
+    background: var(--composer-option-hover);
+  }
+
+  &.active {
+    background: var(--composer-option-hover);
+    font-weight: 600;
+  }
+
+  > svg:first-child {
+    color: $accent;
+    flex-shrink: 0;
+  }
+}
+
+.mode-text {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.mode-label {
+  font-weight: 600;
+}
+
+.mode-desc {
+  font-size: 11px;
+  color: var(--composer-muted);
+}
+
+.mode-check {
+  flex-shrink: 0;
+  color: $accent;
+}
+
+.model-menu {
+  max-height: 280px;
+  overflow-y: auto;
+  padding: 6px;
+  min-width: 240px;
+}
+
+.popover-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 6px 8px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--composer-muted);
+  letter-spacing: 0.04em;
+}
+
+.popover-close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 8px;
+  color: var(--composer-muted);
+
+  &:hover {
+    background: var(--composer-option-hover);
+    color: var(--composer-menu-text);
+  }
+}
+</style>
+
+<style lang="scss">
+@use '../styles/cosmic-glass.scss' as cosmic;
+@use '../styles/variables.scss' as *;
+
+.create-composer-backdrop {
+  z-index: 10001;
+}
+
+.create-composer-popover.mode-menu,
+.create-composer-popover.model-menu {
+  @include cosmic.cosmic-glass-frost(var(--glass-radius-md, 20px));
+  background: var(--composer-menu-bg, var(--glass-fill-gradient));
+  box-shadow: var(--glass-float-shadow, $shadow-md);
 }
 </style>

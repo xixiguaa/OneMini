@@ -117,31 +117,12 @@ function resolveVideoSize(resolution, aspectRatio) {
   return { width, height: align((width * hR) / wR) }
 }
 
-/** 视频生成（任务占位） */
-app.post('/api/video', async (req, res) => {
-  try {
-    const { prompt, aspect_ratio, resolution, width, height } = req.body
-    if (!prompt) return res.status(400).json({ error: '缺少 prompt' })
-
-    const size =
-      width && height
-        ? { width: Number(width), height: Number(height) }
-        : resolveVideoSize(resolution, aspect_ratio)
-
-    const jobId = `video-${Date.now()}`
-    res.json({
-      jobId,
-      status: 'WAIT',
-      width: size.width,
-      height: size.height,
-      aspectRatio: aspect_ratio || '16:9',
-      resolution: resolution || '720',
-      message: `【演示】视频生成任务已创建（${size.width}×${size.height}）：「${prompt.slice(0, 60)}…」\n接入混元/可灵等视频 API 后将返回真实视频地址。`,
-    })
-  } catch (err) {
-    console.error('[video]', err)
-    res.status(500).json({ error: err.message })
-  }
+/** 视频生成（已迁移至 Python 平台 API） */
+app.post('/api/video', (_req, res) => {
+  res.status(410).json({
+    error: '已迁移',
+    message: '请使用 POST /api/platform/agent/video（由 Vite 代理至 Python 后端）',
+  })
 })
 
 /** 提交混元生3D专业版任务 */

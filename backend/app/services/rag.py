@@ -77,7 +77,7 @@ async def rag_answer_stream(
     messages = build_rag_messages(question, contexts, history, system_extra=system_extra)
 
     async def gen():
-        async for delta in stream_chat_completion(
+        async for event in stream_chat_completion(
             messages,
             model=model,
             provider=provider,
@@ -85,7 +85,8 @@ async def rag_answer_stream(
             base_url=base_url,
             settings=settings,
         ):
-            yield delta
+            if event.get("type") == "content" and event.get("delta"):
+                yield event["delta"]
 
     return contexts, gen()
 

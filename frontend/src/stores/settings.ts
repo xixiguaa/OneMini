@@ -15,16 +15,21 @@ import type {
 import { DEFAULT_GENERATION_PREFS } from '../types/agent'
 import {
   ASPECT_RATIOS,
+  IMAGE_RESOLUTIONS,
   VIDEO_ASPECT_RATIOS,
+  VIDEO_DURATIONS,
   VIDEO_RESOLUTIONS,
 } from '../config/constants'
+import { resolveImageDimensions } from '../utils/imageSize'
 
 const STORAGE_KEY = 'aji-agent-settings'
 const IMAGE_ASPECT_DEFAULT_MIGRATION_KEY = 'onemini-image-aspect-default-1x1'
 
-const ASPECT_RATIO_IDS = new Set(ASPECT_RATIOS.map((r) => r.id))
-const VIDEO_RESOLUTION_IDS = new Set(VIDEO_RESOLUTIONS.map((r) => r.id))
-const VIDEO_ASPECT_RATIO_IDS = new Set(VIDEO_ASPECT_RATIOS.map((r) => r.id))
+const ASPECT_RATIO_IDS = new Set<string>(ASPECT_RATIOS.map((r) => r.id))
+const IMAGE_RESOLUTION_IDS = new Set<string>(IMAGE_RESOLUTIONS.map((r) => r.id))
+const VIDEO_RESOLUTION_IDS = new Set<string>(VIDEO_RESOLUTIONS.map((r) => r.id))
+const VIDEO_ASPECT_RATIO_IDS = new Set<string>(VIDEO_ASPECT_RATIOS.map((r) => r.id))
+const VIDEO_DURATION_SET = new Set<number>(VIDEO_DURATIONS)
 
 function applyImageAspectDefaultMigration(prefs: GenerationPrefs): GenerationPrefs {
   try {
@@ -38,14 +43,25 @@ function applyImageAspectDefaultMigration(prefs: GenerationPrefs): GenerationPre
 
 function normalizeGenerationPrefs(prefs?: Partial<GenerationPrefs>): GenerationPrefs {
   const merged: GenerationPrefs = { ...DEFAULT_GENERATION_PREFS, ...prefs }
-  if (merged.aspectRatio === 'smart' || !ASPECT_RATIO_IDS.has(merged.aspectRatio)) {
+  if (!ASPECT_RATIO_IDS.has(merged.aspectRatio)) {
     merged.aspectRatio = DEFAULT_GENERATION_PREFS.aspectRatio
+  }
+  if (!IMAGE_RESOLUTION_IDS.has(merged.imageResolution)) {
+    merged.imageResolution = DEFAULT_GENERATION_PREFS.imageResolution
   }
   if (!VIDEO_RESOLUTION_IDS.has(merged.videoResolution)) {
     merged.videoResolution = DEFAULT_GENERATION_PREFS.videoResolution
   }
   if (!VIDEO_ASPECT_RATIO_IDS.has(merged.videoAspectRatio)) {
     merged.videoAspectRatio = DEFAULT_GENERATION_PREFS.videoAspectRatio
+  }
+  if (!VIDEO_DURATION_SET.has(merged.videoDuration)) {
+    merged.videoDuration = DEFAULT_GENERATION_PREFS.videoDuration
+  }
+  if (!merged.imageWidth || !merged.imageHeight) {
+    const dims = resolveImageDimensions(merged.imageResolution, merged.aspectRatio)
+    merged.imageWidth = dims.width
+    merged.imageHeight = dims.height
   }
   return merged
 }

@@ -206,7 +206,7 @@ function onPageMenu() {
         >
           <div class="login-brand">
             <div class="login-brand-mark" aria-hidden="true">OM</div>
-            <h1>{{ BRAND_NAME }}</h1>
+            <h1 class="brand-wordmark">{{ BRAND_NAME }}</h1>
           </div>
 
           <div class="mode-tabs">
@@ -365,6 +365,8 @@ function onPageMenu() {
 </template>
 
 <style scoped lang="scss">
+@use '../styles/variables.scss' as *;
+
 .login-page {
   position: relative;
   min-height: 100vh;
@@ -550,20 +552,12 @@ function onPageMenu() {
   h1 {
     margin: 0;
     font-size: 21px;
-    font-weight: 600;
     line-height: 1;
   }
 }
 
-.login-page--dark .login-brand h1 {
-  color: rgba(255, 255, 255, 0.96);
-}
-
-.login-page--light .login-brand h1 {
-  color: #2d1e6b;
-}
-
 .login-brand-mark {
+  font-family: $font-brand;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -575,6 +569,12 @@ function onPageMenu() {
   color: #fff;
   background: linear-gradient(135deg, #7c5fe8 0%, #5338c0 100%);
   box-shadow: 0 4px 14px rgba(124, 95, 232, 0.4);
+  transform-origin: center bottom;
+  animation: elastic-bounce 2s cubic-bezier(0.36, 0.07, 0.19, 0.97) infinite;
+
+  @media (prefers-reduced-motion: reduce) {
+    animation: none;
+  }
 }
 
 .mode-tabs {

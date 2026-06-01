@@ -41,7 +41,28 @@ SEEDREAM_ASPECT_TO_SIZE: dict[str, str] = {
     "21:9": "3024x1296",
 }
 
+# 火山 Seedream 4K 官方推荐像素
+SEEDREAM_4K_ASPECT_TO_SIZE: dict[str, str] = {
+    "smart": "4K",
+    "1:1": "4096x4096",
+    "4:3": "4608x3456",
+    "3:4": "3456x4608",
+    "16:9": "5120x2880",
+    "9:16": "2880x5120",
+    "3:2": "4992x3328",
+    "2:3": "3328x4992",
+    "21:9": "6048x2592",
+}
+
+
 SEEDREAM_SUPPORTED_RATIOS = frozenset(SEEDREAM_ASPECT_TO_SIZE.keys()) - {"smart"}
+
+
+def _normalize_resolution_tier(resolution: str | None) -> str:
+    key = (resolution or "2k").strip().lower().replace("p", "")
+    if key in ("4k", "4096", "ultra"):
+        return "4k"
+    return "2k"
 
 
 def _is_seedream(provider: str | None, model: str | None) -> bool:
@@ -57,17 +78,32 @@ def _resolve_size(
     *,
     provider: str | None = None,
     model: str | None = None,
+    resolution: str | None = None,
+    width: int | None = None,
+    height: int | None = None,
 ) -> str:
+    if width and height and width > 0 and height > 0:
+        return f"{int(width)}x{int(height)}"
+
     ratio_key = (aspect_ratio or "1:1").strip()
     if ratio_key == "smart":
         ratio_key = "1:1"
+
+    tier = _normalize_resolution_tier(resolution)
     if _is_seedream(provider, model):
-        if ratio_key not in SEEDREAM_ASPECT_TO_SIZE:
+        size_map = SEEDREAM_4K_ASPECT_TO_SIZE if tier == "4k" else SEEDREAM_ASPECT_TO_SIZE
+        if ratio_key not in size_map:
             ratio_key = "1:1"
-        return SEEDREAM_ASPECT_TO_SIZE[ratio_key]
+        return size_map[ratio_key]
+
     if ratio_key not in GENERIC_ASPECT_TO_SIZE:
         ratio_key = "1:1"
-    return GENERIC_ASPECT_TO_SIZE[ratio_key]
+    base = GENERIC_ASPECT_TO_SIZE[ratio_key]
+    if tier == "4k":
+        parts = base.split("x")
+        if len(parts) == 2 and parts[0].isdigit() and parts[1].isdigit():
+            return f"{int(parts[0]) * 2}x{int(parts[1]) * 2}"
+    return base
 
 
 def _extract_image_url(data: dict[str, Any]) -> str | None:
@@ -184,6 +220,9 @@ async def generate_image(
     api_key: str | None = None,
     base_url: str | None = None,
     aspect_ratio: str | None = None,
+    resolution: str | None = None,
+    width: int | None = None,
+    height: int | None = None,
     image_url: str | None = None,
     user_id: str | None = None,
     timeout: float = 180.0,
@@ -203,7 +242,14 @@ async def generate_image(
     if not model:
         raise RuntimeError("未指定图片模型，请在创作页选择模型或在技能配置中绑定")
 
-    size = _resolve_size(aspect_ratio, provider=provider, model=model)
+    size = _resolve_size(
+        aspect_ratio,
+        provider=provider,
+        model=model,
+        resolution=resolution,
+        width=width,
+        height=height,
+    )
     url = resolved_base.rstrip("/") + "/images/generations"
     payload: dict[str, Any] = {
         "model": model,

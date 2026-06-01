@@ -32,6 +32,10 @@ export interface CreateHistoryItem {
   sessionId?: string
   /** 上一版本 id */
   parentId?: string
+  /** 生成时的宽高比，如 16:9 */
+  aspectRatio?: string
+  /** 编辑/生成操作类型，用于历史列表标签 */
+  editAction?: string
 }
 
 const STORAGE_KEY = 'onemini-create-history-cache'
@@ -231,6 +235,18 @@ export const useCreateHistoryStore = defineStore('createHistory', () => {
     return !items.value.some((i) => i.parentId === id)
   }
 
+  function versionSubtreeIds(rootId: string, pool = items.value): string[] {
+    const byId = new Set(pool.map((item) => item.id))
+    if (!byId.has(rootId)) return []
+    const order: string[] = []
+    const walk = (id: string) => {
+      pool.filter((item) => item.parentId === id).forEach((child) => walk(child.id))
+      order.push(id)
+    }
+    walk(rootId)
+    return order
+  }
+
   async function removeVersion(id: string) {
     if (!isVersionLeaf(id)) return false
     try {
@@ -240,6 +256,21 @@ export const useCreateHistoryStore = defineStore('createHistory', () => {
       if (!is404) throw e
     }
     items.value = items.value.filter((i) => i.id !== id)
+    saveCache(items.value)
+    return true
+  }
+
+  async function removeVersionCascade(id: string) {
+    const order = versionSubtreeIds(id)
+    if (!order.length) return false
+    try {
+      await deleteCreateVersionApi(id, { cascade: true })
+    } catch (e) {
+      const is404 = axios.isAxiosError(e) && e.response?.status === 404
+      if (!is404) throw e
+    }
+    const removeSet = new Set(order)
+    items.value = items.value.filter((item) => !removeSet.has(item.id))
     saveCache(items.value)
     return true
   }
@@ -305,7 +336,9 @@ export const useCreateHistoryStore = defineStore('createHistory', () => {
     update,
     removeSession,
     removeVersion,
+    removeVersionCascade,
     isVersionLeaf,
+    versionSubtreeIds,
     sessionIdOf,
     migrateFromConversations,
     sessionItems,

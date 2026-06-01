@@ -48,6 +48,7 @@ html[data-theme='light'] {
   --accent-gold: #ffb830;
   --accent-magic: #7c5fe8;
   --accent-cyan: #0dcfb0;
+  --brand-text-gradient: linear-gradient(90deg, #7c5fe8 0%, #b86ae8 45%, #f28ac6 100%);
   --link-color: rgba(124, 95, 232, 0.85);
   --border-light: rgba(124, 95, 232, 0.16);
   --border-soft: rgba(255, 255, 255, 0.65);
@@ -160,6 +161,7 @@ html[data-theme='dark'] {
   --accent-gold: #ffb830;
   --accent-magic: #7c5fe8;
   --accent-cyan: #1e96be;
+  --brand-text-gradient: linear-gradient(90deg, #9b7ef0 0%, #c88aef 45%, #f5a0d0 100%);
   --link-color: rgba(140, 110, 255, 0.75);
   --border-light: rgba(255, 255, 255, 0.13);
   --border-soft: rgba(255, 255, 255, 0.08);
@@ -270,7 +272,14 @@ $active-indicator: var(--active-indicator);
 $radius-lg: 28px;
 $radius-md: 20px;
 $radius-sm: 14px;
+$chat-column-max: 1000px;
+$sidebar-expanded-width: 248px;
+$sidebar-collapsed-width: 56px;
+$main-content-min-width: 720px;
+$composer-min-height: 174px;
+$floating-composer-collapsed-height: 72px;
 $font-sans: 'PingFang SC', 'Microsoft YaHei', -apple-system, BlinkMacSystemFont, sans-serif;
+$font-brand: 'Sora', 'Plus Jakarta Sans', sans-serif;
 
 // 兼容
 $bg-dark: $bg-page;

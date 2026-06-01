@@ -49,7 +49,7 @@ function selectView(id: ViewId) {
     :aria-expanded="!collapsed"
   >
     <div class="sidebar-head">
-      <h1 v-show="!collapsed" class="brand-title">{{ BRAND_NAME }}</h1>
+      <h1 v-show="!collapsed" class="brand-title brand-wordmark">{{ BRAND_NAME }}</h1>
       <button
         type="button"
         class="collapse-btn"
@@ -157,8 +157,6 @@ $sidebar-collapsed: 56px;
 
 .brand-title {
   font-size: 17px;
-  font-weight: 700;
-  color: $text-primary;
   line-height: 1.2;
   white-space: nowrap;
   overflow: hidden;
