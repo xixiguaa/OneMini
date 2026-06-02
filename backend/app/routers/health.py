@@ -6,9 +6,11 @@ from app.config import get_settings
 from app.context import bind_user_context
 from app.deps import get_current_user
 from app.services.embeddings import get_embedding_dim
+from app.db.session import ping_postgres
 from app.services.chat_store import get_storage_info
 from app.services import llm_wiki
 from app.services.milvus_store import ping_milvus
+from app.services.minio_storage import ping_minio
 
 router = APIRouter(tags=["health"])
 
@@ -48,6 +50,8 @@ def health(user_id: str = Depends(get_current_user)):
     payload = {
         "ok": True,
         "service": "onemini-platform",
+        "postgres": ping_postgres(settings),
+        "minio": ping_minio(settings),
         "milvus": milvus,
         "langchain": {
             "ok": langchain_ok,

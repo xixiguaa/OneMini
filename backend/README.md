@@ -1,17 +1,20 @@
 # OneMini Platform · Python 后端
 
-基于 **FastAPI + Milvus + LangChain RAG** 的 AI 平台核心服务，与 OneMini 前端配合使用。
+基于 **FastAPI + PostgreSQL + MinIO + Milvus** 的 AI 平台核心服务，与 OneMini 前端配合使用。
 
 ## 架构
 
 ```
 OneMini 前端 (5173)
   ├─ /api/*           → Node 代理 (3001)  对话 / 图片 / 视频 / 3D
-  └─ /api/platform/*  → Python 后端 (8000) Milvus 知识库 + RAG + 对话持久化
-         ↓
-    Milvus (19530)  ← Docker milvus-standalone
-    Attu (3000)     ← 可视化
+  └─ /api/platform/*  → Python 后端 (8000)
+         ├─ PostgreSQL   用户、创作历史元数据、公共画廊
+         ├─ MinIO        创作/画廊图片与视频二进制
+         └─ Milvus       知识库 RAG（onemini_knowledge）+ 对话/长期记忆（onemini_chat）
+    Attu (3000)     ← Milvus 可视化
 ```
+
+**凭证**：数据库与 MinIO 密码仅通过 `backend/.env`（或环境变量）注入，见 `.env.example`，勿写入代码。
 
 ## 完整流程
 
@@ -29,10 +32,15 @@ python3 -m venv .venv
 source .venv/bin/activate   # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 cp .env.example .env
-# 编辑 .env：至少配置 OPENAI_API_KEY（或 DeepSeek 等兼容 Key）
+# 编辑 .env：DB_PASSWORD、MINIO_ACCESS_KEY、MINIO_SECRET_KEY（及可选 OPENAI_API_KEY）
+
+# 首次使用 PostgreSQL 时创建库（若容器未自动创建）：
+#   psql -h 127.0.0.1 -U postgres -c "CREATE DATABASE onemini;"
 
 python run.py
 ```
+
+启动时会自动建表；若 `data/users.json` / `data/create_history/*.json` 存在且表为空，会一次性迁移到 PostgreSQL + MinIO。
 
 - API：http://localhost:8000
 - 文档：http://localhost:8000/docs
@@ -53,6 +61,9 @@ Attu：http://localhost:3000
 
 | 变量 | 说明 |
 |------|------|
+| `DB_HOST` / `DB_PORT` / `DB_USER` / `DB_PASSWORD` / `DB_NAME` | PostgreSQL 主库 |
+| `DATABASE_URL` | 可选，覆盖分项配置 |
+| `MINIO_ENDPOINT` / `MINIO_ACCESS_KEY` / `MINIO_SECRET_KEY` / `MINIO_BUCKET` | 对象存储 |
 | `MILVUS_HOST` / `MILVUS_PORT` | Milvus 地址 |
 | `OPENAI_API_KEY` | RAG 回答用 LLM |
 | `OPENAI_BASE_URL` | 兼容 DeepSeek 等 |

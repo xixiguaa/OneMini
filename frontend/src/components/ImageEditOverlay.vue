@@ -3,6 +3,7 @@ import {
   ChevronLeft,
   ChevronRight,
   ChevronsDown,
+  ClipboardCopy,
   Download,
   Eraser,
   LocateFixed,
@@ -49,6 +50,7 @@ import SmartHdDialog from './SmartHdDialog.vue'
 import { downloadMediaUrl } from '../utils/downloadMedia'
 import { formatGenerationTime } from '../utils/formatGenerationTime'
 import { resolveCreateHistoryImageUrl } from '../utils/createHistoryMedia'
+import { buildActiveEditDetailRows } from '../utils/imageEditHistory'
 
 const agent = useAgentStore()
 const createHistory = useCreateHistoryStore()
@@ -62,6 +64,7 @@ const editComposerRef = ref<InstanceType<typeof CreateComposerCard> | null>(null
 const editFloatingComposerRef = ref<InstanceType<typeof CreateComposerCard> | null>(null)
 const editFloatingLipsyncRef = ref<InstanceType<typeof LipSyncComposerCard> | null>(null)
 const editStageBodyRef = ref<HTMLElement | null>(null)
+const sideDetailPopperEl = ref<HTMLElement | null>(null)
 const editCompletedFlashId = ref<string | null>(null)
 let prevEditRunningIds = new Set<string>()
 const EDIT_STAGE_BOTTOM_THRESHOLD = 48
@@ -78,6 +81,12 @@ const deleteMode = ref<'session' | 'version' | 'blocked' | null>(null)
 const deleteVersionId = ref('')
 const deleting = ref(false)
 const versionTimePopper = useHoverPopper({ placement: 'below' })
+const sideDetailPopper = useHoverPopper({
+  placement: 'below',
+  gap: 8,
+  horizontalAlign: 'end',
+  estimatedWidth: 280,
+})
 
 const {
   open: confirmOpen,
@@ -230,6 +239,44 @@ watch(
 const activePrompt = computed(() => agent.imageEditActive?.prompt?.trim() || '')
 
 const metaChips = computed(() => metaLine.value.split('|').map((s) => s.trim()).filter(Boolean))
+
+const sideDetailRows = computed(() => {
+  const active = agent.imageEditActive
+  if (!active) return []
+  return buildActiveEditDetailRows(active, agent.imageEditVersions, {
+    isVideo: isVideoEdit.value,
+    imageResolution: settings.settings.generationPrefs.imageResolution,
+    videoResolution: settings.settings.generationPrefs.videoResolution,
+    digitalHumanMode: isDigitalHumanComposer.value,
+    digitalHumanModeId: agent.lipsyncDigitalMode,
+  })
+})
+
+const showSideDetailPopper = computed(
+  () =>
+    !!agent.imageEditActive &&
+    sideDetailPopper.activeKey.value === agent.imageEditActive.id &&
+    sideDetailRows.value.length > 0,
+)
+
+function onSideDetailEnter(e: MouseEvent) {
+  const active = agent.imageEditActive
+  if (!active) return
+  const trigger = e.currentTarget as HTMLElement
+  const iconEl = trigger.querySelector('svg')
+  sideDetailPopper.show(active.id, (iconEl ?? trigger) as HTMLElement)
+}
+
+function onSideDetailLeave() {
+  sideDetailPopper.hide()
+}
+
+watch(showSideDetailPopper, (visible) => {
+  if (!visible) return
+  void nextTick(() => {
+    sideDetailPopper.remeasure(sideDetailPopperEl.value)
+  })
+})
 
 const promptSectionTitle = computed(() => (isVideoEdit.value ? '视频提示词' : '图片提示词'))
 
@@ -466,11 +513,6 @@ function onOutpaintSubmit(_payload: { prompt: string; scale: number; ratio: stri
   soonFeature('扩图')
 }
 
-function showMetaInfo() {
-  if (!metaLine.value) return
-  toast.show({ message: metaLine.value, kind: 'info', duration: 6000 })
-}
-
 function locateInCreatePage() {
   const sessionId = agent.imageEditSessionId
   if (!sessionId) return
@@ -558,8 +600,16 @@ async function onHistoryRegenerate(versionId: string) {
 function onUseHistoryPrompt(prompt: string) {
   if (!prompt) return
   agent.inputText = prompt
-  focusEditComposer()
+  void nextTick(() => {
+    scrollEditStageToBottom('smooth')
+    focusEditComposer()
+  })
   toast.showSuccess('已填入提示词')
+}
+
+function onUseActivePrompt(e: MouseEvent) {
+  e.stopPropagation()
+  onUseHistoryPrompt(activePrompt.value)
 }
 
 const displayUrl = computed(() => {
@@ -837,6 +887,30 @@ function onDeleteCancel() {
           </div>
         </Teleport>
 
+        <Teleport to="body">
+          <div
+            v-if="showSideDetailPopper"
+            ref="sideDetailPopperEl"
+            class="side-detail-popper"
+            :style="sideDetailPopper.panelStyle.value"
+            @mouseenter="sideDetailPopper.cancelHide()"
+            @mouseleave="sideDetailPopper.hide()"
+          >
+            <p class="side-detail-popper__title">详细信息</p>
+            <div class="side-detail-popper__rows">
+              <div
+                v-for="row in sideDetailRows"
+                :key="row.label"
+                class="side-detail-popper__row"
+                :class="{ 'side-detail-popper__row--multiline': row.multiline }"
+              >
+                <span class="side-detail-popper__label">{{ row.label }}</span>
+                <span class="side-detail-popper__value">{{ row.value }}</span>
+              </div>
+            </div>
+          </div>
+        </Teleport>
+
         <div class="edit-stage">
             <button type="button" class="stage-close gallery-nav-btn" title="关闭" @click="agent.closeImageEdit()">
               <X :size="18" stroke-width="2.25" />
@@ -1102,19 +1176,28 @@ function onDeleteCancel() {
               <section class="side-section side-section--prompt">
                 <h3 class="side-section-title side-section-title--static">{{ promptSectionTitle }}</h3>
                 <p v-if="!activePrompt" class="side-prompt-empty">暂无生成提示词</p>
-                <p v-else class="side-prompt-text">{{ activePrompt }}</p>
-                <div v-if="metaChips.length" class="side-meta-chips">
-                  <span v-for="chip in metaChips" :key="chip" class="meta-chip">{{ chip }}</span>
-                  <button
-                    v-if="metaLine"
-                    type="button"
-                    class="meta-chip meta-chip--btn"
-                    title="详细信息"
-                    @click="showMetaInfo"
-                  >
-                    <Info :size="12" />
+                <div v-else class="side-prompt-wrap side-prompt-wrap--promptable">
+                  <p class="side-prompt-text">{{ activePrompt }}</p>
+                  <button type="button" class="side-prompt-use" @click="onUseActivePrompt">
+                    <ClipboardCopy :size="12" />
+                    使用提示词
                   </button>
                 </div>
+                <p v-if="agent.imageEditActive" class="side-meta-line">
+                  <template v-for="(chip, chipIdx) in metaChips" :key="`${chip}-${chipIdx}`">
+                    <span v-if="chipIdx > 0" class="side-meta-line__sep" aria-hidden="true">|</span>
+                    <span>{{ chip }}</span>
+                  </template>
+                  <span
+                    class="side-meta-line__info"
+                    @mouseenter="onSideDetailEnter"
+                    @mouseleave="onSideDetailLeave"
+                  >
+                    <span v-if="metaChips.length" class="side-meta-line__sep" aria-hidden="true">|</span>
+                    详细信息
+                    <Info :size="11" />
+                  </span>
+                </p>
               </section>
 
               <section v-if="!isVideoEdit" class="side-section side-section--cta">
@@ -1943,6 +2026,17 @@ $floating-ease-expand: cubic-bezier(0.22, 1, 0.36, 1);
   color: $text-muted;
 }
 
+.side-prompt-wrap {
+  position: relative;
+
+  &--promptable:hover .side-prompt-use,
+  &--promptable:focus-within .side-prompt-use {
+    opacity: 1;
+    visibility: visible;
+    pointer-events: auto;
+  }
+}
+
 .side-prompt-text {
   margin: 0;
   padding: 12px 14px;
@@ -1956,28 +2050,133 @@ $floating-ease-expand: cubic-bezier(0.22, 1, 0.36, 1);
   border: 1px solid $border-light;
 }
 
-.side-meta-chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
+.side-prompt-use {
+  position: absolute;
+  right: 10px;
+  bottom: 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  font-size: 12px;
+  line-height: 1;
+  color: $text-muted;
+  background: color-mix(in srgb, var(--bg-elevated) 92%, transparent);
+  box-shadow: -12px 0 12px color-mix(in srgb, var(--bg-elevated) 88%, transparent);
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: opacity 0.15s, color 0.15s;
+
+  &:hover {
+    color: $accent-emphasis;
+  }
 }
 
-.meta-chip {
-  padding: 3px 8px;
-  border-radius: 6px;
-  font-size: 10px;
+.side-meta-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.5;
   color: $text-muted;
-  background: var(--composer-pill-bg, $accent-light);
-  border: 1px solid $border-light;
 
-  &--btn {
+  &__sep {
+    margin: 0 8px;
+    color: color-mix(in srgb, $text-muted 65%, transparent);
+  }
+
+  &__info {
     display: inline-flex;
     align-items: center;
-    padding: 3px 6px;
+    gap: 3px;
+    cursor: pointer;
+    transition: color 0.15s;
 
     &:hover {
-      @include edit-hover-surface;
+      color: $text-secondary;
     }
+  }
+}
+
+.side-detail-popper {
+  @include cosmic.cosmic-glass-frost(14px);
+  min-width: 240px;
+  max-width: min(280px, calc(100vw - 32px));
+  padding: 0;
+  background: var(--composer-menu-bg, var(--glass-fill-gradient));
+  border: 1px solid $border-light;
+  box-shadow: var(--glass-float-shadow, $shadow-md);
+  pointer-events: auto;
+  animation: side-detail-popper-in 0.16s ease;
+  overflow: hidden;
+
+  &__title {
+    margin: 0;
+    padding: 12px 16px 10px;
+    font-size: 12px;
+    font-weight: 600;
+    color: $text-muted;
+    letter-spacing: 0.02em;
+    border-bottom: 1px solid color-mix(in srgb, $border-light 75%, transparent);
+  }
+
+  &__rows {
+    display: flex;
+    flex-direction: column;
+    padding: 6px 0 10px;
+  }
+
+  &__row {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 20px;
+    padding: 7px 16px;
+    font-size: 12px;
+    line-height: 1.5;
+
+    &--multiline {
+      flex-direction: column;
+      align-items: stretch;
+      gap: 5px;
+      padding-top: 8px;
+      padding-bottom: 8px;
+
+      .side-detail-popper__value {
+        text-align: left;
+        font-weight: 400;
+        line-height: 1.6;
+        word-break: break-word;
+        white-space: pre-wrap;
+      }
+    }
+  }
+
+  &__label {
+    flex-shrink: 0;
+    color: $text-muted;
+    font-weight: 500;
+  }
+
+  &__value {
+    min-width: 0;
+    text-align: right;
+    color: $text-primary;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+@keyframes side-detail-popper-in {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
   }
 }
 

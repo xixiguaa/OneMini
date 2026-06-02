@@ -174,9 +174,9 @@ def resolve_image_ref_for_api(image_url: str | None, *, user_id: str = "default"
     match = _LOCAL_MEDIA_RE.search(path)
     if match:
         item_id = match.group(1)
-        media_file = create_history_store.media_path(uid, item_id)
-        if media_file.is_file():
-            return _bytes_to_data_uri(media_file.read_bytes())
+        blob = create_history_store.read_media_bytes(uid, item_id)
+        if blob:
+            return _bytes_to_data_uri(blob)
 
     # 相对路径：向本机平台 API 拉取（需带 userId）
     fetch_path = path if path.startswith("/") else ref

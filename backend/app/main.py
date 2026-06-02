@@ -4,14 +4,37 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import get_settings
+from app.db.session import init_db, ping_postgres
 from app.routers import agent, auth, chat, conversations, create_history, health, knowledge, secrets, wiki
 from app.services.chat_store import _get_chat_collection
+from app.services.legacy_data_import import run_legacy_import_if_needed
 from app.services.milvus_store import connect_milvus, disconnect_milvus, ping_milvus
+from app.services.minio_storage import ensure_bucket, ping_minio
 
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     settings = get_settings()
+
+    pg = ping_postgres(settings)
+    if pg.get("ok"):
+        init_db(settings)
+        print(f"✓ PostgreSQL 已连接 {settings.db_host}:{settings.db_port}/{settings.db_name}")
+        minio_status = ping_minio(settings)
+        if minio_status.get("ok"):
+            ensure_bucket(settings)
+            print(f"✓ MinIO 已连接 {settings.minio_endpoint} bucket={settings.minio_bucket}")
+        else:
+            print(f"⚠ MinIO 未连接: {minio_status.get('error')}")
+        try:
+            migrated = run_legacy_import_if_needed()
+            if any(migrated.values()):
+                print(f"✓ 已从本地 JSON 迁移: {migrated}")
+        except Exception as exc:
+            print(f"⚠ 本地数据迁移失败: {exc}")
+    else:
+        print(f"⚠ PostgreSQL 未连接: {pg.get('error')}（请配置 backend/.env 中的 DB_PASSWORD）")
+
     status = ping_milvus(settings)
     if status.get("ok"):
         print(f"✓ Milvus 已连接 {settings.milvus_host}:{settings.milvus_port} ({status.get('version')})")
@@ -29,7 +52,7 @@ async def lifespan(_app: FastAPI):
 
 app = FastAPI(
     title="OneMini Platform API",
-    description="Python 后端：Milvus 向量库 + LangChain RAG 知识问答",
+    description="Python 后端：PostgreSQL + MinIO + Milvus（RAG/对话记忆）",
     version="0.1.0",
     lifespan=lifespan,
 )

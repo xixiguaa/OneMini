@@ -13,6 +13,22 @@ class Settings(BaseSettings):
     host: str = "0.0.0.0"
     port: int = 8000
 
+    # PostgreSQL 主库（密码仅通过环境变量 / .env，勿硬编码）
+    database_url: str = ""
+    db_host: str = "127.0.0.1"
+    db_port: int = 5432
+    db_user: str = "postgres"
+    db_password: str = ""
+    db_name: str = "onemini"
+
+    # MinIO 对象存储（创作/画廊媒体）
+    minio_endpoint: str = "127.0.0.1:9000"
+    minio_access_key: str = ""
+    minio_secret_key: str = ""
+    minio_bucket: str = "onemini"
+    minio_secure: bool = False
+    minio_region: str = ""
+
     jwt_secret: str = "onemini-dev-jwt-change-in-production"
     jwt_expire_seconds: int = 60 * 60 * 24 * 7  # 7 天
 

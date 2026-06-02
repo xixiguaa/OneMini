@@ -3,10 +3,24 @@
 .AppleDouble
 .LSOverride
 
-# 环境变量与密钥（保留 *.example 模板）
+# 环境变量与密钥（仅提交 *.example 模板，勿提交真实密码）
 .env
+.env.*
+!.env.example
+!**/.env.example
 .env.local
 .env.*.local
+backend/.env
+frontend/.env
+
+# 含真实凭证的 compose（示例用 docker-compose.example.yml）
+docker-compose.yml
+docker-compose.override.yml
+
+# 加密保险库与本地数据（含用户/创作 JSON、secrets.vault）
+**/secrets.vault
+*.vault
+backend/data/
 
 # 日志
 logs/
@@ -25,7 +39,6 @@ dist-ssr/
 .vite/
 
 # Python / backend
-backend/data/
 .venv/
 venv/
 __pycache__/

@@ -554,6 +554,11 @@ function onPageMenu() {
     font-size: 21px;
     line-height: 1;
   }
+
+  .brand-wordmark {
+    animation: none;
+    transform: none;
+  }
 }
 
 .login-brand-mark {
@@ -569,12 +574,6 @@ function onPageMenu() {
   color: #fff;
   background: linear-gradient(135deg, #7c5fe8 0%, #5338c0 100%);
   box-shadow: 0 4px 14px rgba(124, 95, 232, 0.4);
-  transform-origin: center bottom;
-  animation: elastic-bounce 2s cubic-bezier(0.36, 0.07, 0.19, 0.97) infinite;
-
-  @media (prefers-reduced-motion: reduce) {
-    animation: none;
-  }
 }
 
 .mode-tabs {

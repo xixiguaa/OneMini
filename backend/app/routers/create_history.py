@@ -1,9 +1,9 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
-from fastapi.responses import FileResponse
+from fastapi.responses import Response
 from pydantic import BaseModel, Field
 
 from app.deps import get_current_user, get_current_user_media
-from app.services import create_history_store, public_gallery_store
+from app.services import create_history_store, minio_storage, public_gallery_store
 
 router = APIRouter(prefix="/create-history", tags=["create-history"])
 
@@ -51,31 +51,20 @@ class PublishPublicBody(BaseModel):
     description: str = Field(default="", max_length=500)
 
 
+def _media_response(data: bytes) -> Response:
+    return Response(content=data, media_type=minio_storage.guess_media_type(data))
+
+
 @router.get("/media/{item_id}")
 def get_create_history_media(
     item_id: str,
     user_id: str = Depends(get_current_user_media),
 ):
     """<img> 通过 ?access_token= JWT 鉴权（无法带 Authorization 头）。"""
-    path = create_history_store.media_path(user_id, item_id)
-    if not path.is_file():
+    data = create_history_store.read_media_bytes(user_id, item_id)
+    if not data:
         raise HTTPException(404, "媒体不存在或尚未缓存")
-    media_type = "application/octet-stream"
-    try:
-        head = path.read_bytes()[:12]
-        if head.startswith(b"\x89PNG"):
-            media_type = "image/png"
-        elif head.startswith(b"GIF"):
-            media_type = "image/gif"
-        elif head.startswith(b"RIFF") and b"WEBP" in head:
-            media_type = "image/webp"
-        elif head.startswith(b"\xff\xd8"):
-            media_type = "image/jpeg"
-        elif len(head) >= 8 and head[4:8] == b"ftyp":
-            media_type = "video/mp4"
-    except OSError:
-        pass
-    return FileResponse(path, media_type=media_type)
+    return _media_response(data)
 
 
 @router.get("/public")
@@ -93,25 +82,10 @@ def get_public_gallery_media(
     item_id: str,
     _user_id: str = Depends(get_current_user_media),
 ):
-    path = public_gallery_store.media_path(item_id)
-    if not path.is_file():
+    data = public_gallery_store.read_media_bytes(item_id)
+    if not data:
         raise HTTPException(404, "媒体不存在")
-    media_type = "application/octet-stream"
-    try:
-        head = path.read_bytes()[:12]
-        if head.startswith(b"\x89PNG"):
-            media_type = "image/png"
-        elif head.startswith(b"GIF"):
-            media_type = "image/gif"
-        elif head.startswith(b"RIFF") and b"WEBP" in head:
-            media_type = "image/webp"
-        elif head.startswith(b"\xff\xd8"):
-            media_type = "image/jpeg"
-        elif len(head) >= 8 and head[4:8] == b"ftyp":
-            media_type = "video/mp4"
-    except OSError:
-        pass
-    return FileResponse(path, media_type=media_type)
+    return _media_response(data)
 
 
 @router.post("/public/{item_id}", status_code=201)

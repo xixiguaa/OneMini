@@ -170,3 +170,63 @@ export function buildDigitalHumanDetailRows(
 
   return rows
 }
+
+export const GENERATION_HINT_LABEL = '可能调用检索'
+
+const TOOL_ACTIONS_WITH_USED: ImageEditAction[] = [
+  'detail-repair',
+  'smart-hd',
+  'outpaint',
+  'inpaint',
+  'eraser',
+]
+
+function resolveUsedFeatureLabel(action: ImageEditAction): string | null {
+  if (TOOL_ACTIONS_WITH_USED.includes(action)) {
+    return EDIT_ACTION_LABELS[action]
+  }
+  return null
+}
+
+function isLipsyncDetailContext(
+  item: CreateHistoryItem,
+  versions: CreateHistoryItem[],
+  opts?: { digitalHumanMode?: boolean },
+) {
+  return opts?.digitalHumanMode || resolveEditAction(item, versions) === 'lipsync'
+}
+
+/** 编辑页右侧栏「详细信息」hover 卡片 */
+export function buildActiveEditDetailRows(
+  item: CreateHistoryItem,
+  versions: CreateHistoryItem[],
+  opts?: {
+    isVideo?: boolean
+    imageResolution?: string
+    videoResolution?: string
+    digitalHumanMode?: boolean
+    digitalHumanModeId?: DigitalHumanMode
+  },
+): DetailMetaRow[] {
+  if (isLipsyncDetailContext(item, versions, opts)) {
+    return [
+      { label: '视频比例', value: resolveAspectRatioLabel(item) },
+      { label: '帧率', value: '25' },
+      { label: '分辨率', value: resolveVideoResolutionLabel(opts?.videoResolution) },
+      { label: '使用过', value: '对口型' },
+      { label: '生成时间', value: formatDetailDateTime(item.createdAt) },
+      { label: '生成提示', value: GENERATION_HINT_LABEL },
+    ]
+  }
+
+  const action = resolveEditAction(item, versions)
+  const rows: DetailMetaRow[] = []
+  const usedLabel = resolveUsedFeatureLabel(action)
+  if (usedLabel) {
+    rows.push({ label: '使用过', value: usedLabel })
+  }
+
+  rows.push({ label: '生成时间', value: formatDetailDateTime(item.createdAt) })
+  rows.push({ label: '生成提示', value: GENERATION_HINT_LABEL })
+  return rows
+}

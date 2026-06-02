@@ -711,10 +711,12 @@ def search_messages(
 def get_storage_info() -> dict[str, Any]:
     settings = get_settings()
     return {
-        "engine": "milvus",
+        "primary_db": "postgresql",
+        "object_storage": "minio",
+        "chat_engine": "milvus",
         "host": settings.milvus_host,
         "port": settings.milvus_port,
         "knowledge_collection": settings.milvus_collection,
         "chat_collection": settings.milvus_chat_collection,
-        "attu_hint": f"http://{settings.milvus_host}:8000 或本地 Attu 连接 {settings.milvus_host}:{settings.milvus_port}",
+        "attu_hint": f"Attu 连接 {settings.milvus_host}:{settings.milvus_port}",
     }
