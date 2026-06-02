@@ -16,6 +16,10 @@ import {
   X,
 } from 'lucide-vue-next'
 import { computed, nextTick, onMounted, onUnmounted, provide, reactive, ref, watch, type VNodeRef } from 'vue'
+import {
+  createStudioOpenFloatingComposerKey,
+  createStudioScrollToComposerKey,
+} from '../composables/createStudioScroll'
 import { acceptFilesForCreateMode } from '../utils/files'
 import { useAnchoredPopover } from '../composables/useAnchoredPopover'
 import { usePublicGallery } from '../composables/usePublicGallery'
@@ -37,6 +41,8 @@ import LipSyncComposerCard from './LipSyncComposerCard.vue'
 import WorksWaterfall from './WorksWaterfall.vue'
 import { isModelReady } from '../utils/resolveModel'
 import { useAgentStore } from '../stores/agent'
+import { useToastStore } from '../stores/toast'
+import { formatUserError } from '../utils/formatUserError'
 import { useCreateHistoryStore } from '../stores/createHistory'
 import { useSettingsStore } from '../stores/settings'
 import type { CreateMode, SkillId } from '../types/agent'
@@ -44,6 +50,7 @@ import { applyAspectRatioToPrompt, applyVideoPrefsToPrompt } from '../utils/aspe
 
 const agent = useAgentStore()
 const settings = useSettingsStore()
+const toast = useToastStore()
 const studioRoot = ref<HTMLElement | null>(null)
 const composerAnchor = ref<HTMLElement | null>(null)
 const gallerySection = ref<HTMLElement | null>(null)
@@ -241,9 +248,17 @@ async function onFiles(e: Event) {
 }
 
 function triggerFileInput() {
+  if (agent.galleryReferenceLock) {
+    toast.show({ message: '仅支持一张参考图，请先移除后再上传', kind: 'warning' })
+    return
+  }
   if (showFloatingComposer.value) {
-    floatingExpanded.value = true
     suspendFloatingCollapse.value = true
+    if (agent.createMode === 'digitalHuman') {
+      floatingLipsyncRef.value?.expandComposer?.(false)
+    } else {
+      floatingExpanded.value = true
+    }
   }
   fileInput.value?.click()
 }
@@ -251,6 +266,53 @@ function triggerFileInput() {
 function scrollToTop() {
   studioRoot.value?.scrollTo({ top: 0, behavior: 'smooth' })
 }
+
+provide(createStudioScrollToComposerKey, () => {
+  studioRoot.value?.scrollTo({ top: 0, behavior: 'smooth' })
+})
+
+/** 发现页「做同款 / 用作参考图」：展开底部浮动输入框 */
+async function openFloatingComposerFromGallery(opts: {
+  prompt: string
+  mode: 'image' | 'video'
+  referenceImageUrl?: string
+  referenceImageName?: string
+}) {
+  agent.setCurrentView('create')
+  ensureDefaultModel()
+  closeComposerMenus()
+
+  try {
+    await agent.beginGalleryRemix({
+      mode: opts.mode,
+      prompt: opts.prompt,
+      imageUrl: opts.referenceImageUrl,
+      imageName: opts.referenceImageName,
+    })
+  } catch (err: unknown) {
+    toast.showError(formatUserError(err, '参考图加载失败'))
+    return
+  }
+
+  showFloatingComposer.value = true
+  suspendFloatingCollapse.value = true
+  floatingExpanded.value = true
+
+  await nextTick()
+  requestAnimationFrame(() => {
+    floatingInputRef.value?.focus()
+    const el = floatingInputRef.value
+    if (el) {
+      el.selectionStart = el.value.length
+      el.selectionEnd = el.value.length
+    }
+  })
+  window.setTimeout(() => {
+    suspendFloatingCollapse.value = false
+  }, 280)
+}
+
+provide(createStudioOpenFloatingComposerKey, openFloatingComposerFromGallery)
 
 function onStudioScroll() {
   const el = studioRoot.value
@@ -301,6 +363,7 @@ function expandFloatingComposer() {
 }
 
 function collapseFloatingComposer() {
+  if (suspendFloatingCollapse.value) return
   if (agent.createMode === 'digitalHuman') {
     if (floatingLipsyncRef.value?.shouldKeepExpandedOnScroll?.()) return
     floatingLipsyncRef.value?.collapseComposer?.()
@@ -324,14 +387,6 @@ function onKeydown(e: KeyboardEvent) {
     e.preventDefault()
     sendFromStudio()
   }
-}
-
-function focusGalleryTab(tab: 'image' | 'video') {
-  galleryMainTab.value = 'mine'
-  galleryMediaTab.value = tab
-  void nextTick().then(() => {
-    gallerySection.value?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-  })
 }
 
 function highlightGallerySession(sessionId: string) {
@@ -390,9 +445,32 @@ function sendFromStudio() {
 }
 
 function pickMode(id: CreateMode) {
+  const keepFloatingOpen =
+    showFloatingComposer.value &&
+    (agent.createMode === 'digitalHuman'
+      ? (floatingLipsyncRef.value?.isExpanded?.() ?? false)
+      : floatingExpanded.value)
+
   agent.createMode = id
   closeComposerMenus()
   ensureDefaultModel()
+
+  if (!keepFloatingOpen || !showFloatingComposer.value) return
+
+  suspendFloatingCollapse.value = true
+  if (agent.createMode !== 'digitalHuman') {
+    floatingExpanded.value = true
+  }
+  void nextTick(() => {
+    if (agent.createMode === 'digitalHuman') {
+      floatingLipsyncRef.value?.expandComposer?.(false)
+    } else {
+      floatingInputRef.value?.focus()
+    }
+    window.setTimeout(() => {
+      suspendFloatingCollapse.value = false
+    }, 180)
+  })
 }
 
 function selectModel(id: string) {
@@ -480,7 +558,25 @@ watch(() => agent.createMode, (mode, prev) => {
       prefs.videoDuration,
     )
   }
-})
+
+  if (!showFloatingComposer.value || !prev) return
+
+  if (prev === 'digitalHuman' && mode !== 'digitalHuman') {
+    const wasExpanded = floatingLipsyncRef.value?.isExpanded?.() ?? false
+    if (wasExpanded) {
+      void nextTick(() => {
+        floatingExpanded.value = true
+      })
+    }
+    return
+  }
+
+  if (mode === 'digitalHuman' && prev !== 'digitalHuman' && floatingExpanded.value) {
+    void nextTick(() => {
+      floatingLipsyncRef.value?.expandComposer?.(false)
+    })
+  }
+}, { flush: 'sync' })
 watch(availableModels, ensureDefaultModel, { deep: true })
 watch(
   () => agent.currentView,
@@ -513,8 +609,6 @@ watch(showFloatingComposer, (visible) => {
 watch(composerMenuActive, (active) => {
   if (active && showFloatingComposer.value) {
     floatingExpanded.value = true
-  } else if (showFloatingComposer.value) {
-    scheduleFloatingCollapseIfUnfocused()
   }
 })
 
@@ -614,6 +708,7 @@ const fileAccept = computed(() => acceptFilesForCreateMode(agent.createMode))
             embedded
             :image-url="digitalHumanImageUrl"
             :busy="isCreateBusy"
+            :pick-ref-file="triggerFileInput"
             @send="sendFromStudio"
           />
           <div v-else class="composer-card">
@@ -631,6 +726,9 @@ const fileAccept = computed(() => acceptFilesForCreateMode(agent.createMode))
                 <ReferenceImageStack
                   v-if="imageAttachments.length"
                   :attachments="imageAttachments"
+                  :single="agent.galleryReferenceLock"
+                  :smart-reference="agent.galleryReferenceLock"
+                  :replaceable="false"
                   @add="triggerFileInput"
                   @remove="agent.removeAttachment"
                 />
@@ -638,7 +736,6 @@ const fileAccept = computed(() => acceptFilesForCreateMode(agent.createMode))
                   v-else
                   type="button"
                   class="ref-upload-card"
-                  title="上传参考内容"
                   @click="triggerFileInput"
                 >
                   <Plus :size="16" stroke-width="1.75" />
@@ -830,6 +927,7 @@ const fileAccept = computed(() => acceptFilesForCreateMode(agent.createMode))
         popover-placement="above"
         :image-url="digitalHumanImageUrl"
         :busy="isCreateBusy"
+        :pick-ref-file="triggerFileInput"
         @send="sendFromStudio"
       />
       <div
@@ -867,6 +965,10 @@ const fileAccept = computed(() => acceptFilesForCreateMode(agent.createMode))
               <ReferenceImageStack
                 v-if="imageAttachments.length"
                 :attachments="imageAttachments"
+                compact
+                :single="agent.galleryReferenceLock"
+                :smart-reference="agent.galleryReferenceLock"
+                :replaceable="false"
                 @add="triggerFileInput"
                 @remove="agent.removeAttachment"
               />
@@ -874,7 +976,6 @@ const fileAccept = computed(() => acceptFilesForCreateMode(agent.createMode))
                 v-else
                 type="button"
                 class="ref-upload-card"
-                title="上传参考内容"
                 @click="triggerFileInput"
               >
                 <Plus :size="16" stroke-width="1.75" />
@@ -1220,7 +1321,7 @@ $floating-duration-collapse: 0.52s;
     }
 
     &:hover :deep(.ref-image-stack:not(.expanded)) {
-      transform: rotate(-8deg) scale(1.06);
+      transform: rotate(-8deg) scale(1.10);
     }
   }
 
@@ -1247,7 +1348,7 @@ $floating-duration-collapse: 0.52s;
   }
 
   &:hover :deep(.ref-image-stack:not(.expanded)) {
-    transform: rotate(-8deg) scale(1.06);
+    transform: rotate(-8deg) scale(1.10);
   }
 
   &:hover :deep(.ref-image-stack.expanded) {
@@ -1287,7 +1388,7 @@ $floating-duration-collapse: 0.52s;
 
   &:hover {
     z-index: 30;
-    transform: rotate(-8deg) scale(1.12) translateY(-12px);
+    transform: rotate(-8deg) scale(1.18);
     box-shadow: var(--glass-float-shadow, $shadow-md);
     border-color: rgba($accent, 0.45);
     color: var(--composer-text);
@@ -1317,7 +1418,7 @@ $floating-duration-collapse: 0.52s;
   }
 
   &:hover {
-    transform: rotate(-8deg) scale(1.1) translateY(-8px);
+    transform: rotate(-8deg) scale(1.14);
   }
 }
 
@@ -1475,6 +1576,7 @@ html[data-sidebar-collapsed='true'] .floating-composer {
     min-height: $composer-min-height;
     padding: 12px 14px 12px;
     border-radius: 22px;
+    overflow: visible;
     transition:
       max-height $floating-duration-expand $floating-ease-expand,
       min-height $floating-duration-expand $floating-ease-expand,
@@ -1545,6 +1647,7 @@ html[data-sidebar-collapsed='true'] .floating-composer {
     align-items: flex-start;
     min-height: 102px;
     gap: 0;
+    overflow: visible;
     transition:
       min-height $floating-duration-expand $floating-ease-expand,
       gap $floating-duration-expand $floating-ease-expand;
@@ -1566,6 +1669,7 @@ html[data-sidebar-collapsed='true'] .floating-composer {
     align-items: flex-start;
     gap: 14px;
     padding: 8px 0 0 12px;
+    overflow: visible;
     transition:
       gap $floating-duration-expand $floating-ease-expand,
       padding $floating-duration-expand $floating-ease-expand;

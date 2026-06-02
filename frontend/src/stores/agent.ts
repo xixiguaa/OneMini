@@ -104,6 +104,8 @@ export const useAgentStore = defineStore('agent', () => {
   const isWorldProcessing = computed(() => processingScope.value === 'world')
   const isStreaming = ref(false)
   const pendingAttachments = ref<ParsedAttachment[]>([])
+  /** 发现页「用作参考图」：仅保留一张智能参考，禁止继续上传 */
+  const galleryReferenceLock = ref(false)
   const selectedCreativeSkillId = ref<string | null>(null)
   const showSkillsMenu = ref(false)
   const showPrefsMenu = ref(false)
@@ -125,6 +127,8 @@ export const useAgentStore = defineStore('agent', () => {
   const createGalleryLocateSessionId = ref<string | null>(null)
   /** 关闭编辑层后定位到发现页中的已发布作品 */
   const createGalleryLocatePublicItemId = ref<string | null>(null)
+  /** 个人主页：null 表示当前登录用户 */
+  const profileUserId = ref<string | null>(null)
 
   let pollTimer: ReturnType<typeof setInterval> | null = null
 
@@ -367,23 +371,52 @@ export const useAgentStore = defineStore('agent', () => {
     if (!allowed.length) return
 
     let queue = allowed
+    if (
+      galleryReferenceLock.value &&
+      (mode === 'image' || mode === 'video')
+    ) {
+      const hasImage = pendingAttachments.value.some((a) => a.kind === 'image')
+      const imageFiles = queue.filter((f) => classifyFile(f) === 'image')
+      if (hasImage && imageFiles.length > 0) {
+        useToastStore().show({
+          message: '仅支持一张参考图，请先移除后再上传',
+          kind: 'warning',
+        })
+        return
+      }
+      if (imageFiles.length > 1) {
+        const firstImage = imageFiles[0]
+        queue = queue.filter(
+          (f) => classifyFile(f) !== 'image' || f === firstImage,
+        )
+      }
+    }
     if (mode === 'digitalHuman') {
+      const oldMedia = pendingAttachments.value.filter(
+        (a) => a.kind === 'image' || a.kind === 'video',
+      )
       pendingAttachments.value = pendingAttachments.value.filter(
         (a) => a.kind !== 'image' && a.kind !== 'video',
       )
+      for (const item of oldMedia) {
+        if (item.previewUrl) URL.revokeObjectURL(item.previewUrl)
+      }
       queue = queue.slice(0, 1)
     }
 
     for (const file of queue) {
       const placeholderId = randomUUID()
-      pendingAttachments.value.push({
-        id: placeholderId,
-        name: file.name,
-        mime: file.type,
-        size: file.size,
-        kind: classifyFile(file),
-        loading: true,
-      })
+      pendingAttachments.value = [
+        ...pendingAttachments.value,
+        {
+          id: placeholderId,
+          name: file.name,
+          mime: file.type,
+          size: file.size,
+          kind: classifyFile(file),
+          loading: true,
+        },
+      ]
       try {
         const parsed = await parseFile(file)
         const idx = pendingAttachments.value.findIndex((a) => a.id === placeholderId)
@@ -391,22 +424,34 @@ export const useAgentStore = defineStore('agent', () => {
           if (parsed.previewUrl) URL.revokeObjectURL(parsed.previewUrl)
           continue
         }
-        pendingAttachments.value[idx] = { ...parsed, id: placeholderId, loading: false }
+        const next = [...pendingAttachments.value]
+        next[idx] = { ...parsed, id: placeholderId, loading: false }
+        pendingAttachments.value = next
       } catch {
         removeAttachment(placeholderId)
+        useToastStore().show({
+          message: '参考内容读取失败，请换一张图片重试',
+          kind: 'error',
+        })
       }
     }
   }
 
   function removeAttachment(id: string) {
     const f = pendingAttachments.value.find((a) => a.id === id)
-    if (f?.previewUrl) URL.revokeObjectURL(f.previewUrl)
+    if (f?.previewUrl && !f.previewUrl.startsWith('http')) {
+      URL.revokeObjectURL(f.previewUrl)
+    }
     pendingAttachments.value = pendingAttachments.value.filter((a) => a.id !== id)
+    if (!pendingAttachments.value.some((a) => a.kind === 'image')) {
+      galleryReferenceLock.value = false
+    }
   }
 
   function clearAttachments() {
     revokeAttachmentPreviews(pendingAttachments.value)
     pendingAttachments.value = []
+    galleryReferenceLock.value = false
   }
 
   async function setImageFile(file: File) {
@@ -1245,8 +1290,7 @@ export const useAgentStore = defineStore('agent', () => {
     })
   }
 
-  async function setReferenceImageFromUrl(url: string, name = 'reference.jpg') {
-    clearAttachments()
+  async function loadReferenceImageFromUrl(url: string, name = 'reference.jpg') {
     const fetchUrl = withCreateHistoryMediaToken(url)
     const response = await fetch(fetchUrl)
     if (!response.ok) {
@@ -1263,6 +1307,35 @@ export const useAgentStore = defineStore('agent', () => {
       previewUrl: fetchUrl,
       base64,
     })
+  }
+
+  async function setReferenceImageFromUrl(url: string, name = 'reference.jpg') {
+    clearAttachments()
+    galleryReferenceLock.value = false
+    await loadReferenceImageFromUrl(url, name)
+  }
+
+  async function setGalleryReferenceFromUrl(url: string, name = '智能参考.jpg') {
+    await beginGalleryRemix({ mode: 'image', prompt: inputText.value, imageUrl: url, imageName: name })
+  }
+
+  /** 发现页「做同款 / 用作参考图」：锁定仅一张参考图，可选预填作品图 */
+  async function beginGalleryRemix(opts: {
+    mode: 'image' | 'video'
+    prompt: string
+    imageUrl?: string
+    imageName?: string
+  }) {
+    clearAttachments()
+    galleryReferenceLock.value = true
+    createMode.value = opts.mode
+    inputText.value = opts.prompt.trim()
+    if (opts.imageUrl) {
+      await loadReferenceImageFromUrl(
+        opts.imageUrl,
+        opts.imageName ?? (opts.mode === 'video' ? '做同款参考.jpg' : '做同款.jpg'),
+      )
+    }
   }
 
   async function startVideoComposeFromImageEdit(imageUrl: string, prompt = '') {
@@ -1669,12 +1742,20 @@ export const useAgentStore = defineStore('agent', () => {
     await initConversations()
   }
 
+  function openUserProfile(userId?: string | null) {
+    profileUserId.value = userId?.trim() || null
+    currentView.value = 'profile'
+  }
+
   function setCurrentView(id: ViewId) {
     if (id === 'world' && currentView.value !== 'world') {
       previousView.value = currentView.value
     }
     if (id === 'chat') {
       activeSkill.value = 'chat'
+    }
+    if (id !== 'profile') {
+      profileUserId.value = null
     }
     currentView.value = id
     if (id === 'create') {
@@ -1715,7 +1796,9 @@ export const useAgentStore = defineStore('agent', () => {
   return {
     currentView,
     previousView,
+    profileUserId,
     setCurrentView,
+    openUserProfile,
     exitWorld,
     createMode,
     activeSkill,
@@ -1730,6 +1813,7 @@ export const useAgentStore = defineStore('agent', () => {
     isWorldProcessing,
     isStreaming,
     pendingAttachments,
+    galleryReferenceLock,
     selectedCreativeSkillId,
     activeCreativeSkill,
     showSkillsMenu,
@@ -1772,6 +1856,9 @@ export const useAgentStore = defineStore('agent', () => {
     addAttachments,
     removeAttachment,
     clearAttachments,
+    setReferenceImageFromUrl,
+    setGalleryReferenceFromUrl,
+    beginGalleryRemix,
     setImageFile,
     clearImage,
     sendMessage,

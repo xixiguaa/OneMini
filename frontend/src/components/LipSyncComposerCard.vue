@@ -14,6 +14,7 @@ import {
   X,
 } from 'lucide-vue-next'
 import { computed, nextTick, onMounted, onUnmounted, ref, watch, type VNodeRef } from 'vue'
+import { storeToRefs } from 'pinia'
 import {
   DIGITAL_HUMAN_ENGINE,
   DIGITAL_HUMAN_MODES,
@@ -44,6 +45,8 @@ const props = withDefaults(
     autoCollapseOnBlur?: boolean
     /** 顶部输入区默认向下；底部浮动/编辑页输入条固定向上 */
     popoverPlacement?: Exclude<PopoverPlacement, 'auto'>
+    /** 创作页复用外层 file input（更可靠） */
+    pickRefFile?: () => void
   }>(),
   {
     imageUrl: '',
@@ -62,6 +65,7 @@ const emit = defineEmits<{
 }>()
 
 const agent = useAgentStore()
+const { pendingAttachments } = storeToRefs(agent)
 const settings = useSettingsStore()
 const toast = useToastStore()
 const audioInput = ref<HTMLInputElement | null>(null)
@@ -128,25 +132,25 @@ const canSend = computed(
 )
 
 const imageAttachments = computed(() =>
-  agent.pendingAttachments.filter((a) => a.kind === 'image'),
+  pendingAttachments.value.filter((a) => a.kind === 'image'),
 )
 
 const videoAttachments = computed(() =>
-  agent.pendingAttachments.filter((a) => a.kind === 'video'),
+  pendingAttachments.value.filter((a) => a.kind === 'video'),
 )
 
 const mediaAttachments = computed(() =>
-  agent.pendingAttachments.filter((a) => a.kind === 'image' || a.kind === 'video'),
+  pendingAttachments.value.filter((a) => a.kind === 'image' || a.kind === 'video'),
 )
 
 const fileAccept = computed(() => acceptFilesForCreateMode('digitalHuman'))
 
-const displayImageUrl = computed(
-  () =>
-    props.imageUrl ||
-    imageAttachments.value.find((a) => a.previewUrl)?.previewUrl ||
-    '',
-)
+const displayImageUrl = computed(() => {
+  const fromAttachment = imageAttachments.value.find((a) => a.previewUrl)?.previewUrl ?? ''
+  // embedded 模式参考图只认用户上传的附件，删除后不再回退 props.imageUrl（画布/默认图）
+  if (props.embedded) return fromAttachment
+  return props.imageUrl || fromAttachment
+})
 
 const displayVideoUrl = computed(
   () => videoAttachments.value.find((a) => a.previewUrl)?.previewUrl || '',
@@ -185,10 +189,20 @@ function ensureDefaultModel(mode: CreateMode = agent.createMode) {
 }
 
 function pickCreateMode(id: CreateMode) {
+  const keepOpen = props.collapsible && expanded.value
+
   agent.createMode = id
   digitalMenuOpen.value = false
   createModePopover.close()
   ensureDefaultModel(id)
+
+  if (!keepOpen || !props.collapsible) return
+
+  suspendAutoCollapse.value = true
+  expanded.value = true
+  window.setTimeout(() => {
+    suspendAutoCollapse.value = false
+  }, 180)
 }
 
 function toggleCreateModeMenu(e: MouseEvent) {
@@ -238,6 +252,10 @@ function triggerAudioUpload() {
 
 function triggerImageUpload() {
   if (mediaAttachments.value.length >= 1) return
+  if (props.pickRefFile) {
+    props.pickRefFile()
+    return
+  }
   imageInput.value?.click()
 }
 
@@ -368,8 +386,6 @@ function onDocumentClick(e: MouseEvent) {
 watch(composerMenuActive, (active) => {
   if (props.collapsible && active) {
     expanded.value = true
-  } else if (props.collapsible && props.autoCollapseOnBlur) {
-    scheduleCollapseIfUnfocused()
   }
 })
 
@@ -408,14 +424,26 @@ defineExpose({
         class="lipsync-body"
         :class="{ 'lipsync-body--collapsible': collapsible, expanded: collapsible && expanded }"
       >
-        <div v-if="!collapsible || expanded" class="lipsync-input-area">
+        <template v-if="collapsible && !expanded">
+          <input
+            ref="collapsedInputRef"
+            v-model="agent.lipsyncDialogue"
+            type="text"
+            class="lipsync-collapsed-input"
+            placeholder="输入角色台词"
+            @focus="expandComposer()"
+            @blur="onInputBlur()"
+          />
+        </template>
+        <div v-else class="lipsync-input-area">
           <div class="lipsync-media-col">
             <div class="lipsync-ref-upload-wrap">
               <template v-if="embedded">
                 <ReferenceImageStack
                   v-if="imageAttachments.length"
                   single
-                  :attachments="agent.pendingAttachments"
+                  replaceable
+                  :attachments="pendingAttachments"
                   @add="triggerImageUpload"
                   @remove="onRemoveImage"
                 />
@@ -444,7 +472,7 @@ defineExpose({
                   type="button"
                   class="ref-upload-card"
                   title="上传参考内容"
-                  @click="triggerImageUpload"
+                  @click.stop="triggerImageUpload"
                 >
                   <Plus :size="16" stroke-width="1.75" />
                   <span>参考内容</span>
@@ -506,16 +534,6 @@ defineExpose({
           </label>
         </div>
         </div>
-        <input
-          v-else
-          ref="collapsedInputRef"
-          v-model="agent.lipsyncDialogue"
-          type="text"
-          class="lipsync-collapsed-input"
-          placeholder="输入角色台词"
-          @focus="expandComposer()"
-          @blur="onInputBlur()"
-        />
       </div>
 
       <button
@@ -749,6 +767,14 @@ $floating-duration-collapse: 0.52s;
       padding $floating-duration-collapse $floating-ease-collapse,
       border-radius $floating-duration-collapse $floating-ease-collapse,
       box-shadow 0.35s ease;
+
+    &:not(.expanded) {
+      .lipsync-ref-upload-wrap,
+      .lipsync-media-col,
+      .lipsync-voice-card {
+        display: none;
+      }
+    }
 
     &.expanded {
       max-height: $composer-min-height;
@@ -1036,7 +1062,7 @@ $floating-duration-collapse: 0.52s;
   }
 
   &:hover :deep(.ref-image-stack:not(.expanded)) {
-    transform: rotate(-8deg) scale(1.06);
+    transform: rotate(-8deg) scale(1.10);
   }
 
   &:hover :deep(.ref-image-stack.expanded) {
@@ -1045,7 +1071,7 @@ $floating-duration-collapse: 0.52s;
 
   &:hover .ref-upload-card:not(.ref-upload-card--filled) {
     z-index: 30;
-    transform: rotate(-8deg) scale(1.12) translateY(-12px);
+    transform: rotate(-8deg) scale(1.18);
     box-shadow: var(--glass-float-shadow, $shadow-md);
     border-color: rgba($accent, 0.45);
     color: var(--composer-text);
@@ -1053,7 +1079,7 @@ $floating-duration-collapse: 0.52s;
 
   &:hover .ref-upload-card--filled {
     z-index: 30;
-    transform: rotate(-8deg) scale(1.12) translateY(-12px);
+    transform: rotate(-8deg) scale(1.18);
     box-shadow: var(--glass-float-shadow, $shadow-md);
     border-color: rgba($accent, 0.45);
   }
@@ -1181,7 +1207,7 @@ $floating-duration-collapse: 0.52s;
   &:hover,
   &.active {
     z-index: 30;
-    transform: rotate(4deg) scale(1.12) translateY(-12px);
+    transform: rotate(4deg) scale(1.18);
     box-shadow: var(--glass-float-shadow, $shadow-md);
     border-color: rgba($accent, 0.45);
     background: var(--composer-pill-bg, rgba(255, 255, 255, 0.08));

@@ -14,6 +14,11 @@ export interface GalleryItem {
   sessionId?: string
   parentId?: string
   aspectRatio?: string
+  /** 公共画廊发布者用户 ID */
+  publishedBy?: string
+  title?: string
+  /** 发布时填写的作品描述 */
+  description?: string
 }
 
 export function useWorksGallery() {

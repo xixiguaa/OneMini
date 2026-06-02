@@ -1,6 +1,8 @@
 <script setup lang="ts">
-import { LogOut, MoreHorizontal, Settings } from 'lucide-vue-next'
+import { LogOut, MoreHorizontal, Settings, UserRound } from 'lucide-vue-next'
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { useAnchoredPopover } from '../composables/useAnchoredPopover'
+import { useAgentStore } from '../stores/agent'
 import { useAuthStore } from '../stores/auth'
 import { accountAvatarInitial, maskAccountLabel } from '../utils/maskAccount'
 import SystemSettingsDialog from './SystemSettingsDialog.vue'
@@ -10,19 +12,40 @@ const props = defineProps<{
 }>()
 
 const auth = useAuthStore()
-const menuOpen = ref(false)
+const agent = useAgentStore()
 const settingsOpen = ref(false)
-const rootRef = ref<HTMLElement | null>(null)
+
+const menuPopover = useAnchoredPopover({
+  fitContent: true,
+  placement: 'above',
+  minWidth: 168,
+})
+
+const menuOpen = menuPopover.open
+const menuPanelStyle = computed(() => menuPopover.panelStyle.value)
 
 const avatarInitial = computed(() => accountAvatarInitial(auth.user))
 const maskedLabel = computed(() => maskAccountLabel(auth.user))
 
-function toggleMenu() {
-  menuOpen.value = !menuOpen.value
+function setTriggerRef(el: Element | null) {
+  menuPopover.triggerRef.value = el as HTMLElement | null
+}
+
+function setPanelRef(el: Element | null) {
+  menuPopover.panelRef.value = el as HTMLElement | null
+}
+
+function toggleMenu(e: MouseEvent) {
+  menuPopover.toggle(e)
 }
 
 function closeMenu() {
-  menuOpen.value = false
+  menuPopover.close()
+}
+
+function openProfile() {
+  closeMenu()
+  agent.openUserProfile()
 }
 
 function openSettings() {
@@ -36,7 +59,7 @@ async function logout() {
 }
 
 function onDocClick(e: MouseEvent) {
-  if (!rootRef.value?.contains(e.target as Node)) closeMenu()
+  if (!menuPopover.containsTarget(e.target as Node)) closeMenu()
 }
 
 onMounted(() => document.addEventListener('click', onDocClick))
@@ -44,8 +67,9 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocClick))
 </script>
 
 <template>
-  <div ref="rootRef" class="footer-bar" :class="{ collapsed: props.collapsed, 'menu-open': menuOpen }">
+  <div class="footer-bar" :class="{ collapsed: props.collapsed }">
     <button
+      :ref="setTriggerRef"
       type="button"
       class="user-bar"
       :class="{ 'icon-only': props.collapsed }"
@@ -61,23 +85,37 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocClick))
       </span>
     </button>
 
-    <Transition name="menu-pop">
+    <Teleport to="body">
       <div
         v-if="menuOpen"
-        class="user-menu"
-        role="menu"
-        @click.stop
-      >
-        <button type="button" class="menu-item" role="menuitem" @click="openSettings">
-          <Settings :size="16" />
-          <span>系统设置</span>
-        </button>
-        <button type="button" class="menu-item" role="menuitem" @click="logout">
-          <LogOut :size="16" />
-          <span>退出登录</span>
-        </button>
-      </div>
-    </Transition>
+        class="anchored-popover-backdrop"
+        aria-hidden="true"
+        @click="closeMenu"
+      />
+      <Transition name="menu-pop">
+        <div
+          v-if="menuOpen"
+          :ref="setPanelRef"
+          class="user-menu"
+          role="menu"
+          :style="menuPanelStyle"
+          @click.stop
+        >
+          <button type="button" class="menu-item" role="menuitem" @click="openProfile">
+            <UserRound :size="16" />
+            <span>我的主页</span>
+          </button>
+          <button type="button" class="menu-item" role="menuitem" @click="openSettings">
+            <Settings :size="16" />
+            <span>系统设置</span>
+          </button>
+          <button type="button" class="menu-item" role="menuitem" @click="logout">
+            <LogOut :size="16" />
+            <span>退出登录</span>
+          </button>
+        </div>
+      </Transition>
+    </Teleport>
 
     <SystemSettingsDialog v-model:open="settingsOpen" />
   </div>
@@ -93,11 +131,6 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocClick))
   margin: 0 -10px 0;
   padding: 10px 8px 0;
   border-top: 1px solid var(--sidebar-divider, $border-light);
-  z-index: 20;
-
-  &.menu-open {
-    z-index: 80;
-  }
 
   &.collapsed {
     margin-left: -6px;
@@ -168,29 +201,17 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocClick))
 }
 
 .user-menu {
-  position: absolute;
-  left: 8px;
-  right: 8px;
-  bottom: calc(100% + 8px);
   padding: 6px;
-  z-index: 100;
   border-radius: var(--glass-radius-md, 20px);
   background: var(--user-menu-bg);
   backdrop-filter: blur(var(--glass-blur, 24px)) saturate(1.2);
   -webkit-backdrop-filter: blur(var(--glass-blur, 24px)) saturate(1.2);
   box-shadow: var(--user-menu-shadow, var(--glass-float-shadow, $shadow-md));
-
-  .footer-bar.collapsed & {
-    left: calc(100% + 8px);
-    right: auto;
-    bottom: 0;
-    width: 168px;
-  }
+  border: 1px solid $glass-border;
+  pointer-events: auto;
 }
 
 .menu-item {
-  position: relative;
-  z-index: 1;
   display: flex;
   align-items: center;
   gap: 10px;
@@ -202,6 +223,7 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocClick))
   color: $text-primary;
   text-align: left;
   border: none;
+  background: none;
   transition: background 0.15s ease;
 
   &:hover {

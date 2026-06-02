@@ -38,6 +38,12 @@ dist-ssr/
 *.local
 .vite/
 
+# 本地 MinIO 数据目录（docker volume 挂载）
+minio/
+
+# Rust 构建残留（项目已不使用 Cargo）
+backend/target/
+
 # Python / backend
 .venv/
 venv/

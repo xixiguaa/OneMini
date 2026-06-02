@@ -71,52 +71,6 @@ app.post('/api/chat/stream', (_req, res) => {
   })
 })
 
-/** 图片生成 */
-app.post('/api/image', async (req, res) => {
-  try {
-    const { prompt } = req.body
-    if (!prompt) return res.status(400).json({ error: '缺少 prompt' })
-
-    if (SECRET_ID && SECRET_KEY) {
-      try {
-        const data = await callTencentApi(
-          'TextToImage',
-          { Prompt: prompt, RspImgType: 'url' },
-          'aiart',
-        )
-        const url = data.Response?.ResultImage
-        if (url) return res.json({ url, message: '图片生成成功' })
-      } catch (e) {
-        console.warn('[image] Tencent aiart fallback:', e.message)
-      }
-    }
-
-    res.json({
-      message: `【演示】已收到图片描述：「${prompt.slice(0, 80)}…」\n配置腾讯云 aiart 或图片 API 后可生成真实图片。`,
-      url: `https://picsum.photos/seed/${encodeURIComponent(prompt.slice(0, 20))}/512/512`,
-    })
-  } catch (err) {
-    console.error('[image]', err)
-    res.status(500).json({ error: err.message })
-  }
-})
-
-function resolveVideoSize(resolution, aspectRatio) {
-  const heightPx = { 480: 480, 720: 720, 1080: 1080 }
-  const base = heightPx[Number(resolution)] || heightPx[resolution] || 720
-  const ratioId = aspectRatio === 'smart' || !aspectRatio ? '16:9' : aspectRatio
-  const parts = String(ratioId).split(':').map((n) => parseInt(n, 10))
-  if (parts.length !== 2 || parts.some((n) => !n)) return { width: 1280, height: 720 }
-  const [wR, hR] = parts
-  const align = (n) => Math.max(2, Math.round(n / 2) * 2)
-  if (wR >= hR) {
-    const height = base
-    return { width: align((height * wR) / hR), height }
-  }
-  const width = base
-  return { width, height: align((width * hR) / wR) }
-}
-
 /** 视频生成（已迁移至 Python 平台 API） */
 app.post('/api/video', (_req, res) => {
   res.status(410).json({

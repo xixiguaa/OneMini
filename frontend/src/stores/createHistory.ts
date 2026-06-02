@@ -36,6 +36,12 @@ export interface CreateHistoryItem {
   aspectRatio?: string
   /** 编辑/生成操作类型，用于历史列表标签 */
   editAction?: string
+  /** 公共画廊发布者用户 ID */
+  publishedBy?: string
+  /** 发布标题 */
+  title?: string
+  /** 发布作品描述 */
+  description?: string
 }
 
 const STORAGE_KEY = 'onemini-create-history-cache'

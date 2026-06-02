@@ -11,10 +11,14 @@ const props = withDefaults(
     compact?: boolean
     /** 数字人等场景仅允许一张参考图 */
     single?: boolean
+    /** single 模式下点击已有参考图可更换 */
+    replaceable?: boolean
     /** 参考图对应的生成时间（毫秒时间戳），有值时 hover 展示 popper */
     generatedAt?: number
+    /** 发现页智能参考：展示标签且不可再上传 */
+    smartReference?: boolean
   }>(),
-  { compact: false, single: false },
+  { compact: false, single: false, replaceable: false, smartReference: false },
 )
 
 const emit = defineEmits<{
@@ -57,7 +61,9 @@ const visibleStack = computed(() => {
 
 const stackOffset = computed(() => Math.max(0, allImages.value.length - visibleStack.value.length))
 
-const canExpand = computed(() => !props.single && allImages.value.length > 0)
+const canExpand = computed(
+  () => !props.single && !props.smartReference && allImages.value.length > 0,
+)
 
 const showExpanded = computed(() => canExpand.value && expanded.value)
 
@@ -188,7 +194,8 @@ function onFrameLeave() {
     class="ref-image-stack"
     :class="{
       compact,
-      single,
+      single: single || smartReference,
+      'smart-reference': smartReference,
       expanded: showExpanded,
       'ref-image-stack--multi': canExpand,
     }"
@@ -200,7 +207,6 @@ function onFrameLeave() {
       <button
         type="button"
         class="ref-image-empty"
-        :title="single ? '上传参考图' : '上传参考内容'"
         @click="onAddClick"
       >
         <Plus :size="compact ? 14 : 16" stroke-width="1.75" />
@@ -215,6 +221,7 @@ function onFrameLeave() {
       @mouseenter="openExpand"
       @mouseleave="scheduleCollapse"
     >
+      <span v-if="smartReference" class="ref-image-smart-label">智能参考</span>
       <div
         class="ref-image-stack__hover-zone"
         :style="{ width: `${hoverZoneWidth}px` }"
@@ -238,7 +245,11 @@ function onFrameLeave() {
             @mouseenter="onFrameEnter(item, $event)"
             @mouseleave="onFrameLeave"
           >
-            <div class="ref-image-frame__surface">
+            <div
+              class="ref-image-frame__surface"
+              :class="{ 'ref-image-frame__surface--replaceable': replaceable && single && !item.loading }"
+              @click="replaceable && single && !item.loading ? onAddClick($event) : undefined"
+            >
               <div class="ref-image-frame__media">
                 <template v-if="item.loading">
                   <div class="ref-image-skeleton" aria-hidden="true" />
@@ -276,7 +287,6 @@ function onFrameLeave() {
             class="ref-image-frame ref-image-frame--upload ref-image-add--fan"
             :class="{ 'is-active': showExpanded }"
             :style="addFanStyle()"
-            :title="single ? '上传参考图' : '继续上传参考图'"
             :tabindex="showExpanded ? 0 : -1"
             @click="onAddClick"
           >
@@ -290,7 +300,6 @@ function onFrameLeave() {
             type="button"
             class="ref-image-add ref-image-add--dot"
             :class="{ 'is-active': !showExpanded }"
-            :title="single ? '上传参考图' : '继续上传参考图'"
             :tabindex="showExpanded ? -1 : 0"
             @click="onAddClick"
           >
@@ -340,8 +349,18 @@ $ref-fade-duration: 0.56s;
     z-index: 30;
   }
 
+  &.smart-reference {
+    padding-top: 26px;
+    height: calc(#{$frame-h} + 26px);
+
+    &.compact {
+      height: calc(#{$frame-h-compact} + 22px);
+      padding-top: 22px;
+    }
+  }
+
   &--multi:not(.expanded):hover .ref-image-add {
-    transform: scale(1.06);
+    transform: scale(1.10);
   }
 }
 
@@ -372,6 +391,29 @@ $ref-fade-duration: 0.56s;
   .compact & {
     width: $frame-w-compact;
     height: $frame-h-compact;
+  }
+}
+
+.ref-image-smart-label {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 12;
+  padding: 4px 10px;
+  border-radius: 8px;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.2;
+  color: #fff;
+  white-space: nowrap;
+  background: rgba(36, 38, 44, 0.92);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.22);
+  pointer-events: none;
+
+  .compact & {
+    font-size: 10px;
+    padding: 3px 8px;
   }
 }
 
@@ -471,6 +513,10 @@ $ref-fade-duration: 0.56s;
     transition:
       transform 0.38s $ref-ease,
       box-shadow 0.38s ease;
+
+    &--replaceable {
+      cursor: pointer;
+    }
   }
 
   &__media {
@@ -497,7 +543,7 @@ $ref-fade-duration: 0.56s;
     z-index: 20;
 
     .ref-image-frame__surface {
-      transform: scale(1.08) translateY(-6px);
+      transform: scale(1.14);
       box-shadow:
         0 10px 24px rgba(15, 23, 42, 0.2),
         0 0 0 0.5px rgba(15, 23, 42, 0.08);
@@ -512,7 +558,7 @@ $ref-fade-duration: 0.56s;
   }
 
   .compact .ref-image-stack__track:not(.expanded) &:hover .ref-image-frame__surface {
-    transform: scale(1.06) translateY(-5px);
+    transform: scale(1.10);
   }
 
   .ref-image-stack__track.expanded & {
@@ -523,7 +569,7 @@ $ref-fade-duration: 0.56s;
       z-index: 20;
 
       .ref-image-frame__surface {
-        transform: scale(1.08) translateY(-6px);
+        transform: scale(1.14);
         box-shadow:
           0 10px 24px rgba(15, 23, 42, 0.2),
           0 0 0 0.5px rgba(15, 23, 42, 0.08);
@@ -553,7 +599,7 @@ $ref-fade-duration: 0.56s;
   }
 
   .compact .ref-image-stack__track.expanded &:hover .ref-image-frame__surface {
-    transform: scale(1.06) translateY(-5px);
+    transform: scale(1.10);
   }
 }
 
@@ -728,7 +774,7 @@ $ref-fade-duration: 0.56s;
   }
 
   .ref-image-stack--multi:not(.expanded) .ref-image-add--dot.is-active:hover {
-    transform: scale(1.06);
+    transform: scale(1.10);
   }
 
   &:hover {

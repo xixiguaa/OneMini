@@ -34,10 +34,14 @@ class Settings(BaseSettings):
 
     milvus_host: str = "127.0.0.1"
     milvus_port: int = 19530
-    milvus_collection: str = "onemini_knowledge"
-    milvus_chat_collection: str = "onemini_chat"
+    milvus_collection: str = "onemini_knowledge_bgem3"
+    milvus_chat_collection: str = "onemini_chat_bgem3"
 
-    embedding_model: str = "BAAI/bge-small-zh-v1.5"
+    embedding_model: str = "BAAI/bge-m3"
+    embedding_max_length: int = 8192
+    embedding_batch_size: int = 12
+    embedding_use_fp16: bool = False
+    embedding_device: str = ""  # 空=自动；可填 cpu / cuda:0
 
     openai_api_key: str = ""
     openai_base_url: str = "https://api.openai.com/v1"
@@ -48,6 +52,10 @@ class Settings(BaseSettings):
     secrets_master_key: str = ""
 
     rag_top_k: int = 5
+    rag_recall_k: int = 20
+    rag_rerank_enabled: bool = True
+    rerank_model: str = "Qwen/Qwen3-Reranker-0.6B"
+    rerank_batch_size: int = 8
     chunk_size: int = 500
     chunk_overlap: int = 80
 

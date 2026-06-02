@@ -5,7 +5,7 @@ import type { MessageType } from '../types/agent'
 import { resolvePublicGalleryMediaUrl } from '../utils/createHistoryMedia'
 import type { GalleryItem } from './useWorksGallery'
 
-function mapItem(item: CreateHistoryItem): GalleryItem {
+function mapItem(item: CreateHistoryItem & { publishedBy?: string }): GalleryItem {
   return {
     id: item.id,
     type: item.type as Extract<MessageType, 'image' | 'video'>,
@@ -14,6 +14,9 @@ function mapItem(item: CreateHistoryItem): GalleryItem {
     status: item.status,
     url: resolvePublicGalleryMediaUrl(item),
     aspectRatio: item.aspectRatio,
+    publishedBy: item.publishedBy,
+    title: item.title,
+    description: item.description,
   }
 }
 

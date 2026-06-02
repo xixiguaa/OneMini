@@ -95,12 +95,14 @@ flowchart TB
        ↓
   分块（chunk_size / overlap）
        ↓
-  fastembed 本地嵌入（BAAI/bge-small-zh-v1.5）
+  BGE-M3 本地嵌入（BAAI/bge-m3，1024 维 dense）
        ↓
-  写入 Milvus 集合 onemini_knowledge
+  写入 Milvus 集合 onemini_knowledge_bgem3
 
 问答（对话页勾选 RAG）
-  用户问题 → 向量检索 Top-K
+  用户问题 → 向量检索召回（RAG_RECALL_K，默认 20）
+       ↓
+  Qwen3-Reranker-0.6B 精排 → Top-K（RAG_TOP_K，默认 5）
        ↓
   拼接上下文 + 历史 → OpenAI 兼容 LLM 流式输出
 ```
@@ -242,7 +244,10 @@ npm run dev                        # 同时启动 server/index.js 与 vite
 | `OPENAI_API_KEY` | RAG 回答用 LLM（必填才能生成） |
 | `OPENAI_BASE_URL` | 兼容 DeepSeek、硅基流动等 |
 | `CHAT_MODEL` | 如 `gpt-4o-mini` |
-| `EMBEDDING_MODEL` | 默认 `BAAI/bge-small-zh-v1.5`，首次运行会下载模型 |
+| `EMBEDDING_MODEL` | 默认 `BAAI/bge-m3`（约 2.3GB，FlagEmbedding）；切换后需重建 Milvus 集合并重新入库 |
+| `RAG_RECALL_K` / `RAG_TOP_K` | 向量召回数 / 重排后送入 LLM 条数，默认 20 / 5 |
+| `RAG_RERANK_ENABLED` | 是否启用 Qwen3 重排，默认 `true` |
+| `RERANK_MODEL` | 默认 `Qwen/Qwen3-Reranker-0.6B`（ONNX，约 570MB） |
 
 ### `OneMini/.env`
 

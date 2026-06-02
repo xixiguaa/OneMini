@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { AlertCircle, Download, Image, Loader2, Pencil, Search, Trash2, Video } from 'lucide-vue-next'
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
+import { useGalleryLikes } from '../composables/useGalleryLikes'
 import { useWorksGallery } from '../composables/useWorksGallery'
 import { usePublicGallery } from '../composables/usePublicGallery'
 import type { GalleryItem } from '../composables/useWorksGallery'
@@ -9,47 +10,97 @@ import { useAgentStore } from '../stores/agent'
 import { useSettingsStore } from '../stores/settings'
 import { downloadMediaUrl } from '../utils/downloadMedia'
 import ConfirmDialog from './ConfirmDialog.vue'
+import PublicGalleryDetail from './PublicGalleryDetail.vue'
+import WorkCardDiscoverHover from './WorkCardDiscoverHover.vue'
 
 const props = withDefaults(
   defineProps<{
     searchQuery?: string
-    mediaType?: 'image' | 'video'
+    mediaType?: 'image' | 'video' | 'all'
     source?: 'mine' | 'public'
+    /** 仅展示该用户发布的公共作品 */
+    ownerId?: string
+    /** 仅展示已点赞的公共作品 */
+    likedOnly?: boolean
+    emptyHint?: string
+    /** 有内容时在列表底部显示的提示 */
+    endHint?: string
+    /** 个人主页等场景：更窄列宽、更密间距 */
+    compact?: boolean
   }>(),
   {
     searchQuery: '',
     mediaType: 'image',
     source: 'mine',
+    ownerId: undefined,
+    likedOnly: false,
+    emptyHint: undefined,
+    endHint: undefined,
+    compact: false,
   },
 )
 
 const agent = useAgentStore()
 const settings = useSettingsStore()
 const { galleryItems: mineItems } = useWorksGallery()
-const { galleryItems: publicItems } = usePublicGallery()
+const { galleryItems: publicItems, hydrate: hydratePublicGallery } = usePublicGallery()
+const { likedItemIds } = useGalleryLikes()
 const galleryItems = computed(() => (props.source === 'public' ? publicItems.value : mineItems.value))
 const readonly = computed(() => props.source === 'public')
 const deleteTarget = ref<GalleryItem | null>(null)
 const deleting = ref(false)
 const brokenImages = ref<Set<string>>(new Set())
+const loadedMedia = ref<Set<string>>(new Set())
 const videoRatioOverrides = ref<Map<string, string>>(new Map())
+const publicDetailOpen = ref(false)
+const publicDetailIndex = ref(0)
+
+const publicDetailItems = computed(() =>
+  filteredItems.value.filter((item) => item.status === 'DONE' && item.url),
+)
+
+const poolItems = computed(() => {
+  let items = galleryItems.value
+  if (props.mediaType !== 'all') {
+    items = items.filter((item) => item.type === props.mediaType)
+  }
+  if (props.source === 'public' && props.ownerId) {
+    items = items.filter((item) => item.publishedBy === props.ownerId)
+  }
+  if (props.likedOnly) {
+    const liked = new Set(likedItemIds())
+    items = items.filter((item) => liked.has(item.id))
+  }
+  return items
+})
 
 const filteredItems = computed(() => {
-  let items = galleryItems.value.filter((item) => item.type === props.mediaType)
+  let items = poolItems.value
   const q = props.searchQuery.trim().toLowerCase()
   if (q) items = items.filter((item) => item.prompt.toLowerCase().includes(q))
   return items
 })
 
-const hasFilteredItems = computed(() =>
-  galleryItems.value.some((item) => item.type === props.mediaType),
+const hasPoolItems = computed(() => poolItems.value.length > 0)
+
+watch(
+  () => [props.source, props.ownerId, props.likedOnly] as const,
+  () => {
+    if (props.source === 'public') void hydratePublicGallery()
+  },
+  { immediate: true },
 )
 
 /** 瀑布流列宽：短片列更宽，横屏时高度与 1:1 图片对齐 */
 const IMAGE_COLUMN_WIDTH = 200
 const VIDEO_COLUMN_WIDTH = 280
 
-const columnWidth = computed(() => (props.mediaType === 'video' ? VIDEO_COLUMN_WIDTH : IMAGE_COLUMN_WIDTH))
+const columnWidth = computed(() => {
+  if (props.compact) return 160
+  return props.mediaType === 'video' ? VIDEO_COLUMN_WIDTH : IMAGE_COLUMN_WIDTH
+})
+
+const columnGap = computed(() => (props.compact ? 6 : 8))
 
 function itemRatioId(item: GalleryItem): string {
   const override = videoRatioOverrides.value.get(item.id)
@@ -60,9 +111,40 @@ function itemRatioId(item: GalleryItem): string {
   return prefs.aspectRatio || '1:1'
 }
 
-/** 按列宽 + 宽高比计算固定高度，横屏短片最小高度与列宽一致（对齐 1:1 图片） */
+function mediaLoadKey(item: GalleryItem): string {
+  return `${item.id}::${item.url ?? ''}`
+}
+
+function imageBrokenKey(item: GalleryItem): string {
+  return `${item.id}::${item.url ?? ''}`
+}
+
+function isMediaLoaded(item: GalleryItem): boolean {
+  if (!item.url || item.status !== 'DONE') return true
+  if (item.type === 'image' && brokenImages.value.has(imageBrokenKey(item))) return true
+  return loadedMedia.value.has(mediaLoadKey(item))
+}
+
+function markMediaLoaded(item: GalleryItem) {
+  if (!item.url) return
+  const key = mediaLoadKey(item)
+  if (loadedMedia.value.has(key)) return
+  loadedMedia.value = new Set([...loadedMedia.value, key])
+}
+
+watch(
+  () => filteredItems.value.map((i) => mediaLoadKey(i)).join('\n'),
+  () => {
+    const valid = new Set(filteredItems.value.map(mediaLoadKey))
+    loadedMedia.value = new Set([...loadedMedia.value].filter((k) => valid.has(k)))
+  },
+)
+
+/** 按列宽 + 宽高比预留高度，避免媒体加载前后布局跳动 */
 function itemMediaStyle(item: GalleryItem): Record<string, string> | undefined {
-  if (item.type !== 'video' && item.status !== 'RUNNING') return undefined
+  const reserve =
+    item.status === 'RUNNING' || item.type === 'video' || (item.type === 'image' && item.status === 'DONE')
+  if (!reserve) return undefined
   const ratioId = itemRatioId(item)
   const parts = ratioId.split(':').map((n) => parseInt(n, 10))
   const col = columnWidth.value
@@ -79,6 +161,34 @@ const showGallery = computed(() => filteredItems.value.length > 0)
 
 function onImageError(id: string) {
   brokenImages.value = new Set([...brokenImages.value, id])
+}
+
+function onImageLoad(item: GalleryItem, e: Event) {
+  markMediaLoaded(item)
+  const img = e.target as HTMLImageElement
+  if (!item.aspectRatio && img.naturalWidth && img.naturalHeight) {
+    const g = (a: number, b: number): number => (b ? g(b, a % b) : a)
+    const d = g(img.naturalWidth, img.naturalHeight)
+    const ratio = `${img.naturalWidth / d}:${img.naturalHeight / d}`
+    if (ratio !== itemRatioId(item)) {
+      videoRatioOverrides.value = new Map(videoRatioOverrides.value).set(item.id, ratio)
+    }
+  }
+}
+
+function onVideoLoaded(item: GalleryItem, e: Event) {
+  markMediaLoaded(item)
+  onVideoMeta(item, e)
+}
+
+function setImageRef(item: GalleryItem, el: HTMLImageElement | null) {
+  if (!el?.complete || !el.naturalWidth) return
+  markMediaLoaded(item)
+}
+
+function setVideoRef(item: GalleryItem, el: HTMLVideoElement | null) {
+  if (!el || el.readyState < 2) return
+  markMediaLoaded(item)
 }
 
 const {
@@ -162,14 +272,30 @@ function onDeleteCancel() {
   onConfirmCancel()
 }
 
+function openPublicDetail(item: GalleryItem) {
+  const idx = publicDetailItems.value.findIndex((i) => i.id === item.id)
+  if (idx < 0) return
+  publicDetailIndex.value = idx
+  publicDetailOpen.value = true
+}
+
 function onMediaClick(item: GalleryItem) {
-  if (readonly.value || item.status !== 'DONE' || !item.url) return
+  if (item.status !== 'DONE' || !item.url) return
+  if (readonly.value) {
+    openPublicDetail(item)
+    return
+  }
   openEdit(item)
 }
 
 const mediaLabel = computed(() => (props.mediaType === 'video' ? '短片' : '图片'))
 
 const emptyHint = computed(() => {
+  if (props.emptyHint) return props.emptyHint
+  if (props.likedOnly) return '还没有赞过的作品'
+  if (props.ownerId) {
+    return props.mediaType === 'video' ? '还没有发布短片' : '还没有发布作品'
+  }
   if (readonly.value) {
     return props.mediaType === 'video' ? '暂无公共短片' : '暂无发现内容'
   }
@@ -206,7 +332,8 @@ function onVideoHover(e: MouseEvent, play: boolean) {
     <div
       v-if="showGallery"
       class="works-grid"
-      :class="{ 'works-grid--video': mediaType === 'video' }"
+      :class="{ 'works-grid--video': mediaType === 'video' && !compact, 'works-grid--compact': compact }"
+      :style="{ columns: `${columnWidth}px`, columnGap: `${columnGap}px` }"
     >
       <article
         v-for="item in filteredItems"
@@ -243,22 +370,36 @@ function onVideoHover(e: MouseEvent, play: boolean) {
           <div
             class="work-media-wrap"
             :class="{
-              editable: !readonly && item.status === 'DONE' && !!item.url,
+              editable: item.status === 'DONE' && !!item.url,
+              'work-media-wrap--discover': readonly,
               'is-video': item.type === 'video',
+              'is-media-loading': item.url && !isMediaLoaded(item),
             }"
             :style="itemMediaStyle(item)"
             @click="onMediaClick(item)"
             @mouseenter="item.type === 'video' && onVideoHover($event, true)"
             @mouseleave="item.type === 'video' && onVideoHover($event, false)"
           >
+            <div v-if="item.url" class="work-media-skeleton" aria-hidden="true">
+              <div class="work-media-shimmer" />
+              <div class="work-media-sk-lines">
+                <span class="sk-block sk-block--lg" />
+                <span class="sk-block sk-block--md" />
+              </div>
+            </div>
+
             <img
-              v-if="item.type === 'image' && item.url && !brokenImages.has(`${item.id}::${item.url}`)"
+              v-if="item.type === 'image' && item.url && !brokenImages.has(imageBrokenKey(item))"
               :key="`${item.id}::${item.url}`"
+              :ref="(el) => setImageRef(item, el as HTMLImageElement | null)"
               :src="item.url"
               :alt="item.prompt"
               loading="lazy"
-              class="work-img"
-              @error="onImageError(`${item.id}::${item.url}`)"
+              decoding="async"
+              class="work-img work-media-asset"
+              :class="{ 'work-media-asset--visible': isMediaLoaded(item) }"
+              @load="onImageLoad(item, $event)"
+              @error="onImageError(imageBrokenKey(item))"
             />
             <div v-else-if="item.type === 'image'" class="work-img-broken">
               <AlertCircle :size="24" />
@@ -267,13 +408,15 @@ function onVideoHover(e: MouseEvent, play: boolean) {
             <div v-else-if="item.type === 'video' && item.url" class="video-player-wrap">
               <video
                 :key="`${item.id}::${item.url}`"
-                class="work-video"
+                :ref="(el) => setVideoRef(item, el as HTMLVideoElement | null)"
+                class="work-video work-media-asset"
+                :class="{ 'work-media-asset--visible': isMediaLoaded(item) }"
                 :src="item.url"
                 muted
                 loop
                 preload="metadata"
                 playsinline
-                @loadedmetadata="onVideoMeta(item, $event)"
+                @loadeddata="onVideoLoaded(item, $event)"
               />
             </div>
             <div v-else-if="item.type === 'video'" class="video-cover">
@@ -298,31 +441,34 @@ function onVideoHover(e: MouseEvent, play: boolean) {
                 </div>
               </div>
             </div>
-            <div v-else class="work-actions">
-              <div class="work-actions-shade" aria-hidden="true" />
-              <div class="work-actions-bar work-actions-bar--public">
-                <button type="button" class="action-btn icon-only" title="下载" @click.stop="downloadItem(item)">
-                  <Download :size="16" />
-                </button>
-              </div>
-            </div>
+            <WorkCardDiscoverHover v-else-if="item.status === 'DONE'" :item="item" />
           </div>
         </template>
 
       </article>
     </div>
 
-    <div v-else-if="hasFilteredItems && searchQuery.trim()" class="empty search-empty">
+    <p v-if="showGallery && endHint" class="works-end-hint">{{ endHint }}</p>
+
+    <div v-if="!showGallery && hasPoolItems && searchQuery.trim()" class="empty search-empty">
       <Search :size="28" />
       <p>{{ searchEmptyHint }}</p>
     </div>
 
-    <div v-else class="empty">
+    <div v-else-if="!showGallery" class="empty">
       <Video v-if="mediaType === 'video'" :size="32" />
       <Image v-else :size="32" />
       <p>{{ emptyHint }}</p>
     </div>
   </section>
+
+  <PublicGalleryDetail
+    v-if="readonly && publicDetailOpen"
+    :items="publicDetailItems"
+    :index="publicDetailIndex"
+    @update:index="publicDetailIndex = $event"
+    @close="publicDetailOpen = false"
+  />
 
   <ConfirmDialog
     :open="confirmOpen"
@@ -347,12 +493,14 @@ function onVideoHover(e: MouseEvent, play: boolean) {
 }
 
 .works-grid {
-  columns: 200px;
-  column-gap: 8px;
   width: 100%;
 
   &--video {
-    columns: 280px;
+    /* column width via inline style */
+  }
+
+  &--compact {
+    /* column width via inline style */
   }
 }
 
@@ -394,7 +542,7 @@ function onVideoHover(e: MouseEvent, play: boolean) {
 .work-media-wrap {
   position: relative;
   width: 100%;
-  background: $bg-input;
+  background: color-mix(in srgb, $bg-input 88%, transparent);
   overflow: hidden;
 
   &.editable {
@@ -403,6 +551,15 @@ function onVideoHover(e: MouseEvent, play: boolean) {
 
   &.is-video {
     display: block;
+  }
+
+  &.is-media-loading {
+    .work-actions-shade,
+    .work-actions-bar,
+    :deep(.discover-hover-bar) {
+      opacity: 0;
+      pointer-events: none;
+    }
   }
 
   .work-actions-shade,
@@ -416,7 +573,7 @@ function onVideoHover(e: MouseEvent, play: boolean) {
     pointer-events: none;
   }
 
-  &:hover {
+  &:hover:not(.is-media-loading) {
     .work-actions-shade,
     .work-actions-bar {
       opacity: 1;
@@ -427,11 +584,68 @@ function onVideoHover(e: MouseEvent, play: boolean) {
       pointer-events: auto;
     }
   }
+
+  &--discover:hover:not(.is-media-loading) {
+    :deep(.discover-hover-bar) {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+}
+
+.work-media-skeleton {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  overflow: hidden;
+  pointer-events: none;
+  transition: opacity 0.42s ease;
+}
+
+.work-media-wrap:not(.is-media-loading) .work-media-skeleton {
+  opacity: 0;
+}
+
+.work-media-shimmer {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    105deg,
+    transparent 0%,
+    rgba($accent, 0.05) 42%,
+    rgba($accent, 0.12) 50%,
+    rgba($accent, 0.05) 58%,
+    transparent 100%
+  );
+  background-size: 220% 100%;
+  animation: shimmer 1.8s ease-in-out infinite;
+}
+
+.work-media-sk-lines {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px;
+}
+
+.work-media-asset {
+  position: relative;
+  z-index: 0;
+  opacity: 0;
+  transition: opacity 0.52s ease;
+
+  &--visible {
+    opacity: 1;
+  }
 }
 
 .work-img {
   width: 100%;
-  height: auto;
+  height: 100%;
   display: block;
   object-fit: cover;
 }
@@ -441,7 +655,7 @@ function onVideoHover(e: MouseEvent, play: boolean) {
   height: 100%;
   object-fit: cover;
   display: block;
-  background: #000;
+  background: transparent;
 }
 
 .video-player-wrap {
@@ -670,6 +884,13 @@ function onVideoHover(e: MouseEvent, play: boolean) {
   color: $accent;
   background: linear-gradient(145deg, $accent-light, rgba(255, 255, 255, 0.6));
   font-size: 12px;
+}
+
+.works-end-hint {
+  margin: 20px 0 8px;
+  text-align: center;
+  font-size: 13px;
+  color: $text-muted;
 }
 
 .empty {

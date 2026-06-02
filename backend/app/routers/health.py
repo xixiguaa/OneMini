@@ -5,7 +5,8 @@ from fastapi import APIRouter, Depends
 from app.config import get_settings
 from app.context import bind_user_context
 from app.deps import get_current_user
-from app.services.embeddings import get_embedding_dim
+from app.services.embeddings import get_embedding_dim, ping_embedding
+from app.services.rerank import ping_rerank
 from app.db.session import ping_postgres
 from app.services.chat_store import get_storage_info
 from app.services import llm_wiki
@@ -58,8 +59,9 @@ def health(user_id: str = Depends(get_current_user)):
             "milvus_integration": "langchain-milvus",
             "error": langchain_error,
         },
-        "embedding_model": settings.embedding_model,
+        "embedding": ping_embedding(settings),
         "embedding_dim": get_embedding_dim() if milvus.get("ok") else None,
+        "rerank": ping_rerank(settings),
         "llm_configured": bool(settings.openai_api_key),
         "chat_model": settings.chat_model,
         "collection": settings.milvus_collection,

@@ -357,8 +357,6 @@ watch(
 watch(composerMenuActive, (active) => {
   if (props.collapsible && active) {
     expanded.value = true
-  } else if (props.collapsible && props.autoCollapseOnBlur) {
-    scheduleCollapseIfUnfocused()
   }
 })
 
@@ -439,7 +437,6 @@ defineExpose({
             v-else
             type="button"
             class="ref-upload-card"
-            title="上传参考内容"
             @click.stop="triggerFileInput"
           >
             <Plus :size="16" stroke-width="1.75" />
@@ -891,7 +888,7 @@ $floating-duration-collapse: 0.52s;
   }
 
   &:hover :deep(.ref-image-stack:not(.expanded)) {
-    transform: rotate(-8deg) scale(1.06);
+    transform: rotate(-8deg) scale(1.10);
   }
 
   &:hover :deep(.ref-image-stack.expanded) {
@@ -931,7 +928,7 @@ $floating-duration-collapse: 0.52s;
 
   &:hover {
     z-index: 30;
-    transform: rotate(-8deg) scale(1.12) translateY(-12px);
+    transform: rotate(-8deg) scale(1.18);
     box-shadow: var(--glass-float-shadow, $shadow-md);
     border-color: rgba($accent, 0.45);
     color: var(--composer-text);

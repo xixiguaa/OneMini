@@ -9,7 +9,7 @@ import {
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 
 const SMART_HD_RESOLUTIONS = [
-  { id: '2k', label: '2K' },
+  { id: '2k', label: '2K', premium: false },
   { id: '4k', label: '4K', premium: true },
   { id: '8k', label: '8K', premium: true },
 ] as const

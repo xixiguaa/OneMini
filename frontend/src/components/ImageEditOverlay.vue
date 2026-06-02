@@ -34,13 +34,13 @@ import { useConfirmDialog } from '../composables/useConfirmDialog'
 import { usePublicGallery } from '../composables/usePublicGallery'
 import { useWorksGallery, type GalleryItem } from '../composables/useWorksGallery'
 import { useAgentStore } from '../stores/agent'
+import { acceptFilesForCreateMode } from '../utils/files'
 import { useCreateHistoryStore } from '../stores/createHistory'
 import { useSettingsStore } from '../stores/settings'
 import { useToastStore } from '../stores/toast'
 import { formatUserError } from '../utils/formatUserError'
 import ConfirmDialog from './ConfirmDialog.vue'
 import CreateComposerCard from './CreateComposerCard.vue'
-import CreateGenerationPill from './CreateGenerationPill.vue'
 import ImageEditHistoryFeed from './ImageEditHistoryFeed.vue'
 import LipSyncComposerCard from './LipSyncComposerCard.vue'
 import OutpaintDialog from './OutpaintDialog.vue'
@@ -60,9 +60,9 @@ const toast = useToastStore()
 const { isPublished, publish, hydrate: hydratePublicGallery } = usePublicGallery()
 const publishing = ref(false)
 const publishDialogOpen = ref(false)
-const editComposerRef = ref<InstanceType<typeof CreateComposerCard> | null>(null)
 const editFloatingComposerRef = ref<InstanceType<typeof CreateComposerCard> | null>(null)
 const editFloatingLipsyncRef = ref<InstanceType<typeof LipSyncComposerCard> | null>(null)
+const lipsyncRefFileInput = ref<HTMLInputElement | null>(null)
 const editStageBodyRef = ref<HTMLElement | null>(null)
 const sideDetailPopperEl = ref<HTMLElement | null>(null)
 const editCompletedFlashId = ref<string | null>(null)
@@ -503,6 +503,16 @@ function sendLipsyncFromOverlay() {
   soonFeature('对口型')
 }
 
+function triggerLipsyncRefFile() {
+  lipsyncRefFileInput.value?.click()
+}
+
+async function onLipsyncRefFiles(e: Event) {
+  const files = (e.target as HTMLInputElement).files
+  if (files?.length) await agent.addAttachments(files)
+  if (lipsyncRefFileInput.value) lipsyncRefFileInput.value.value = ''
+}
+
 function onSmartHdSubmit(_payload: { resolution: string; detailLevel: number }) {
   smartHdOpen.value = false
   soonFeature('智能超清')
@@ -916,47 +926,49 @@ function onDeleteCancel() {
               <X :size="18" stroke-width="2.25" />
             </button>
 
+            <nav v-if="galleryTotal > 1" class="gallery-nav" aria-label="作品切换">
+              <button
+                type="button"
+                class="gallery-nav-btn"
+                title="上一个作品"
+                :disabled="!canPrevGallery"
+                @click="selectPrevGallery"
+              >
+                <ChevronLeft :size="18" stroke-width="2.25" />
+              </button>
+              <div
+                v-if="showGalleryDots"
+                class="gallery-nav-indicator gallery-nav-dots"
+                role="tablist"
+                aria-label="作品列表"
+              >
+                <button
+                  v-for="(_, dotIdx) in navGalleryItems"
+                  :key="dotIdx"
+                  type="button"
+                  class="gallery-nav-dot"
+                  :class="{ active: dotIdx === galleryIndex }"
+                  :title="`第 ${dotIdx + 1} ${galleryNavLabel}`"
+                  @click="goToGalleryIndex(dotIdx)"
+                />
+              </div>
+              <span v-else class="gallery-nav-indicator gallery-nav-count">
+                {{ galleryIndex + 1 }} / {{ galleryTotal }}
+              </span>
+              <button
+                type="button"
+                class="gallery-nav-btn"
+                title="下一个作品"
+                :disabled="!canNextGallery"
+                @click="selectNextGallery"
+              >
+                <ChevronRight :size="18" stroke-width="2.25" />
+              </button>
+            </nav>
+
           <div ref="editStageBodyRef" class="edit-stage-body" @scroll="onEditStageScroll">
             <div class="stage-center">
-              <nav v-if="galleryTotal > 1" class="gallery-nav" aria-label="作品切换">
-                <button
-                  type="button"
-                  class="gallery-nav-btn"
-                  title="上一个作品"
-                  :disabled="!canPrevGallery"
-                  @click="selectPrevGallery"
-                >
-                  <ChevronLeft :size="18" stroke-width="2.25" />
-                </button>
-                <div
-                  v-if="showGalleryDots"
-                  class="gallery-nav-indicator gallery-nav-dots"
-                  role="tablist"
-                  aria-label="作品列表"
-                >
-                  <button
-                    v-for="(_, dotIdx) in navGalleryItems"
-                    :key="dotIdx"
-                    type="button"
-                    class="gallery-nav-dot"
-                    :class="{ active: dotIdx === galleryIndex }"
-                    :title="`第 ${dotIdx + 1} ${galleryNavLabel}`"
-                    @click="goToGalleryIndex(dotIdx)"
-                  />
-                </div>
-                <span v-else class="gallery-nav-indicator gallery-nav-count">
-                  {{ galleryIndex + 1 }} / {{ galleryTotal }}
-                </span>
-                <button
-                  type="button"
-                  class="gallery-nav-btn"
-                  title="下一个作品"
-                  :disabled="!canNextGallery"
-                  @click="selectNextGallery"
-                >
-                  <ChevronRight :size="18" stroke-width="2.25" />
-                </button>
-              </nav>
+              <div v-if="galleryTotal > 1" class="gallery-nav-spacer" aria-hidden="true" />
               <div class="stage-main stage-main--history">
                 <ImageEditHistoryFeed
                   :versions="agent.imageEditVersions"
@@ -1019,20 +1031,17 @@ function onDeleteCancel() {
                       <ChevronsDown :size="14" />
                     </span>
                   </button>
-                  <div class="edit-composer-gen-pill">
-                    <CreateGenerationPill @view="(id) => agent.locateCreateGallerySession(id)" />
-                  </div>
                   <LipSyncComposerCard
                     v-if="isDigitalHumanComposer"
                     embedded
                     popover-placement="above"
                     :image-url="displayUrl"
                     :busy="isLoading"
+                    :pick-ref-file="triggerLipsyncRefFile"
                     @send="sendLipsyncFromOverlay"
                   />
                   <CreateComposerCard
                     v-else
-                    ref="editComposerRef"
                     popover-placement="above"
                     submenu-placement="above"
                     :placeholder="editComposerPlaceholder"
@@ -1102,9 +1111,6 @@ function onDeleteCancel() {
               </span>
             </button>
             <template v-if="showFloatingLipsyncComposer">
-              <div class="edit-composer-gen-pill edit-composer-gen-pill--float">
-                <CreateGenerationPill @view="(id) => agent.locateCreateGallerySession(id)" />
-              </div>
               <LipSyncComposerCard
                 ref="editFloatingLipsyncRef"
                 collapsible
@@ -1112,13 +1118,11 @@ function onDeleteCancel() {
                 popover-placement="above"
                 :image-url="displayUrl"
                 :busy="isLoading"
+                :pick-ref-file="triggerLipsyncRefFile"
                 @send="sendLipsyncFromOverlay"
               />
             </template>
             <template v-else-if="showFloatingEditComposer">
-              <div class="edit-composer-gen-pill edit-composer-gen-pill--float">
-                <CreateGenerationPill @view="(id) => agent.locateCreateGallerySession(id)" />
-              </div>
               <CreateComposerCard
                 ref="editFloatingComposerRef"
                 collapsible
@@ -1292,6 +1296,14 @@ function onDeleteCancel() {
         :aspect-ratio="previewAspectRatio"
         :publishing="publishing"
         @submit="onPublishSubmit"
+      />
+
+      <input
+        ref="lipsyncRefFileInput"
+        type="file"
+        :accept="acceptFilesForCreateMode('digitalHuman')"
+        hidden
+        @change="onLipsyncRefFiles"
       />
     </div>
   </Teleport>
@@ -1508,16 +1520,6 @@ $floating-ease-expand: cubic-bezier(0.22, 1, 0.36, 1);
     pointer-events: auto;
   }
 
-  .edit-composer-gen-pill--float {
-    right: auto;
-    left: 0;
-    pointer-events: none;
-
-    :deep(.create-gen-pill) {
-      pointer-events: auto;
-    }
-  }
-
   :deep(.composer-card) {
     width: 100%;
     max-width: 100%;
@@ -1731,14 +1733,24 @@ $floating-ease-expand: cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .gallery-nav {
-  flex-shrink: 0;
-  align-self: center;
+  position: absolute;
+  top: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 10;
   display: inline-flex;
   flex-direction: row;
   align-items: center;
   justify-content: center;
   gap: 12px;
-  max-width: 100%;
+  max-width: min(#{$preview-max-width}, 100%);
+  pointer-events: auto;
+}
+
+.gallery-nav-spacer {
+  flex-shrink: 0;
+  width: 100%;
+  height: 52px;
 }
 
 .gallery-nav-indicator {
@@ -2478,20 +2490,6 @@ $floating-ease-expand: cubic-bezier(0.22, 1, 0.36, 1);
   }
 }
 
-.edit-composer-gen-pill {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: auto;
-  z-index: 6;
-  transform: translateY(calc(-100% - 10px));
-  pointer-events: none;
-
-  :deep(.create-gen-pill) {
-    pointer-events: auto;
-  }
-}
-
 @media (max-width: 900px) {
   .edit-side {
     display: none;
@@ -2548,6 +2546,10 @@ $floating-ease-expand: cubic-bezier(0.22, 1, 0.36, 1);
   .stage-close {
     top: 12px;
     right: 16px;
+  }
+
+  .gallery-nav {
+    top: 12px;
   }
 }
 </style>

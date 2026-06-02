@@ -221,20 +221,34 @@ def search_similar(
     settings: Settings | None = None,
     *,
     user_id: str | None = None,
+    rerank: bool | None = None,
 ) -> list[dict[str, Any]]:
     settings = settings or get_settings()
-    k = top_k or settings.rag_top_k
+    final_k = top_k or settings.rag_top_k
+    use_rerank = settings.rag_rerank_enabled if rerank is None else rerank
+    recall_k = settings.rag_recall_k if use_rerank else final_k
+    fetch_k = max(recall_k, final_k)
     _get_collection(settings)
 
     try:
         from app.services.langchain_store import langchain_search_similar
 
-        hits = langchain_search_similar(query, k, settings, user_id=user_id)
+        hits = langchain_search_similar(query, fetch_k, settings, user_id=user_id)
     except Exception:
-        hits = _search_similar_pymilvus(query, k, settings, user_id=user_id)
+        hits = _search_similar_pymilvus(query, fetch_k, settings, user_id=user_id)
     if user_id:
         prefix = user_doc_prefix(user_id)
         hits = [h for h in hits if str(h.get("doc_id", "")).startswith(prefix)]
+
+    if use_rerank and hits:
+        try:
+            from app.services.rerank import rerank_hits
+
+            hits = rerank_hits(query, hits, top_k=final_k, settings=settings)
+        except Exception:
+            hits = hits[:final_k]
+    else:
+        hits = hits[:final_k]
     return hits
 
 

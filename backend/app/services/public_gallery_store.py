@@ -42,6 +42,7 @@ def _row_to_dict(row: PublicGalleryItemRow) -> dict[str, Any]:
         "status": row.status or "DONE",
         "createdAt": row.created_at,
         "aspectRatio": row.aspect_ratio,
+        "publishedBy": row.published_by,
     }
 
 

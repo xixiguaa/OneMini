@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { storeToRefs } from 'pinia'
-import { watch } from 'vue'
+import { onMounted, watch } from 'vue'
 import AppSidebar from './components/AppSidebar.vue'
 import AppToast from './components/AppToast.vue'
 import ChatView from './components/ChatView.vue'
@@ -11,6 +11,7 @@ import KnowledgeView from './components/KnowledgeView.vue'
 import PageAuroraBackground from './components/PageAuroraBackground.vue'
 import WikiGraphView from './components/WikiGraphView.vue'
 import SkillsView from './components/SkillsView.vue'
+import UserProfileView from './components/UserProfileView.vue'
 import WorldStudio from './components/WorldStudio.vue'
 import { useAgentStore } from './stores/agent'
 import { useAuthStore } from './stores/auth'
@@ -26,6 +27,21 @@ watch(
   },
   { immediate: true },
 )
+
+function applyRouteFromUrl() {
+  const params = new URLSearchParams(window.location.search)
+  if (params.get('view') !== 'profile') return
+  const userId = params.get('user')?.trim()
+  agent.openUserProfile(userId || null)
+}
+
+onMounted(() => {
+  if (isAuthenticated.value) applyRouteFromUrl()
+})
+
+watch(isAuthenticated, (ok) => {
+  if (ok) applyRouteFromUrl()
+})
 </script>
 
 <template>
@@ -47,6 +63,7 @@ watch(
       <SkillsView v-else-if="agent.currentView === 'skills'" />
       <KnowledgeView v-else-if="agent.currentView === 'knowledge'" />
       <WikiGraphView v-else-if="agent.currentView === 'wikiGraph'" />
+      <UserProfileView v-else-if="agent.currentView === 'profile'" />
     </main>
   </div>
 </template>

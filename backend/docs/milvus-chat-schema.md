@@ -1,6 +1,6 @@
 # Milvus 对话存储 schema（`onemini_chat`）
 
-在 **Attu** 中连接 `MILVUS_HOST:MILVUS_PORT`（默认 `127.0.0.1:19530`），可看到本集合与知识库 `onemini_knowledge` 并列。
+在 **Attu** 中连接 `MILVUS_HOST:MILVUS_PORT`（默认 `127.0.0.1:19530`），可看到本集合与知识库 `onemini_knowledge_bgem3` 并列。
 
 ## 设计原则
 

@@ -32,6 +32,7 @@ const TEXT_TYPES = new Set([
 ])
 
 const TEXT_EXT = /\.(txt|md|markdown|html?|json|csv)$/i
+const IMAGE_EXT = /\.(jpe?g|png|gif|webp|bmp|svg|heic|heif|avif|tiff?)$/i
 const VIDEO_EXT = /\.(mp4|mov|webm|avi|mkv|m4v)$/i
 const SPREADSHEET_EXT = /\.(xlsx|xlsm|xls)$/i
 const SPREADSHEET_MIMES = new Set([
@@ -46,7 +47,7 @@ export function isSpreadsheetFile(file: File): boolean {
 }
 
 export function classifyFile(file: File): ParsedAttachment['kind'] {
-  if (file.type.startsWith('image/')) return 'image'
+  if (file.type.startsWith('image/') || IMAGE_EXT.test(file.name)) return 'image'
   if (file.type.startsWith('video/') || VIDEO_EXT.test(file.name)) return 'video'
   if (TEXT_TYPES.has(file.type) || TEXT_EXT.test(file.name)) return 'text'
   return 'document'

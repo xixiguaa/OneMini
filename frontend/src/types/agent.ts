@@ -10,6 +10,7 @@ export type ViewId =
   | 'skills'
   | 'knowledge'
   | 'wikiGraph'
+  | 'profile'
 export type CreateMode = 'agent' | 'image' | 'video' | 'digitalHuman'
 export type ModelCapability = 'chat' | 'multimodal' | 'image' | 'video' | 'world'
 
@@ -42,7 +43,7 @@ export interface SkillConfig {
 export interface FileAttachmentMeta {
   id: string
   name: string
-  kind: 'image' | 'text' | 'document'
+  kind: 'image' | 'video' | 'text' | 'document'
   previewUrl?: string
   size?: number
 }

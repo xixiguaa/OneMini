@@ -10,7 +10,7 @@ OneMini 前端 (5173)
   └─ /api/platform/*  → Python 后端 (8000)
          ├─ PostgreSQL   用户、创作历史元数据、公共画廊
          ├─ MinIO        创作/画廊图片与视频二进制
-         └─ Milvus       知识库 RAG（onemini_knowledge）+ 对话/长期记忆（onemini_chat）
+         └─ Milvus       知识库 RAG（onemini_knowledge_bgem3）+ 对话/长期记忆（onemini_chat_bgem3）
     Attu (3000)     ← Milvus 可视化
 ```
 
@@ -18,7 +18,7 @@ OneMini 前端 (5173)
 
 ## 完整流程
 
-1. **入库**：在侧栏「知识库」粘贴文本或上传 `.txt/.md` → 分块 → 本地嵌入 (bge-small-zh) → 经 **langchain-milvus** 写入 Milvus
+1. **入库**：在侧栏「知识库」粘贴文本或上传 `.txt/.md` → 分块 → 本地嵌入 (BGE-M3, 1024 维) → 经 **langchain-milvus** 写入 Milvus
 2. **检索**：用户提问 → LangChain 向量检索 Top-K 片段
 3. **生成**：检索结果 + 对话历史 → OpenAI 兼容 LLM 流式回答
 4. **对话**：勾选「知识库增强」后，对话页走 RAG 接口
@@ -67,7 +67,22 @@ Attu：http://localhost:3000
 | `MILVUS_HOST` / `MILVUS_PORT` | Milvus 地址 |
 | `OPENAI_API_KEY` | RAG 回答用 LLM |
 | `OPENAI_BASE_URL` | 兼容 DeepSeek 等 |
-| `EMBEDDING_MODEL` | fastembed 模型，默认 bge-small-zh |
+| `EMBEDDING_MODEL` | 默认 `BAAI/bge-m3`（FlagEmbedding）；其它如 `BAAI/bge-small-zh-v1.5` 走 fastembed |
+| `EMBEDDING_MAX_LENGTH` | BGE-M3 最大 token，默认 8192 |
+
+### 切换到 BGE-M3 新集合
+
+1. `.env` 设置 `MILVUS_COLLECTION=onemini_knowledge_bgem3`、`MILVUS_CHAT_COLLECTION=onemini_chat_bgem3`、`EMBEDDING_MODEL=BAAI/bge-m3`
+2. 在 `backend` 目录执行：
+
+```bash
+bash scripts/setup_bgem3_collections.sh
+```
+
+脚本会下载 ONNX、从 `onemini_knowledge` / `onemini_chat` 迁移并重嵌向量、写入 `data/knowledge_seed/` 种子文档。
+| `RAG_RECALL_K` | 向量召回条数（重排前），默认 20 |
+| `RAG_RERANK_ENABLED` | 是否启用 Qwen3 重排，默认 true |
+| `RERANK_MODEL` | 默认 `Qwen/Qwen3-Reranker-0.6B`（ONNX） |
 
 ## API 摘要
 

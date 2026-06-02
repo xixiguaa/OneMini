@@ -6,7 +6,7 @@ from app.services.embeddings import embed_texts
 
 
 class FastEmbedEmbeddings(Embeddings):
-    """复用现有 fastembed 模型，供 langchain-milvus 向量库使用。"""
+    """复用 embeddings 服务（BGE-M3 / fastembed），供 langchain-milvus 向量库使用。"""
 
     def embed_documents(self, texts: list[str]) -> list[list[float]]:
         return embed_texts(texts)

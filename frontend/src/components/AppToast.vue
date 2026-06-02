@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { AlertCircle, Check, Info, X } from 'lucide-vue-next'
+import { AlertCircle, AlertTriangle, Check, Info, X } from 'lucide-vue-next'
 import { storeToRefs } from 'pinia'
 import { computed } from 'vue'
 import { useAgentStore } from '../stores/agent'
@@ -18,6 +18,7 @@ function onToastAction() {
 const Icon = computed(() => {
   if (kind.value === 'success') return Check
   if (kind.value === 'error') return AlertCircle
+  if (kind.value === 'warning') return AlertTriangle
   return Info
 })
 </script>
@@ -95,6 +96,14 @@ $edit-stage-shift: 32px;
 
     .app-toast-icon {
       color: $accent;
+    }
+  }
+
+  &--warning {
+    border-color: color-mix(in srgb, #e6a817 45%, $glass-border);
+
+    .app-toast-icon {
+      color: #e6a817;
     }
   }
 }

@@ -63,8 +63,16 @@ def build_rag_messages(
     for i, ctx in enumerate(contexts, 1):
         src = ctx.get("source") or "未知来源"
         text = ctx.get("text") or ""
+        rerank_score = ctx.get("rerank_score")
+        vector_score = ctx.get("vector_score")
         score = ctx.get("score")
-        blocks.append(f"[{i}] 来源: {src} (相关度 {score:.3f})\n{text}")
+        if rerank_score is not None and vector_score is not None:
+            score_label = f"重排 {rerank_score:.3f} / 向量 {vector_score:.3f}"
+        elif score is not None:
+            score_label = f"相关度 {score:.3f}"
+        else:
+            score_label = "相关度 —"
+        blocks.append(f"[{i}] 来源: {src} ({score_label})\n{text}")
 
     context_block = "\n\n".join(blocks) if blocks else "（无匹配片段）"
     user_content = f"参考资料：\n{context_block}\n\n用户问题：{question}"
