@@ -44,6 +44,7 @@ import ImageEditHistoryFeed from './ImageEditHistoryFeed.vue'
 import LipSyncComposerCard from './LipSyncComposerCard.vue'
 import OutpaintDialog from './OutpaintDialog.vue'
 import PageAuroraBackground from './PageAuroraBackground.vue'
+import PublishWorkDialog from './PublishWorkDialog.vue'
 import SmartHdDialog from './SmartHdDialog.vue'
 import { downloadMediaUrl } from '../utils/downloadMedia'
 import { formatGenerationTime } from '../utils/formatGenerationTime'
@@ -57,10 +58,17 @@ const { galleryItems } = useWorksGallery()
 const toast = useToastStore()
 const { isPublished, publish, hydrate: hydratePublicGallery } = usePublicGallery()
 const publishing = ref(false)
+const publishDialogOpen = ref(false)
 const editComposerRef = ref<InstanceType<typeof CreateComposerCard> | null>(null)
+const editFloatingComposerRef = ref<InstanceType<typeof CreateComposerCard> | null>(null)
+const editFloatingLipsyncRef = ref<InstanceType<typeof LipSyncComposerCard> | null>(null)
 const editStageBodyRef = ref<HTMLElement | null>(null)
+const editCompletedFlashId = ref<string | null>(null)
+let prevEditRunningIds = new Set<string>()
 const EDIT_STAGE_BOTTOM_THRESHOLD = 48
 const showScrollToBottom = ref(false)
+const showFloatingEditComposer = computed(() => showScrollToBottom.value && !isLipsyncMode.value)
+const showFloatingLipsyncComposer = computed(() => showScrollToBottom.value && isLipsyncMode.value)
 const smartHdOpen = ref(false)
 const outpaintOpen = ref(false)
 const deleteMode = ref<'session' | 'version' | 'blocked' | null>(null)
@@ -105,6 +113,9 @@ function updateScrollToBottomVisibility(el?: HTMLElement | null) {
   }
   const canScroll = target.scrollHeight - target.clientHeight > EDIT_STAGE_BOTTOM_THRESHOLD
   showScrollToBottom.value = canScroll && !isEditStageAtBottom(target)
+  if (isEditStageAtBottom(target)) {
+    editCompletedFlashId.value = null
+  }
 }
 
 function scrollEditStageToBottom(behavior: ScrollBehavior = 'instant') {
@@ -116,42 +127,45 @@ function scrollEditStageToBottom(behavior: ScrollBehavior = 'instant') {
   }
 }
 
-function onScrollToBottomClick() {
-  scrollEditStageToBottom('smooth')
-  expandEditComposer(true)
+/** 发送后等新条目入 DOM，再滚到底部（避免被历史列表 scrollIntoView 顶回去） */
+function scrollAfterEditSubmit() {
+  void nextTick(() => {
+    void nextTick(() => scrollEditStageToBottom('smooth'))
+  })
 }
 
-function expandEditComposer(focus = false) {
-  editComposerRef.value?.expandComposer(focus)
+function onScrollToBottomClick() {
+  scrollEditStageToBottom('smooth')
+  editFloatingComposerRef.value?.collapseComposer?.()
+}
+
+function focusEditComposer() {
+  if (showFloatingEditComposer.value) {
+    editFloatingComposerRef.value?.expandComposer(true)
+  }
 }
 
 function onEditStageScroll(e: Event) {
-  const el = e.target as HTMLElement
-
-  updateScrollToBottomVisibility(el)
-
-  if (isLipsyncMode.value) return
-
-  const composer = editComposerRef.value
-  if (!composer) return
-
-  if (composer.shouldKeepExpandedOnScroll?.()) return
-
-  if (isEditStageAtBottom(el)) {
-    expandEditComposer()
-  } else {
-    composer.collapseComposer?.()
+  updateScrollToBottomVisibility(e.target as HTMLElement)
+  if (isLipsyncMode.value) {
+    if (editFloatingLipsyncRef.value?.shouldKeepExpandedOnScroll?.()) return
+    editFloatingLipsyncRef.value?.collapseComposer?.()
+    return
   }
+  editFloatingComposerRef.value?.collapseComposer?.()
 }
+
+watch(showScrollToBottom, (scrolledUp) => {
+  if (scrolledUp && !isLipsyncMode.value) {
+    void nextTick(() => editFloatingComposerRef.value?.collapseComposer?.())
+  }
+})
 
 watch(
   isLipsyncMode,
   (lipsync, wasLipsync) => {
     if (wasLipsync && !lipsync && agent.imageEditOpen) {
-      void nextTick(() => {
-        expandEditComposer()
-        scrollEditStageToBottom()
-      })
+      void nextTick(() => scrollEditStageToBottom())
     }
   },
 )
@@ -162,20 +176,22 @@ watch(
     if (open) {
       void hydratePublicGallery()
       agent.inputText = ''
-      void nextTick(() => {
-        expandEditComposer()
-        scrollEditStageToBottom()
-      })
+      void nextTick(() => scrollEditStageToBottom())
     } else {
-      editComposerRef.value?.collapseComposer()
+      editFloatingComposerRef.value?.collapseComposer()
       showScrollToBottom.value = false
+      editCompletedFlashId.value = null
     }
   },
 )
 
 watch(
   () => agent.imageEditVersions.length,
-  () => {
+  (len, prevLen) => {
+    if (prevLen !== undefined && len > prevLen) {
+      scrollAfterEditSubmit()
+      return
+    }
     void nextTick(() => updateScrollToBottomVisibility())
   },
 )
@@ -210,21 +226,45 @@ const metaLine = computed(() => {
 
 const isActivePublished = computed(() => isPublished(agent.imageEditActive?.id))
 
-const canPublish = computed(
+const canPublishWork = computed(
   () =>
     !!agent.imageEditActive?.id &&
     agent.imageEditActive.status === 'DONE' &&
-    !!displayUrl.value &&
-    !isActivePublished.value,
+    !!displayUrl.value,
 )
 
-async function publishCurrent() {
+function showPublishedToast() {
   const id = agent.imageEditActive?.id
-  if (!id || !canPublish.value || publishing.value) return
+  if (!id) return
+  toast.show({
+    message: '该作品已发布',
+    kind: 'info',
+    duration: 6000,
+    action: {
+      label: '去查看',
+      onClick: () => agent.locatePublicGalleryItem(id),
+    },
+  })
+}
+
+function onPublishClick() {
+  if (publishing.value) return
+  if (isActivePublished.value) {
+    showPublishedToast()
+    return
+  }
+  if (!canPublishWork.value) return
+  publishDialogOpen.value = true
+}
+
+async function onPublishSubmit(payload: { title: string; description: string }) {
+  const id = agent.imageEditActive?.id
+  if (!id || publishing.value) return
   publishing.value = true
   try {
-    await publish(id)
-    toast.showSuccess('已发布到发现页，可在「发现」中查看')
+    await publish(id, payload)
+    publishDialogOpen.value = false
+    showPublishedToast()
   } catch (err) {
     toast.showError(formatUserError(err, '发布失败'))
   } finally {
@@ -445,6 +485,7 @@ async function startGenerateVideo() {
 
 function sendVideoFromOverlay() {
   void agent.commitVideoComposeFromImageEdit()
+  scrollAfterEditSubmit()
 }
 
 const editComposerPlaceholder = computed(() => {
@@ -476,11 +517,15 @@ function sendFromEditComposer() {
   void agent.submitImageEdit().then((ok) => {
     if (ok) agent.inputText = ''
   })
+  scrollAfterEditSubmit()
 }
 
 function onHistoryReEdit(versionId: string) {
   agent.reeditImageEditVersion(versionId)
-  editComposerRef.value?.expandComposer?.()
+  void nextTick(() => {
+    scrollEditStageToBottom()
+    focusEditComposer()
+  })
 }
 
 async function onHistoryRegenerate(versionId: string) {
@@ -497,7 +542,7 @@ async function onHistoryRegenerate(versionId: string) {
 function onUseHistoryPrompt(prompt: string) {
   if (!prompt || isSystemEditPrompt(prompt)) return
   agent.inputText = prompt
-  editComposerRef.value?.expandComposer?.()
+  focusEditComposer()
   toast.showSuccess('已填入提示词')
 }
 
@@ -520,6 +565,104 @@ const displayUrl = computed(() => {
 })
 
 const isLoading = computed(() => agent.imageEditLoading)
+
+const editSessionRunningCount = computed(
+  () => agent.imageEditVersions.filter((v) => v.status === 'RUNNING').length,
+)
+
+const scrollBottomGenerating = computed(() => editSessionRunningCount.value > 0)
+
+const editCompletedFlashItem = computed(() => {
+  const id = editCompletedFlashId.value
+  if (!id) return null
+  return agent.imageEditVersions.find((v) => v.id === id && v.status === 'DONE') ?? null
+})
+
+const showCompletedGenStatus = computed(
+  () => !!editCompletedFlashItem.value && showScrollToBottom.value && !isLipsyncMode.value,
+)
+
+const showGeneratingGenStatus = computed(
+  () => scrollBottomGenerating.value && !isLipsyncMode.value,
+)
+
+const showGenStatusBar = computed(
+  () => showGeneratingGenStatus.value || showCompletedGenStatus.value,
+)
+
+const showScrollBottomBtn = computed(
+  () => showScrollToBottom.value && !showGenStatusBar.value,
+)
+
+const showGenStatusOnInline = computed(
+  () => showGenStatusBar.value && !showFloatingEditComposer.value,
+)
+
+const showGenStatusOnFloat = computed(
+  () => showGenStatusBar.value && showFloatingEditComposer.value,
+)
+
+watch(
+  () => agent.imageEditVersions.map((v) => `${v.id}:${v.status}`).join('|'),
+  () => {
+    const versions = agent.imageEditVersions
+    const runningIds = new Set(versions.filter((v) => v.status === 'RUNNING').map((v) => v.id))
+
+    if (runningIds.size === 0 && prevEditRunningIds.size > 0) {
+      for (const id of prevEditRunningIds) {
+        const done = versions.find((v) => v.id === id && v.status === 'DONE')
+        if (done) {
+          editCompletedFlashId.value = done.id
+          break
+        }
+      }
+    }
+    if (runningIds.size > 0) {
+      editCompletedFlashId.value = null
+    }
+    prevEditRunningIds = runningIds
+  },
+  { immediate: true },
+)
+
+watch(scrollBottomGenerating, () => {
+  void nextTick(() => updateScrollToBottomVisibility())
+})
+
+const scrollBottomStatusFraction = computed(() => {
+  if (scrollBottomGenerating.value) {
+    return `0/${Math.max(1, editSessionRunningCount.value)}`
+  }
+  return '1/1'
+})
+
+const scrollBottomStatusSuffix = computed(() =>
+  scrollBottomGenerating.value ? '生成中...' : '生成完成',
+)
+
+const scrollBottomStatusText = computed(
+  () => `${scrollBottomStatusFraction.value} ${scrollBottomStatusSuffix.value}`,
+)
+
+const scrollBottomStatusWaveChars = computed(() => scrollBottomStatusText.value.split(''))
+
+const scrollBottomThumbUrl = computed(() => {
+  const completed = editCompletedFlashItem.value
+  if (completed && !scrollBottomGenerating.value) {
+    return (
+      resolveCreateHistoryImageUrl(completed) || completed.previewUrl || completed.url || ''
+    )
+  }
+
+  const running = agent.imageEditVersions.find((v) => v.status === 'RUNNING')
+  if (!running) return displayUrl.value
+  const idx = agent.imageEditVersions.findIndex((v) => v.id === running.id)
+  for (let i = idx - 1; i >= 0; i--) {
+    const resolved = resolveCreateHistoryImageUrl(agent.imageEditVersions[i])
+    if (resolved) return resolved
+  }
+  return running.previewUrl || running.url || ''
+})
 
 function onKeydown(e: KeyboardEvent) {
   if (e.key === 'Escape') {
@@ -679,11 +822,11 @@ function onDeleteCancel() {
         </Teleport>
 
         <div class="edit-stage">
-          <div ref="editStageBodyRef" class="edit-stage-body" @scroll="onEditStageScroll">
-            <button type="button" class="stage-close" title="关闭" @click="agent.closeImageEdit()">
-              <X :size="20" />
+            <button type="button" class="stage-close gallery-nav-btn" title="关闭" @click="agent.closeImageEdit()">
+              <X :size="18" stroke-width="2.25" />
             </button>
 
+          <div ref="editStageBodyRef" class="edit-stage-body" @scroll="onEditStageScroll">
             <div class="stage-center">
               <nav v-if="galleryTotal > 1" class="gallery-nav" aria-label="作品切换">
                 <button
@@ -740,51 +883,160 @@ function onDeleteCancel() {
                   @use-prompt="onUseHistoryPrompt"
                 />
               </div>
-            </div>
-          </div>
 
-          <div class="stage-composer-wrap">
-            <div class="stage-composer-bar">
-            <div class="stage-center stage-composer-anchor">
-              <div class="stage-main-row">
-                <div class="stage-composer-main">
-                  <footer class="edit-composer" :class="{ 'edit-composer--scrolled-up': showScrollToBottom }">
-                    <button
-                      v-if="showScrollToBottom"
-                      type="button"
-                      class="edit-scroll-bottom-btn"
-                      @click="onScrollToBottomClick"
-                    >
+              <div class="stage-composer-anchor stage-composer-anchor--inline">
+                <footer
+                  class="edit-composer"
+                  :class="{ 'edit-composer--offscreen': showFloatingEditComposer || showFloatingLipsyncComposer }"
+                >
+                  <button
+                    v-if="showGenStatusOnInline"
+                    type="button"
+                    class="edit-gen-status"
+                    :class="{ 'edit-gen-status--complete': showCompletedGenStatus }"
+                    @click="onScrollToBottomClick"
+                  >
+                    <span class="edit-gen-status__thumb" aria-hidden="true">
+                      <img
+                        v-if="scrollBottomThumbUrl"
+                        :src="scrollBottomThumbUrl"
+                        alt=""
+                        class="edit-gen-status__thumb-img"
+                        :class="{ 'edit-gen-status__thumb-img--sharp': showCompletedGenStatus }"
+                      />
+                      <span v-if="showGeneratingGenStatus" class="edit-gen-status__spinner">
+                        <Loader2 :size="14" class="om-loading-spinner" />
+                      </span>
+                    </span>
+                    <span class="edit-gen-status__label">
+                      <span
+                        class="edit-gen-status__wordmark"
+                        :class="{ 'edit-gen-status__wordmark--wave': showGeneratingGenStatus }"
+                      >
+                        <template v-if="showGeneratingGenStatus">
+                          <span
+                            v-for="(ch, i) in scrollBottomStatusWaveChars"
+                            :key="`${i}-${ch}`"
+                            class="edit-gen-status__wave-char"
+                            :style="{ animationDelay: `${i * 0.07}s` }"
+                          >{{ ch === ' ' ? '\u00a0' : ch }}</span>
+                        </template>
+                        <template v-else>{{ scrollBottomStatusText }}</template>
+                      </span>
+                    </span>
+                    <span v-if="showScrollToBottom" class="edit-gen-status__action">
                       回到底部
                       <ChevronsDown :size="14" />
-                    </button>
-                    <div class="edit-composer-gen-pill">
-                      <CreateGenerationPill @view="(id) => agent.locateCreateGallerySession(id)" />
-                    </div>
-                    <LipSyncComposerCard
-                      v-if="isLipsyncMode"
-                      :image-url="displayUrl"
-                      :busy="isLoading"
-                      @send="sendLipsyncFromOverlay"
-                    />
-                    <CreateComposerCard
-                      v-else
-                      ref="editComposerRef"
-                      collapsible
-                      default-expanded
-                      :auto-collapse-on-blur="false"
-                      popover-placement="above"
-                      submenu-placement="above"
-                      :placeholder="editComposerPlaceholder"
-                      :busy="isLoading"
-                      :reference-generated-at="referenceGeneratedAt"
-                      @send="sendFromEditComposer"
-                    />
-                  </footer>
-                </div>
+                    </span>
+                  </button>
+                  <div class="edit-composer-gen-pill">
+                    <CreateGenerationPill @view="(id) => agent.locateCreateGallerySession(id)" />
+                  </div>
+                  <LipSyncComposerCard
+                    v-if="isLipsyncMode"
+                    :image-url="displayUrl"
+                    :busy="isLoading"
+                    @send="sendLipsyncFromOverlay"
+                  />
+                  <CreateComposerCard
+                    v-else
+                    ref="editComposerRef"
+                    popover-placement="above"
+                    submenu-placement="above"
+                    :placeholder="editComposerPlaceholder"
+                    :busy="isLoading"
+                    :reference-generated-at="referenceGeneratedAt"
+                    @send="sendFromEditComposer"
+                  />
+                </footer>
               </div>
             </div>
           </div>
+
+          <div
+            class="edit-floating-composer"
+            :class="{
+              visible: showFloatingEditComposer || showFloatingLipsyncComposer,
+              'edit-floating-composer--lipsync': isLipsyncMode,
+            }"
+          >
+            <button
+              v-if="showScrollBottomBtn"
+              type="button"
+              class="edit-scroll-bottom-btn"
+              @click="onScrollToBottomClick"
+            >
+              回到底部
+              <ChevronsDown :size="14" />
+            </button>
+            <button
+              v-if="showGenStatusOnFloat"
+              type="button"
+              class="edit-gen-status edit-gen-status--float"
+              :class="{ 'edit-gen-status--complete': showCompletedGenStatus }"
+              @click="onScrollToBottomClick"
+            >
+              <span class="edit-gen-status__thumb" aria-hidden="true">
+                <img
+                  v-if="scrollBottomThumbUrl"
+                  :src="scrollBottomThumbUrl"
+                  alt=""
+                  class="edit-gen-status__thumb-img"
+                  :class="{ 'edit-gen-status__thumb-img--sharp': showCompletedGenStatus }"
+                />
+                <span v-if="showGeneratingGenStatus" class="edit-gen-status__spinner">
+                  <Loader2 :size="14" class="om-loading-spinner" />
+                </span>
+              </span>
+              <span class="edit-gen-status__label">
+                <span
+                  class="edit-gen-status__wordmark"
+                  :class="{ 'edit-gen-status__wordmark--wave': showGeneratingGenStatus }"
+                >
+                  <template v-if="showGeneratingGenStatus">
+                    <span
+                      v-for="(ch, i) in scrollBottomStatusWaveChars"
+                      :key="`${i}-${ch}`"
+                      class="edit-gen-status__wave-char"
+                      :style="{ animationDelay: `${i * 0.07}s` }"
+                    >{{ ch === ' ' ? '\u00a0' : ch }}</span>
+                  </template>
+                  <template v-else>{{ scrollBottomStatusText }}</template>
+                </span>
+              </span>
+              <span v-if="showScrollToBottom" class="edit-gen-status__action">
+                回到底部
+                <ChevronsDown :size="14" />
+              </span>
+            </button>
+            <template v-if="showFloatingLipsyncComposer">
+              <div class="edit-composer-gen-pill edit-composer-gen-pill--float">
+                <CreateGenerationPill @view="(id) => agent.locateCreateGallerySession(id)" />
+              </div>
+              <LipSyncComposerCard
+                ref="editFloatingLipsyncRef"
+                collapsible
+                :image-url="displayUrl"
+                :busy="isLoading"
+                @send="sendLipsyncFromOverlay"
+              />
+            </template>
+            <template v-else-if="showFloatingEditComposer">
+              <div class="edit-composer-gen-pill edit-composer-gen-pill--float">
+                <CreateGenerationPill @view="(id) => agent.locateCreateGallerySession(id)" />
+              </div>
+              <CreateComposerCard
+                ref="editFloatingComposerRef"
+                collapsible
+                :auto-collapse-on-blur="true"
+                popover-placement="above"
+                submenu-placement="above"
+                :placeholder="editComposerPlaceholder"
+                :busy="isLoading"
+                :reference-generated-at="referenceGeneratedAt"
+                @send="sendFromEditComposer"
+              />
+            </template>
           </div>
         </div>
 
@@ -803,10 +1055,10 @@ function onDeleteCancel() {
               <button
                 type="button"
                 class="side-icon-btn"
-                :class="{ active: isActivePublished }"
+                :class="{ 'side-icon-btn--published': isActivePublished }"
                 :title="isActivePublished ? '已发布' : '发布到发现'"
-                :disabled="publishing || isActivePublished || !canPublish"
-                @click="publishCurrent"
+                :disabled="publishing || (!isActivePublished && !canPublishWork)"
+                @click="onPublishClick"
               >
                 <Loader2 v-if="publishing" :size="16" class="om-loading-spinner" />
                 <Upload v-else :size="16" />
@@ -928,6 +1180,16 @@ function onDeleteCancel() {
         :source-ratio-id="agent.imageEditActive?.aspectRatio ?? settings.settings.generationPrefs.aspectRatio"
         @submit="onOutpaintSubmit"
       />
+
+      <PublishWorkDialog
+        v-model:open="publishDialogOpen"
+        :image-url="displayUrl"
+        :prompt="activePrompt"
+        :is-video="isVideoEdit"
+        :aspect-ratio="previewAspectRatio"
+        :publishing="publishing"
+        @submit="onPublishSubmit"
+      />
     </div>
   </Teleport>
 </template>
@@ -941,9 +1203,8 @@ $thumb-size: 68px;
 $side-width: 400px;
 $preview-max-height: min(82vh, calc(100vh - 200px));
 $preview-max-width: min(
-  1050px,
+  $chat-column-max,
   calc(100vw - #{$rail-width} - #{$side-width} - 64px),
-  calc(#{$preview-max-height} * 16 / 9)
 );
 
 @mixin edit-menu-panel {
@@ -995,6 +1256,7 @@ $preview-max-width: min(
 }
 
 .edit-stage {
+  position: relative;
   flex: 1;
   min-width: 0;
   display: flex;
@@ -1014,6 +1276,13 @@ $preview-max-width: min(
   overflow-x: hidden;
   overflow-y: auto;
   box-sizing: border-box;
+  scrollbar-width: none;
+
+  &::-webkit-scrollbar {
+    display: none;
+    width: 0;
+    height: 0;
+  }
 }
 
 .stage-center {
@@ -1103,16 +1372,67 @@ $preview-max-width: min(
   max-height: #{$preview-max-height};
 }
 
-.stage-composer-wrap {
-  position: relative;
+.stage-composer-anchor--inline {
   flex-shrink: 0;
   width: 100%;
+  padding: 8px 0 max(20px, env(safe-area-inset-bottom, 0px));
+  box-sizing: border-box;
+}
+
+$floating-ease-expand: cubic-bezier(0.22, 1, 0.36, 1);
+
+.edit-floating-composer {
+  position: absolute;
+  bottom: max(20px, env(safe-area-inset-bottom, 0px));
+  left: 32px;
+  right: 32px;
+  z-index: 8;
+  width: auto;
+  max-width: #{$preview-max-width};
+  margin-inline: auto;
+  box-sizing: border-box;
+  transform: translateY(calc(100% + 32px));
+  opacity: 0;
+  pointer-events: none;
+  overflow: visible;
+  transition:
+    transform 0.52s $floating-ease-expand,
+    opacity 0.44s $floating-ease-expand;
+
+  &.visible {
+    transform: translateY(0);
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+  .edit-composer-gen-pill--float {
+    right: auto;
+    left: 0;
+    pointer-events: none;
+
+    :deep(.create-gen-pill) {
+      pointer-events: auto;
+    }
+  }
+
+  :deep(.composer-card) {
+    width: 100%;
+    max-width: 100%;
+  }
+
+  &--lipsync {
+    :deep(.lipsync-composer) {
+      width: 100%;
+      max-width: 100%;
+    }
+  }
 }
 
 .edit-scroll-bottom-btn {
   position: absolute;
   top: 0;
   right: 0;
+  left: auto;
   z-index: 7;
   display: inline-flex;
   align-items: center;
@@ -1137,6 +1457,158 @@ $preview-max-width: min(
   }
 }
 
+.edit-gen-status {
+  position: absolute;
+  top: 0;
+  right: 0;
+  z-index: 7;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  max-width: min(100%, 360px);
+  padding: 0;
+  margin: 0;
+  border: none;
+  background: none;
+  box-shadow: none;
+  transform: translateY(calc(-100% - 10px));
+  cursor: pointer;
+  color: var(--text-primary);
+  animation: edit-scroll-bottom-in 0.16s ease;
+
+  &:hover .edit-gen-status__action {
+    color: $accent-emphasis;
+  }
+
+  &--float {
+    pointer-events: auto;
+  }
+
+  &--complete {
+    gap: 0;
+
+    .edit-gen-status__thumb {
+      z-index: 2;
+      margin-right: -10px;
+    }
+
+    .edit-gen-status__label {
+      padding: 7px 12px 7px 20px;
+      border-radius: 10px;
+      background: color-mix(in srgb, var(--bg-elevated) 86%, var(--text-primary) 14%);
+      border: 1px solid color-mix(in srgb, $border-light 55%, transparent);
+    }
+  }
+}
+
+.edit-gen-status__thumb {
+  position: relative;
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, $border-light 70%, transparent);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
+  background: linear-gradient(
+    145deg,
+    color-mix(in srgb, $accent 34%, var(--bg-elevated)) 0%,
+    color-mix(in srgb, var(--bg-card) 75%, transparent) 100%
+  );
+  transform: rotate(-12deg);
+  transition: transform 0.22s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 0.22s ease;
+
+  .edit-gen-status:hover & {
+    transform: rotate(-12deg) scale(1.12) translateY(-4px);
+    box-shadow: 0 8px 18px rgba(0, 0, 0, 0.18);
+  }
+}
+
+.edit-gen-status__thumb-img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  filter: blur(2px) brightness(0.88);
+  transform: scale(1.08);
+
+  &--sharp {
+    filter: none;
+    transform: none;
+  }
+}
+
+.edit-gen-status__spinner {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: $accent-emphasis;
+}
+
+.edit-gen-status__label {
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  white-space: nowrap;
+  text-align: left;
+}
+
+.edit-gen-status__wordmark {
+  display: inline-block;
+  font-family: $font-brand;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  background: var(--brand-text-gradient);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+
+  &--wave {
+    white-space: nowrap;
+  }
+}
+
+.edit-gen-status__wave-char {
+  display: inline-block;
+  background: var(--brand-text-gradient);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  transform-origin: center bottom;
+  animation: edit-gen-status-wave 1.35s ease-in-out infinite;
+
+  @media (prefers-reduced-motion: reduce) {
+    animation: none;
+  }
+}
+
+@keyframes edit-gen-status-wave {
+  0%,
+  55%,
+  100% {
+    transform: translateY(0);
+  }
+
+  28% {
+    transform: translateY(-4px);
+  }
+}
+
+.edit-gen-status__action {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  font-size: 12px;
+  font-weight: 500;
+  color: $text-muted;
+  white-space: nowrap;
+  transition: color 0.15s;
+}
+
 @keyframes edit-scroll-bottom-in {
   from {
     opacity: 0;
@@ -1149,30 +1621,10 @@ $preview-max-width: min(
   }
 }
 
-.stage-composer-bar {
-  flex-shrink: 0;
-  width: 100%;
-  padding: 8px 32px max(20px, env(safe-area-inset-bottom, 0px));
-  box-sizing: border-box;
-  display: flex;
-  justify-content: center;
-  overflow: visible;
-}
-
 .stage-composer-anchor {
   flex: none;
-  width: min(#{$preview-max-width}, 100%);
-  max-width: 100%;
-}
-
-.stage-composer-main {
-  flex: 1;
-  min-width: 0;
   width: 100%;
-  display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  overflow: visible;
+  max-width: 100%;
 }
 
 .gallery-nav {
@@ -1252,15 +1704,9 @@ $preview-max-width: min(
 
 .stage-close {
   position: absolute;
-  top: 12px;
-  right: 16px;
-  z-index: 5;
-  width: 36px;
-  height: 36px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  @include edit-icon-btn;
+  top: 16px;
+  right: 24px;
+  z-index: 10;
 }
 
 .preview-ai-tag {
@@ -1340,9 +1786,15 @@ $preview-max-width: min(
   justify-content: center;
   @include edit-icon-btn;
 
-  &.active {
-    color: $accent-cyan;
-    @include edit-hover-surface;
+  &--published {
+    color: $accent-emphasis;
+    background: $accent-light;
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, $accent 32%, transparent);
+
+    &:disabled {
+      opacity: 1;
+      cursor: default;
+    }
   }
 
   &--danger {
@@ -1556,8 +2008,8 @@ $preview-max-width: min(
 
 .tool-badge {
   position: absolute;
-  top: 4px;
-  right: 6px;
+  top: auto;
+  left: 80px;
   font-size: 8px;
   font-weight: 700;
   padding: 1px 4px;
@@ -1568,7 +2020,8 @@ $preview-max-width: min(
 
 .side-publish-hint {
   font-size: 11px;
-  color: $text-muted;
+  font-weight: 500;
+  color: $accent-emphasis;
   text-align: center;
   padding-bottom: 4px;
 }
@@ -1751,8 +2204,9 @@ $preview-max-width: min(
 .edit-composer {
   position: relative;
   flex-shrink: 0;
-  width: min($chat-column-max, 100%);
+  width: 100%;
   max-width: 100%;
+  margin-inline: auto;
   padding: 0;
   box-sizing: border-box;
   display: flex;
@@ -1761,6 +2215,11 @@ $preview-max-width: min(
   gap: 10px;
   overflow: visible;
 
+  &--offscreen {
+    visibility: hidden;
+    pointer-events: none;
+  }
+
   :deep(.composer-card),
   :deep(.lipsync-composer) {
     width: 100%;
@@ -1768,9 +2227,22 @@ $preview-max-width: min(
     overflow: visible;
   }
 
-  :deep(.lipsync-composer) {
+  :deep(.lipsync-composer:not(.lipsync-composer--collapsible)) {
     min-height: $composer-min-height;
     height: $composer-min-height;
+    max-height: $composer-min-height;
+  }
+
+  :deep(.lipsync-composer--collapsible:not(.expanded)) {
+    min-height: 0;
+    height: auto;
+    max-height: $floating-composer-collapsed-height;
+  }
+
+  :deep(.lipsync-composer--collapsible.expanded) {
+    min-height: $composer-min-height;
+    height: auto;
+    max-height: $composer-min-height;
   }
 
   :deep(.composer-card--collapsible:not(.expanded)) {
@@ -1790,7 +2262,8 @@ $preview-max-width: min(
 .edit-composer-gen-pill {
   position: absolute;
   top: 0;
-  right: 0;
+  left: 0;
+  right: auto;
   z-index: 6;
   transform: translateY(calc(-100% - 10px));
   pointer-events: none;
@@ -1798,11 +2271,6 @@ $preview-max-width: min(
   :deep(.create-gen-pill) {
     pointer-events: auto;
   }
-}
-
-.edit-composer--scrolled-up .edit-composer-gen-pill {
-  right: auto;
-  left: 0;
 }
 
 @media (max-width: 900px) {
@@ -1814,12 +2282,13 @@ $preview-max-width: min(
     padding-inline: 20px;
   }
 
-  .stage-center {
-    width: min(#{$preview-max-width}, calc(100vw - 48px));
+  .edit-floating-composer {
+    left: 20px;
+    right: 20px;
   }
 
-  .stage-composer-bar {
-    padding-inline: 20px;
+  .stage-center {
+    width: min(#{$preview-max-width}, calc(100vw - 48px));
   }
 }
 
@@ -1834,12 +2303,13 @@ $preview-max-width: min(
     gap: 10px;
   }
 
-  .stage-composer-bar {
+  .edit-stage-body {
     padding-inline: 16px;
   }
 
-  .edit-stage-body {
-    padding-inline: 16px;
+  .edit-floating-composer {
+    left: 16px;
+    right: 16px;
   }
 
   .version-rail {
@@ -1854,6 +2324,11 @@ $preview-max-width: min(
 
   .version-thumb-wrap {
     max-width: 56px;
+  }
+
+  .stage-close {
+    top: 12px;
+    right: 16px;
   }
 }
 </style>

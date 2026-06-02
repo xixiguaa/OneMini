@@ -12,7 +12,7 @@ import {
   Upload,
   Video,
 } from 'lucide-vue-next'
-import { computed, onMounted, onUnmounted, ref, type VNodeRef } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch, type VNodeRef } from 'vue'
 import {
   DIGITAL_HUMAN_ENGINE,
   DIGITAL_HUMAN_MODES,
@@ -33,13 +33,18 @@ const props = withDefaults(
   defineProps<{
     imageUrl?: string
     busy?: boolean
-    /** 嵌入创作页 composer-card 时去掉外层玻璃样式 */
+    /** 创作页：参考图栈 + 创作类型菜单 */
     embedded?: boolean
+    /** 浮动输入条：点击/聚焦后展开完整输入区 */
+    collapsible?: boolean
+    autoCollapseOnBlur?: boolean
   }>(),
   {
     imageUrl: '',
     busy: false,
     embedded: false,
+    collapsible: false,
+    autoCollapseOnBlur: true,
   },
 )
 
@@ -57,6 +62,18 @@ const composerAnchor = ref<HTMLElement | null>(null)
 const voicePickerOpen = ref(false)
 const digitalMenuOpen = ref(false)
 const modeMenuOpen = ref(false)
+const expanded = ref(false)
+const collapsedInputRef = ref<HTMLInputElement | null>(null)
+const suspendAutoCollapse = ref(false)
+let collapseTimer: ReturnType<typeof setTimeout> | null = null
+
+const composerMenuActive = computed(
+  () =>
+    createModeMenuOpen.value ||
+    digitalMenuOpen.value ||
+    modeMenuOpen.value ||
+    voicePickerOpen.value,
+)
 
 const createModePopover = useAnchoredPopover({ minWidth: 220, fitContent: true, placement: 'below' })
 const createModeMenuOpen = createModePopover.open
@@ -213,6 +230,81 @@ function send() {
   emit('send')
 }
 
+function shouldKeepExpanded() {
+  if (composerMenuActive.value || suspendAutoCollapse.value) return true
+  const active = document.activeElement
+  if (composerAnchor.value && active && composerAnchor.value.contains(active)) return true
+  if (active instanceof Element && active.closest('.create-composer-popover')) return true
+  return false
+}
+
+function shouldKeepExpandedOnScroll() {
+  if (composerMenuActive.value || suspendAutoCollapse.value) return true
+  const active = document.activeElement
+  if (active instanceof Element && active.closest('.create-composer-popover')) return true
+  return false
+}
+
+function scheduleCollapseIfUnfocused() {
+  if (!props.collapsible || !expanded.value) return
+  if (collapseTimer) clearTimeout(collapseTimer)
+  collapseTimer = window.setTimeout(() => {
+    collapseTimer = null
+    if (shouldKeepExpanded()) return
+    collapseComposer()
+  }, 120)
+}
+
+function onInputBlur() {
+  if (!props.collapsible || !props.autoCollapseOnBlur) return
+  scheduleCollapseIfUnfocused()
+}
+
+function onWindowRefocus() {
+  if (suspendAutoCollapse.value) {
+    suspendAutoCollapse.value = false
+    if (expanded.value) {
+      void nextTick(() => collapsedInputRef.value?.focus())
+    }
+    return
+  }
+  if (!props.autoCollapseOnBlur) return
+  scheduleCollapseIfUnfocused()
+}
+
+function expandComposer(focus = true) {
+  if (!props.collapsible) return
+  const wasExpanded = expanded.value
+  expanded.value = true
+  if (!focus || wasExpanded) return
+  void nextTick(() => {
+    requestAnimationFrame(() => {
+      const dialogueInput = composerAnchor.value?.querySelector(
+        '.lipsync-field-input',
+      ) as HTMLInputElement | null
+      dialogueInput?.focus()
+    })
+  })
+}
+
+function isExpanded() {
+  return expanded.value
+}
+
+function collapseComposer() {
+  if (!props.collapsible || !expanded.value) return
+  expanded.value = false
+  closeSubmenus()
+  window.setTimeout(() => collapsedInputRef.value?.blur(), 320)
+}
+
+function onCollapsibleBarClick(e: MouseEvent) {
+  if (!props.collapsible || expanded.value) return
+  const el = e.target as HTMLElement
+  if (el.closest('.lipsync-send-collapsed')) return
+  expandComposer()
+}
+
 function onDocumentClick(e: MouseEvent) {
   const target = e.target as Node
   if (target instanceof Element) {
@@ -226,12 +318,30 @@ function onDocumentClick(e: MouseEvent) {
   closeSubmenus()
 }
 
+watch(composerMenuActive, (active) => {
+  if (props.collapsible && active) {
+    expanded.value = true
+  } else if (props.collapsible && props.autoCollapseOnBlur) {
+    scheduleCollapseIfUnfocused()
+  }
+})
+
 onMounted(() => {
   document.addEventListener('click', onDocumentClick, true)
+  window.addEventListener('focus', onWindowRefocus)
 })
 
 onUnmounted(() => {
   document.removeEventListener('click', onDocumentClick, true)
+  window.removeEventListener('focus', onWindowRefocus)
+  if (collapseTimer) clearTimeout(collapseTimer)
+})
+
+defineExpose({
+  collapseComposer,
+  expandComposer,
+  isExpanded,
+  shouldKeepExpandedOnScroll,
 })
 </script>
 
@@ -239,41 +349,61 @@ onUnmounted(() => {
   <div
     ref="composerAnchor"
     class="lipsync-composer"
-    :class="{ 'lipsync-composer--embedded': embedded }"
+    :class="{
+      'lipsync-composer--embedded': embedded,
+      'lipsync-composer--collapsible': collapsible,
+      expanded: collapsible && expanded,
+    }"
+    @click="collapsible ? onCollapsibleBarClick($event) : undefined"
   >
-    <div class="lipsync-body">
-      <div class="lipsync-media-col">
-        <div v-if="embedded" class="lipsync-ref-upload-wrap">
-          <ReferenceImageStack
-            single
-            compact
-            :attachments="agent.pendingAttachments"
-            @add="triggerImageUpload"
-            @remove="onRemoveImage"
-          />
-        </div>
-        <template v-else>
-          <div class="lipsync-ref-upload-wrap">
-            <div class="lipsync-image-card">
-              <img v-if="imageUrl" :src="imageUrl" alt="" class="lipsync-image" />
-              <span v-else class="lipsync-image-placeholder" aria-hidden="true">
-                <Plus :size="16" stroke-width="1.75" />
-              </span>
+    <div class="lipsync-main-row">
+      <div
+        class="lipsync-body"
+        :class="{ 'lipsync-body--collapsible': collapsible, expanded: collapsible && expanded }"
+      >
+        <div v-if="!collapsible || expanded" class="lipsync-input-area">
+          <div class="lipsync-media-col">
+            <div class="lipsync-ref-upload-wrap">
+              <template v-if="embedded">
+                <ReferenceImageStack
+                  v-if="imageAttachments.length"
+                  single
+                  :attachments="agent.pendingAttachments"
+                  @add="triggerImageUpload"
+                  @remove="onRemoveImage"
+                />
+                <button
+                  v-else
+                  type="button"
+                  class="ref-upload-card"
+                  title="上传参考内容"
+                  @click="triggerImageUpload"
+                >
+                  <Plus :size="16" stroke-width="1.75" />
+                  <span>参考内容</span>
+                </button>
+              </template>
+              <template v-else>
+                <div class="ref-upload-card ref-upload-card--filled">
+                  <img v-if="imageUrl" :src="imageUrl" alt="" class="ref-upload-card__img" />
+                  <span v-else class="ref-upload-card__placeholder" aria-hidden="true">
+                    <Plus :size="16" stroke-width="1.75" />
+                  </span>
+                </div>
+              </template>
             </div>
+            <button
+              type="button"
+              class="lipsync-voice-card"
+              :class="{ active: voicePickerOpen }"
+              @click="onVoiceCardClick"
+            >
+              <span class="lipsync-wave" aria-hidden="true">
+                <span v-for="i in 5" :key="i" class="lipsync-wave-bar" />
+              </span>
+              <span class="lipsync-voice-label">{{ agent.lipsyncVoiceLabel }}</span>
+            </button>
           </div>
-        </template>
-        <button
-          type="button"
-          class="lipsync-voice-card"
-          :class="{ active: voicePickerOpen }"
-          @click="onVoiceCardClick"
-        >
-          <span class="lipsync-wave" aria-hidden="true">
-            <span v-for="i in 5" :key="i" class="lipsync-wave-bar" />
-          </span>
-          <span class="lipsync-voice-label">{{ agent.lipsyncVoiceLabel }}</span>
-        </button>
-      </div>
 
       <VoicePickerPopover
         v-model:open="voicePickerOpen"
@@ -283,7 +413,7 @@ onUnmounted(() => {
 
       <div class="lipsync-fields">
         <label class="lipsync-field">
-          <span v-if="displayImageUrl" class="lipsync-field-thumb" aria-hidden="true">
+          <span v-if="displayImageUrl && !embedded" class="lipsync-field-thumb" aria-hidden="true">
             <img :src="displayImageUrl" alt="" />
           </span>
           <span class="lipsync-field-tag">角色说</span>
@@ -295,7 +425,7 @@ onUnmounted(() => {
           />
         </label>
         <label class="lipsync-field">
-          <span v-if="displayImageUrl" class="lipsync-field-thumb" aria-hidden="true">
+          <span v-if="displayImageUrl && !embedded" class="lipsync-field-thumb" aria-hidden="true">
             <img :src="displayImageUrl" alt="" />
           </span>
           <span class="lipsync-field-tag">动作描述</span>
@@ -305,11 +435,49 @@ onUnmounted(() => {
             class="lipsync-field-input lipsync-field-input--muted"
             placeholder="(可选) 添加动作描述和镜头语言，如：镜头推进，他摘下眼镜，对着镜头笑着说"
           />
-        </label>
+          </label>
+        </div>
+        </div>
+        <input
+          v-else
+          ref="collapsedInputRef"
+          v-model="agent.lipsyncDialogue"
+          type="text"
+          class="lipsync-collapsed-input"
+          placeholder="输入角色台词"
+          @focus="expandComposer()"
+          @blur="onInputBlur()"
+        />
       </div>
+
+      <button
+        v-if="collapsible"
+        type="button"
+        class="lipsync-send lipsync-send-collapsed"
+        :class="{
+          ready: canSend,
+          waiting: busy,
+          'lipsync-send-collapsed--hidden': expanded,
+        }"
+        :disabled="!canSend && !busy"
+        title="生成"
+        tabindex="-1"
+        @click.stop="send"
+      >
+        <Loader2 v-if="busy" :size="18" class="om-loading-spinner" />
+        <ArrowUp v-else :size="18" stroke-width="2.5" />
+      </button>
     </div>
 
-    <div class="lipsync-footer">
+    <div
+      class="lipsync-footer-slot"
+      :class="{
+        open: !collapsible || expanded,
+        'lipsync-footer-slot--static': !collapsible,
+      }"
+    >
+      <div class="lipsync-expand-inner">
+        <div class="lipsync-footer">
       <div class="lipsync-footer-left">
         <div class="lipsync-pill-wrap">
           <template v-if="embedded">
@@ -414,7 +582,7 @@ onUnmounted(() => {
         </button>
       </div>
 
-      <div class="lipsync-footer-right">
+      <div v-if="!collapsible || expanded" class="lipsync-footer-right">
         <button
           type="button"
           class="lipsync-send"
@@ -426,6 +594,8 @@ onUnmounted(() => {
           <Loader2 v-if="busy" :size="18" class="om-loading-spinner" />
           <ArrowUp v-else :size="18" stroke-width="2.5" />
         </button>
+      </div>
+        </div>
       </div>
     </div>
 
@@ -451,12 +621,15 @@ onUnmounted(() => {
 @use '../styles/variables.scss' as *;
 @use '../styles/cosmic-glass.scss' as cosmic;
 
+$floating-ease-expand: cubic-bezier(0.22, 1, 0.36, 1);
+$floating-ease-collapse: cubic-bezier(0.36, 0, 0.12, 1);
+$floating-duration-expand: 0.44s;
+$floating-duration-collapse: 0.52s;
+
 .lipsync-composer {
   @include cosmic.cosmic-glass-frost(22px);
   width: 100%;
   box-sizing: border-box;
-  min-height: $composer-min-height;
-  height: $composer-min-height;
   display: flex;
   flex-direction: column;
   padding: 12px 14px 10px;
@@ -464,49 +637,50 @@ onUnmounted(() => {
   box-shadow: var(--glass-float-shadow, $shadow-md);
   border-radius: 22px;
 
-  &--embedded {
-    min-height: 100%;
+  &:not(.lipsync-composer--collapsible) {
+    height: $composer-min-height;
+    min-height: $composer-min-height;
+    max-height: $composer-min-height;
+    overflow: visible;
+  }
+
+  &--collapsible {
+    max-height: $floating-composer-collapsed-height;
+    min-height: 0;
     height: auto;
-    padding: 0;
-    background: transparent;
-    box-shadow: none;
-    border-radius: 0;
+    padding: 0 12px 0 16px;
+    border-radius: 24px;
+    overflow: hidden;
+    cursor: text;
+    transition:
+      max-height $floating-duration-collapse $floating-ease-collapse,
+      min-height $floating-duration-collapse $floating-ease-collapse,
+      padding $floating-duration-collapse $floating-ease-collapse,
+      border-radius $floating-duration-collapse $floating-ease-collapse,
+      box-shadow 0.35s ease;
+
+    &.expanded {
+      max-height: $composer-min-height;
+      min-height: $composer-min-height;
+      padding: 12px 14px 10px;
+      border-radius: 22px;
+      overflow: visible;
+      cursor: default;
+      transition:
+        max-height $floating-duration-expand $floating-ease-expand,
+        min-height $floating-duration-expand $floating-ease-expand,
+        padding $floating-duration-expand $floating-ease-expand,
+        border-radius $floating-duration-expand $floating-ease-expand,
+        box-shadow 0.35s ease;
+    }
   }
 }
 
 .lipsync-composer--embedded {
-  .lipsync-body {
-    align-items: flex-start;
-    padding-top: 2px;
-    overflow: visible;
-  }
-
-  .lipsync-footer {
-    margin-top: 10px;
-    padding-top: 2px;
-  }
-
   .lipsync-media-col {
     overflow: visible;
     padding-top: 6px;
     margin-top: -6px;
-  }
-
-  .lipsync-voice-card {
-    width: 38px;
-    height: 50px;
-    gap: 4px;
-    border-radius: 8px;
-    font-size: 9px;
-  }
-
-  .lipsync-voice-label {
-    font-size: 9px;
-    line-height: 1.1;
-  }
-
-  .lipsync-wave-bar {
-    width: 2px;
   }
 
   .lipsync-pill {
@@ -574,13 +748,147 @@ onUnmounted(() => {
   }
 }
 
-.lipsync-body {
+.lipsync-main-row {
+  position: relative;
   display: flex;
-  align-items: center;
-  gap: 14px;
+  align-items: stretch;
+  gap: 10px;
   flex: 1;
   min-height: 0;
+
+  .lipsync-composer:not(.lipsync-composer--collapsible) & {
+    overflow: visible;
+  }
+
+  .lipsync-composer--collapsible & {
+    align-items: center;
+    min-height: $floating-composer-collapsed-height;
+    flex-shrink: 0;
+    transition:
+      min-height $floating-duration-collapse $floating-ease-collapse,
+      gap $floating-duration-collapse $floating-ease-collapse;
+  }
+
+  .lipsync-composer--collapsible.expanded & {
+    align-items: flex-start;
+    min-height: 102px;
+    gap: 0;
+    overflow: visible;
+    transition:
+      min-height $floating-duration-expand $floating-ease-expand,
+      gap $floating-duration-expand $floating-ease-expand;
+  }
+}
+
+.lipsync-body {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
   overflow: hidden;
+
+  .lipsync-composer:not(.lipsync-composer--collapsible) &,
+  .lipsync-composer--collapsible.expanded & {
+    overflow: visible;
+  }
+}
+
+.lipsync-body--collapsible {
+  justify-content: center;
+  padding: 0;
+
+  &.expanded {
+    justify-content: flex-start;
+  }
+}
+
+.lipsync-input-area {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  padding: 8px 0 0 12px;
+  box-sizing: border-box;
+  overflow: visible;
+}
+
+.lipsync-collapsed-input {
+  flex: 1;
+  min-width: 0;
+  height: $floating-composer-collapsed-height;
+  border: none;
+  outline: none;
+  background: transparent;
+  font-size: 14px;
+  line-height: $floating-composer-collapsed-height;
+  color: var(--composer-text, $text-primary);
+  padding: 0 4px 0 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+
+  &::placeholder {
+    color: var(--composer-placeholder, $text-muted);
+  }
+}
+
+.lipsync-footer-slot {
+  flex-shrink: 0;
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows $floating-duration-collapse $floating-ease-collapse;
+
+  &--static {
+    display: block;
+    grid-template-rows: 1fr;
+  }
+
+  &.open {
+    grid-template-rows: 1fr;
+    transition: grid-template-rows $floating-duration-expand $floating-ease-expand;
+
+    .lipsync-expand-inner {
+      padding-top: 12px;
+    }
+  }
+}
+
+.lipsync-expand-inner {
+  min-height: 0;
+  overflow: hidden;
+}
+
+.lipsync-send-collapsed {
+  flex-shrink: 0;
+  align-self: center;
+  transition:
+    opacity $floating-duration-collapse $floating-ease-collapse,
+    transform $floating-duration-collapse $floating-ease-collapse,
+    visibility 0s linear $floating-duration-collapse;
+
+  &--hidden {
+    position: absolute;
+    right: 0;
+    top: 50%;
+    opacity: 0;
+    transform: translateY(-50%) scale(0.82);
+    pointer-events: none;
+    visibility: hidden;
+    transition:
+      opacity $floating-duration-expand $floating-ease-expand,
+      transform $floating-duration-expand $floating-ease-expand,
+      visibility 0s linear $floating-duration-expand;
+  }
+
+  .lipsync-composer--collapsible.expanded & {
+    transition:
+      opacity $floating-duration-expand $floating-ease-expand,
+      transform $floating-duration-expand $floating-ease-expand,
+      visibility 0s linear $floating-duration-expand;
+  }
 }
 
 .lipsync-media-col {
@@ -589,6 +897,10 @@ onUnmounted(() => {
   align-items: flex-end;
   gap: 10px;
   overflow: visible;
+
+  &:hover {
+    z-index: 20;
+  }
 }
 
 .lipsync-ref-upload-wrap {
@@ -597,15 +909,24 @@ onUnmounted(() => {
   z-index: 4;
   overflow: visible;
 
+  :deep(.ref-image-stack),
+  :deep(.ref-image-stack__track:not(.ref-image-stack__track--empty)),
+  :deep(.ref-image-stack__hover-zone),
+  :deep(.ref-image-stack__pile) {
+    width: 52px;
+    height: 68px;
+  }
+
   :deep(.ref-image-stack) {
     transform: rotate(-8deg);
     transform-origin: center bottom;
     transition:
-      transform 0.52s cubic-bezier(0.22, 1, 0.36, 1),
-      filter 0.36s ease;
+      transform 0.72s cubic-bezier(0.16, 1, 0.3, 1),
+      box-shadow 0.3s ease,
+      filter 0.48s ease;
 
     &.expanded {
-      transform: none;
+      transform: rotate(0deg) scale(1);
     }
   }
 
@@ -619,106 +940,123 @@ onUnmounted(() => {
   }
 
   &:hover :deep(.ref-image-stack:not(.expanded)) {
-    transform: rotate(-8deg) scale(1.08);
+    transform: rotate(-8deg) scale(1.06);
   }
 
   &:hover :deep(.ref-image-stack.expanded) {
-    transform: none;
+    transform: rotate(0deg) scale(1);
   }
 
-  &:hover :deep(.ref-image-empty) {
-    color: var(--composer-text, $text-primary);
-    border-color: color-mix(in srgb, var(--composer-border-focus, $accent) 45%, transparent);
-    box-shadow: var(--glass-float-shadow, $shadow-md);
-  }
-
-  .lipsync-composer--embedded & {
-    &:hover :deep(.ref-image-stack:not(.expanded)) {
-      transform: rotate(-8deg) scale(1.1);
-    }
-  }
-}
-
-.lipsync-image-card {
-  width: 52px;
-  height: 68px;
-  border-radius: 10px;
-  overflow: hidden;
-  border: var(--glass-border-width, 1.5px) solid var(--composer-pill-border, rgba(255, 255, 255, 0.75));
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.1);
-  transform: rotate(-8deg);
-  transform-origin: center bottom;
-  background: var(--composer-pill-bg, var(--bg-elevated));
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition:
-    transform 0.28s cubic-bezier(0.34, 1.45, 0.64, 1),
-    box-shadow 0.25s ease,
-    border-color 0.2s ease;
-
-  .lipsync-ref-upload-wrap:hover & {
+  &:hover .ref-upload-card:not(.ref-upload-card--filled) {
     z-index: 30;
-    transform: rotate(-8deg) scale(1.08) translateY(-8px);
+    transform: rotate(-8deg) scale(1.12) translateY(-12px);
     box-shadow: var(--glass-float-shadow, $shadow-md);
-    border-color: color-mix(in srgb, var(--composer-border-focus, $accent) 45%, transparent);
+    border-color: rgba($accent, 0.45);
+    color: var(--composer-text);
+  }
+
+  &:hover .ref-upload-card--filled {
+    z-index: 30;
+    transform: rotate(-8deg) scale(1.12) translateY(-12px);
+    box-shadow: var(--glass-float-shadow, $shadow-md);
+    border-color: rgba($accent, 0.45);
   }
 }
 
-.lipsync-image-placeholder {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 100%;
-  height: 100%;
-  color: var(--composer-muted, $text-muted);
-}
-
-.lipsync-image {
-  display: block;
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
-.lipsync-voice-card {
+.ref-upload-card {
   position: relative;
-  z-index: 4;
+  z-index: 1;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 6px;
+  gap: 4px;
   width: 52px;
   height: 68px;
   border-radius: 10px;
-  background: var(--composer-pill-bg, rgba(255, 255, 255, 0.06));
-  border: var(--glass-border-width, 1px) solid var(--composer-pill-border, rgba(255, 255, 255, 0.1));
-  color: var(--composer-pill-text, $text-secondary);
-  transform: rotate(4deg);
+  border: 1.5px dashed color-mix(in srgb, var(--composer-muted) 55%, transparent);
+  background: var(--composer-pill-bg);
+  color: var(--composer-muted);
+  font-size: 9px;
+  line-height: 1.2;
+  transform: rotate(-8deg);
   transform-origin: center bottom;
   transition:
     transform 0.28s cubic-bezier(0.34, 1.45, 0.64, 1),
     box-shadow 0.25s ease,
-    filter 0.25s ease,
+    border-color 0.2s ease,
+    color 0.2s ease,
+    z-index 0s;
+  overflow: visible;
+
+  span {
+    max-width: 40px;
+    text-align: center;
+  }
+
+  &--filled {
+    padding: 3px;
+    border-style: solid;
+    border-color: color-mix(in srgb, var(--composer-pill-border, $border-light) 80%, transparent);
+    background: #fff;
+    box-shadow:
+      0 2px 8px rgba(15, 23, 42, 0.14),
+      0 0 0 0.5px rgba(15, 23, 42, 0.06);
+  }
+
+  &__img {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    border-radius: 4px;
+  }
+
+  &__placeholder {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    height: 100%;
+    color: var(--composer-muted, $text-muted);
+  }
+}
+
+.lipsync-voice-card {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  width: 52px;
+  height: 68px;
+  border-radius: 10px;
+  border: 1.5px dashed color-mix(in srgb, var(--composer-muted) 55%, transparent);
+  background: var(--composer-pill-bg, rgba(255, 255, 255, 0.06));
+  color: var(--composer-muted, $text-muted);
+  font-size: 9px;
+  line-height: 1.2;
+  transform: rotate(4deg);
+  transform-origin: center bottom;
+  overflow: visible;
+  transition:
+    transform 0.28s cubic-bezier(0.34, 1.45, 0.64, 1),
+    box-shadow 0.25s ease,
+    border-color 0.2s ease,
+    color 0.2s ease,
     background 0.15s,
-    border-color 0.15s,
-    color 0.15s;
+    z-index 0s;
 
   &:hover,
   &.active {
     z-index: 30;
-    transform: rotate(4deg) scale(1.08) translateY(-8px);
+    transform: rotate(4deg) scale(1.12) translateY(-12px);
     box-shadow: var(--glass-float-shadow, $shadow-md);
-    filter: drop-shadow(0 8px 16px rgba(15, 23, 42, 0.1));
-    background: var(--composer-pill-hover-bg, rgba(255, 255, 255, 0.1));
-    border-color: color-mix(in srgb, var(--composer-border-focus, $accent) 45%, transparent);
+    border-color: rgba($accent, 0.45);
+    background: var(--composer-pill-bg, rgba(255, 255, 255, 0.08));
     color: var(--composer-text, $text-primary);
-  }
-
-  .lipsync-composer--embedded &:hover,
-  .lipsync-composer--embedded &.active {
-    transform: rotate(4deg) scale(1.1) translateY(-8px);
   }
 }
 
@@ -778,6 +1116,8 @@ onUnmounted(() => {
 .lipsync-voice-label {
   font-size: 9px;
   line-height: 1.2;
+  max-width: 40px;
+  text-align: center;
 }
 
 .lipsync-fields {
@@ -1078,13 +1418,15 @@ onUnmounted(() => {
 
 html[data-theme='light'] {
   .lipsync-voice-card {
-    background: rgba(0, 0, 0, 0.04);
-    border-color: $border-light;
-    color: $text-secondary;
+    background: var(--composer-pill-bg);
+    border-color: color-mix(in srgb, var(--composer-muted) 55%, transparent);
+    color: var(--composer-muted);
 
-    &:hover {
-      background: rgba(0, 0, 0, 0.06);
-      color: $text-primary;
+    &:hover,
+    &.active {
+      background: var(--composer-pill-bg);
+      border-color: rgba($accent, 0.45);
+      color: var(--composer-text);
     }
   }
 

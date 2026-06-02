@@ -7,7 +7,13 @@ import { useToastStore } from '../stores/toast'
 
 const agent = useAgentStore()
 const toast = useToastStore()
-const { message, kind, visible } = storeToRefs(toast)
+const { message, kind, visible, action } = storeToRefs(toast)
+
+function onToastAction() {
+  const fn = action.value?.onClick
+  toast.dismiss()
+  fn?.()
+}
 
 const Icon = computed(() => {
   if (kind.value === 'success') return Check
@@ -33,6 +39,14 @@ const Icon = computed(() => {
     >
       <component :is="Icon" :size="16" class="app-toast-icon" />
       <span class="app-toast-text">{{ message }}</span>
+      <button
+        v-if="action"
+        type="button"
+        class="app-toast-action"
+        @click="onToastAction"
+      >
+        {{ action.label }}
+      </button>
       <button type="button" class="app-toast-close" title="关闭" @click="toast.dismiss()">
         <X :size="14" />
       </button>
@@ -91,9 +105,25 @@ $edit-stage-shift: 32px;
 }
 
 .app-toast-text {
+  flex: 1;
+  min-width: 0;
   font-size: 13px;
   line-height: 1.5;
   white-space: pre-line;
+}
+
+.app-toast-action {
+  flex-shrink: 0;
+  padding: 0;
+  font-size: 13px;
+  font-weight: 500;
+  color: $accent;
+  white-space: nowrap;
+  transition: color 0.15s;
+
+  &:hover {
+    color: $accent-emphasis;
+  }
 }
 
 .app-toast-close {

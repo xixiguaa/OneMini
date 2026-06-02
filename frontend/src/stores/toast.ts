@@ -3,22 +3,30 @@ import { ref } from 'vue'
 
 export type ToastKind = 'error' | 'success' | 'info'
 
+export interface ToastAction {
+  label: string
+  onClick: () => void
+}
+
 export interface ToastOptions {
   message: string
   kind?: ToastKind
   /** 自动关闭毫秒，默认 error 8s / 其它 4s */
   duration?: number
+  action?: ToastAction
 }
 
 export const useToastStore = defineStore('toast', () => {
   const message = ref('')
   const kind = ref<ToastKind>('info')
   const visible = ref(false)
+  const action = ref<ToastAction | null>(null)
 
   let timer: ReturnType<typeof setTimeout> | null = null
 
   function dismiss() {
     visible.value = false
+    action.value = null
     if (timer) {
       clearTimeout(timer)
       timer = null
@@ -29,6 +37,7 @@ export const useToastStore = defineStore('toast', () => {
     const opts = typeof options === 'string' ? { message: options } : options
     message.value = opts.message
     kind.value = opts.kind ?? 'info'
+    action.value = opts.action ?? null
     visible.value = true
 
     if (timer) clearTimeout(timer)
@@ -58,6 +67,7 @@ export const useToastStore = defineStore('toast', () => {
     message,
     kind,
     visible,
+    action,
     show,
     showError,
     showSuccess,

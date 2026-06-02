@@ -56,6 +56,7 @@ type OpFilter = 'all' | ImageEditAction
 
 const opFilter = ref<OpFilter>('all')
 const opMenuOpen = ref(false)
+const entryActionMenuOpenId = ref<string | null>(null)
 const entryRefs = ref(new Map<string, HTMLElement>())
 
 const filteredVersions = computed(() => {
@@ -136,6 +137,11 @@ function onUsePrompt(item: CreateHistoryItem, e: MouseEvent) {
   emit('usePrompt', prompt)
 }
 
+function isPromptableItem(item: CreateHistoryItem) {
+  const prompt = displayEditPrompt(item, props.versions)
+  return !!prompt && !isSystemEditPrompt(prompt)
+}
+
 watch(
   () => props.activeId,
   (id) => {
@@ -146,11 +152,27 @@ watch(
   },
 )
 
+function toggleEntryActionMenu(itemId: string, e: MouseEvent) {
+  e.stopPropagation()
+  entryActionMenuOpenId.value = entryActionMenuOpenId.value === itemId ? null : itemId
+}
+
+function onEntryDelete(itemId: string, e: MouseEvent) {
+  e.stopPropagation()
+  entryActionMenuOpenId.value = null
+  emit('delete', itemId)
+}
+
 function onDocumentClick(e: MouseEvent) {
-  if (!opMenuOpen.value) return
   const target = e.target as Node
-  if (target instanceof Element && target.closest('.edit-history-filter')) return
-  opMenuOpen.value = false
+  if (!(target instanceof Element)) return
+
+  if (opMenuOpen.value && !target.closest('.edit-history-filter')) {
+    opMenuOpen.value = false
+  }
+  if (entryActionMenuOpenId.value && !target.closest('.edit-history-entry__more')) {
+    entryActionMenuOpenId.value = null
+  }
 }
 
 onMounted(() => {
@@ -224,46 +246,49 @@ onUnmounted(() => {
 
         <div class="edit-history-entry__meta-row">
           <div
-            class="edit-history-entry__content-line"
-            :class="{
-              'edit-history-entry__content-line--promptable':
-                !!displayEditPrompt(item, versions) &&
-                !isSystemEditPrompt(displayEditPrompt(item, versions)),
-            }"
+            class="edit-history-entry__prompt-anchor"
+            :class="{ 'edit-history-entry__prompt-anchor--promptable': isPromptableItem(item) }"
           >
-            <span class="edit-history-entry__tag">
-              <img
-                v-if="tagThumb(item)"
-                :src="tagThumb(item)"
-                alt=""
-                class="edit-history-entry__tag-thumb"
-              />
-              <span class="edit-history-entry__tag-label">
-                {{ resolveEditActionLabel(item, versions) }}
+            <div
+              class="edit-history-entry__content-line"
+              :class="{ 'edit-history-entry__content-line--promptable': isPromptableItem(item) }"
+            >
+              <span class="edit-history-entry__tag">
+                <img
+                  v-if="tagThumb(item) && !parentThumb(item)"
+                  :src="tagThumb(item)"
+                  alt=""
+                  class="edit-history-entry__tag-thumb"
+                />
+                <span class="edit-history-entry__tag-label">
+                  {{ resolveEditActionLabel(item, versions) }}
+                </span>
               </span>
-            </span>
-            <p class="edit-history-entry__prompt">
-              <span class="edit-history-entry__prompt-text">
-                {{ displayEditPrompt(item, versions) || '（无提示词）' }}
-              </span>
-              <button
-                v-if="displayEditPrompt(item, versions) && !isSystemEditPrompt(displayEditPrompt(item, versions))"
-                type="button"
-                class="edit-history-entry__use-prompt"
-                @click="onUsePrompt(item, $event)"
-              >
-                <ClipboardCopy :size="12" />
-                使用提示词
-              </button>
-            </p>
+              <p class="edit-history-entry__prompt">
+                <span class="edit-history-entry__prompt-text">{{ displayEditPrompt(item, versions) || '（无提示词）' }}</span><span
+                  v-if="isPromptableItem(item)"
+                  class="edit-history-entry__prompt-specs"
+                ><template v-if="digitalHumanMode">{{ digitalHumanSpecsLine(item) }}</template><template v-else><span v-if="metaLine(item)">{{ metaLine(item) }}</span><span v-if="item.createdAt" class="edit-history-entry__time">{{ item.status === 'RUNNING' ? '生成中…' : formatGenerationTime(item.createdAt) }}</span></template></span><button
+                  v-if="isPromptableItem(item)"
+                  type="button"
+                  class="edit-history-entry__use-prompt"
+                  @click="onUsePrompt(item, $event)"
+                >
+                  <ClipboardCopy :size="12" />
+                  使用提示词
+                </button>
+              </p>
+            </div>
           </div>
-          <div class="edit-history-entry__specs">
-            <span v-if="digitalHumanMode">{{ digitalHumanSpecsLine(item) }}</span>
-            <template v-else>
-              <span v-if="metaLine(item)">{{ metaLine(item) }}</span>
-              <span v-if="item.createdAt" class="edit-history-entry__time">
-                {{ item.status === 'RUNNING' ? '生成中…' : formatGenerationTime(item.createdAt) }}
-              </span>
+          <div v-if="!isPromptableItem(item) || digitalHumanMode" class="edit-history-entry__specs">
+            <template v-if="!isPromptableItem(item)">
+              <span v-if="digitalHumanMode">{{ digitalHumanSpecsLine(item) }}</span>
+              <template v-else>
+                <span v-if="metaLine(item)">{{ metaLine(item) }}</span>
+                <span v-if="item.createdAt" class="edit-history-entry__time">
+                  {{ item.status === 'RUNNING' ? '生成中…' : formatGenerationTime(item.createdAt) }}
+                </span>
+              </template>
             </template>
             <span
               v-if="digitalHumanMode"
@@ -319,18 +344,30 @@ onUnmounted(() => {
           <RefreshCw :size="14" />
           再次生成
         </button>
-        <button type="button" class="edit-history-action edit-history-action--icon" title="更多">
-          <MoreHorizontal :size="14" />
-        </button>
-        <button
+        <div
           v-if="!isRootEditVersion(item, versions)"
-          type="button"
-          class="edit-history-action edit-history-action--danger"
-          @click="emit('delete', item.id)"
+          class="edit-history-entry__more"
         >
-          <Trash2 :size="14" />
-          删除该批次结果
-        </button>
+          <button
+            type="button"
+            class="edit-history-action edit-history-action--icon"
+            :class="{ open: entryActionMenuOpenId === item.id }"
+            title="更多"
+            @click="toggleEntryActionMenu(item.id, $event)"
+          >
+            <MoreHorizontal :size="14" />
+          </button>
+          <div v-if="entryActionMenuOpenId === item.id" class="edit-history-entry__more-menu">
+            <button
+              type="button"
+              class="edit-history-entry__more-menu-item edit-history-entry__more-menu-item--danger"
+              @click="onEntryDelete(item.id, $event)"
+            >
+              <Trash2 :size="14" />
+              删除该批次结果
+            </button>
+          </div>
+        </div>
       </footer>
     </article>
 
@@ -360,10 +397,12 @@ onUnmounted(() => {
 
 .edit-history-feed {
   width: 100%;
+  margin-inline: auto;
   display: flex;
   flex-direction: column;
   gap: 28px;
   padding: 4px 0 24px;
+  box-sizing: border-box;
 }
 
 .edit-history-feed__toolbar {
@@ -435,9 +474,13 @@ onUnmounted(() => {
 .edit-history-entry {
   display: flex;
   flex-direction: column;
-  gap: 12px;
   border-radius: 14px;
+  overflow: visible;
   transition: box-shadow 0.15s;
+
+  &:has(.edit-history-entry__content-line--promptable) .edit-history-entry__preview {
+    margin-top: -6px;
+  }
 
   &.active .edit-history-entry__frame {
     box-shadow: 0 0 0 2px color-mix(in srgb, $accent 55%, transparent);
@@ -449,10 +492,18 @@ onUnmounted(() => {
   align-items: flex-start;
   gap: 10px;
   min-width: 0;
+  overflow: visible;
+  position: relative;
+  z-index: 2;
+
+  &:has(.edit-history-entry__content-line--promptable) {
+    align-items: center;
+  }
 }
 
 .edit-history-entry__ref {
   position: relative;
+  z-index: 12;
   flex-shrink: 0;
   width: 28px;
   height: 36px;
@@ -486,6 +537,34 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   gap: 6px;
+  overflow: visible;
+  position: relative;
+}
+
+$prompt-slot-height: calc(24px + max(28px, 2 * 13px * 1.55));
+$prompt-hover-bleed: 6px;
+$prompt-ref-width: 28px;
+$prompt-ref-gap: 10px;
+
+.edit-history-entry__prompt-anchor {
+  min-width: 0;
+
+  &--promptable {
+    position: relative;
+    flex-shrink: 0;
+
+    &::after {
+      content: '';
+      display: block;
+      height: $prompt-slot-height;
+    }
+
+    .edit-history-entry__content-line--promptable {
+      position: absolute;
+      top: 0;
+      z-index: 1;
+    }
+  }
 }
 
 .edit-history-entry__content-line {
@@ -497,19 +576,37 @@ onUnmounted(() => {
   border: 1px solid transparent;
   border-radius: 10px;
   padding: 0;
-  transition:
-    background 0.15s ease,
-    border-color 0.15s ease,
-    padding 0.15s ease;
 }
 
-.edit-history-entry:hover .edit-history-entry__content-line--promptable,
-.edit-history-entry:focus-within .edit-history-entry__content-line--promptable {
+.edit-history-entry__content-line--promptable {
   align-items: center;
   gap: 10px;
-  padding: 8px 12px;
-  background: color-mix(in srgb, var(--bg-elevated) 88%, #000 12%);
-  border-color: color-mix(in srgb, $border-light 80%, transparent);
+  padding: 12px $prompt-hover-bleed 25px $prompt-hover-bleed;
+  box-sizing: border-box;
+  max-height: $prompt-slot-height;
+  overflow: hidden;
+  left: -$prompt-hover-bleed;
+  right: -$prompt-hover-bleed;
+  width: auto;
+}
+
+.edit-history-entry__head:has(.edit-history-entry__ref) .edit-history-entry__content-line--promptable {
+  left: calc(-1 * (#{$prompt-ref-width} + #{$prompt-ref-gap} + #{$prompt-hover-bleed}));
+  right: -$prompt-hover-bleed;
+  padding-left: calc(#{$prompt-ref-width} + #{$prompt-ref-gap} + #{$prompt-hover-bleed});
+}
+
+.edit-history-entry__content-line--promptable:hover,
+.edit-history-entry__content-line--promptable:focus-within {
+  z-index: 10;
+  align-items: flex-start;
+  max-height: 248px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  background: color-mix(in srgb, var(--bg-page) 92%, $accent-light);
+  backdrop-filter: blur(var(--glass-blur, 24px)) saturate(var(--glass-saturate, 1.35));
+  -webkit-backdrop-filter: blur(var(--glass-blur, 24px)) saturate(var(--glass-saturate, 1.35));
+  border-color: color-mix(in srgb, $accent 22%, transparent);
 }
 
 .edit-history-entry__tag {
@@ -526,13 +623,6 @@ onUnmounted(() => {
   color: $text-primary;
   background: color-mix(in srgb, var(--bg-elevated) 88%, $text-primary 4%);
   border: 1px solid $border-light;
-  transition: background 0.15s ease, border-color 0.15s ease;
-}
-
-.edit-history-entry:hover .edit-history-entry__content-line--promptable .edit-history-entry__tag,
-.edit-history-entry:focus-within .edit-history-entry__content-line--promptable .edit-history-entry__tag {
-  background: color-mix(in srgb, var(--bg-card) 70%, var(--bg-elevated) 30%);
-  border-color: color-mix(in srgb, $border-light 65%, transparent);
 }
 
 .edit-history-entry__tag-label {
@@ -550,42 +640,69 @@ onUnmounted(() => {
 .edit-history-entry__prompt {
   margin: 0;
   flex: 1;
-  min-width: min(180px, 100%);
+  min-width: 0;
   font-size: 13px;
   line-height: 1.55;
   color: $text-secondary;
   word-break: break-word;
 }
 
-.edit-history-entry:hover .edit-history-entry__content-line--promptable .edit-history-entry__prompt,
-.edit-history-entry:focus-within .edit-history-entry__content-line--promptable .edit-history-entry__prompt {
+.edit-history-entry__content-line--promptable:not(:hover):not(:focus-within) .edit-history-entry__prompt {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+}
+
+.edit-history-entry__content-line--promptable:hover .edit-history-entry__prompt,
+.edit-history-entry__content-line--promptable:focus-within .edit-history-entry__prompt {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
   color: $text-primary;
+  overflow: visible;
 }
 
 .edit-history-entry__prompt-text {
-  margin-right: 8px;
+  display: inline;
+}
+
+.edit-history-entry__prompt-specs {
+  display: inline;
+  margin-left: 10px;
+  font-size: 11px;
+  line-height: inherit;
+  color: $text-muted;
+  white-space: nowrap;
+
+  .edit-history-entry__time {
+    margin-left: 8px;
+  }
+}
+
+.edit-history-entry__content-line--promptable:hover .edit-history-entry__prompt-specs,
+.edit-history-entry__content-line--promptable:focus-within .edit-history-entry__prompt-specs {
+  display: none;
 }
 
 .edit-history-entry__use-prompt {
-  display: inline-flex;
+  display: none;
   align-items: center;
   gap: 4px;
+  flex-shrink: 0;
   font-size: 12px;
+  line-height: 1;
   color: $text-muted;
-  vertical-align: baseline;
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 0.15s, color 0.15s;
 
   &:hover {
     color: $accent-emphasis;
   }
 }
 
-.edit-history-entry:hover .edit-history-entry__use-prompt,
-.edit-history-entry:focus-within .edit-history-entry__use-prompt {
-  opacity: 1;
-  pointer-events: auto;
+.edit-history-entry__content-line--promptable:hover .edit-history-entry__use-prompt,
+.edit-history-entry__content-line--promptable:focus-within .edit-history-entry__use-prompt {
+  display: inline-flex;
 }
 
 .edit-history-entry__specs {
@@ -655,6 +772,8 @@ onUnmounted(() => {
 }
 
 .edit-history-entry__preview {
+  position: relative;
+  z-index: 1;
   width: 100%;
   max-height: min(56vh, 520px);
 }
@@ -712,6 +831,7 @@ onUnmounted(() => {
   align-items: center;
   flex-wrap: wrap;
   gap: 8px;
+  margin-top: 12px;
 }
 
 .edit-history-action {
@@ -742,17 +862,53 @@ onUnmounted(() => {
     width: 34px;
     padding: 0;
     justify-content: center;
+
+    &.open,
+    &:hover:not(:disabled) {
+      background: $accent-light;
+      border-color: color-mix(in srgb, $accent 25%, $border-light);
+    }
+  }
+}
+
+.edit-history-entry__more {
+  position: relative;
+}
+
+.edit-history-entry__more-menu {
+  position: absolute;
+  top: 50%;
+  left: calc(100% + 6px);
+  transform: translateY(-50%);
+  z-index: 4;
+  min-width: 168px;
+  padding: 6px;
+  border-radius: 10px;
+  background: var(--bg-card);
+  border: 1px solid $border-light;
+  box-shadow: $shadow-md;
+}
+
+.edit-history-entry__more-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 10px;
+  border-radius: 8px;
+  font-size: 12px;
+  text-align: left;
+  color: $text-secondary;
+  white-space: nowrap;
+
+  &:hover {
+    color: $text-primary;
+    background: $accent-light;
   }
 
-  &--danger {
-    margin-left: auto;
-    color: $text-secondary;
-
-    &:hover:not(:disabled) {
-      color: $color-danger;
-      background: $color-danger-soft;
-      border-color: color-mix(in srgb, $color-danger 25%, $border-light);
-    }
+  &--danger:hover {
+    color: $color-danger;
+    background: $color-danger-soft;
   }
 }
 

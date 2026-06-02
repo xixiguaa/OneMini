@@ -15,7 +15,13 @@ export async function fetchPublicGallery(type?: 'image' | 'video'): Promise<Crea
   return data.items ?? []
 }
 
-export async function publishPublicGallery(itemId: string): Promise<CreateHistoryItem> {
-  const { data } = await api.post<CreateHistoryItem>(`/public/${itemId}`)
+export async function publishPublicGallery(
+  itemId: string,
+  payload: { title: string; description?: string },
+): Promise<CreateHistoryItem> {
+  const { data } = await api.post<CreateHistoryItem>(`/public/${itemId}`, {
+    title: payload.title,
+    description: payload.description ?? '',
+  })
   return data
 }

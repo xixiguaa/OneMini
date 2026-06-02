@@ -37,8 +37,8 @@ const STACK_LAYERS = [
 const expanded = ref(false)
 let collapseTimer: ReturnType<typeof setTimeout> | null = null
 
-/** 收起延迟：略大于扇形动画，避免鼠标刚离开就硬切 */
-const COLLAPSE_DELAY_MS = 260
+/** 收起延迟：等扇形动画基本落定后再收，避免中途硬切 */
+const COLLAPSE_DELAY_MS = 380
 
 const frameW = computed(() => (props.compact ? 38 : 52))
 /** 展开时相邻卡片重叠宽度 */
@@ -86,7 +86,7 @@ function isVisibleInStack(item: ParsedAttachment) {
 
 function fanDelay(index: number) {
   const last = Math.max(0, allImages.value.length - 1)
-  return showExpanded.value ? index * 28 : (last - index) * 20
+  return showExpanded.value ? index * 42 : (last - index) * 34
 }
 
 function addFanStyle() {
@@ -327,6 +327,9 @@ $frame-w: 52px;
 $frame-h: 68px;
 $frame-w-compact: 38px;
 $frame-h-compact: 50px;
+$ref-ease: cubic-bezier(0.16, 1, 0.3, 1);
+$ref-fan-duration: 0.72s;
+$ref-fade-duration: 0.56s;
 
 .ref-image-stack {
   position: relative;
@@ -371,7 +374,7 @@ $frame-h-compact: 50px;
   width: $frame-w;
   height: $frame-h;
   overflow: visible;
-  transition: width 0.52s cubic-bezier(0.22, 1, 0.36, 1);
+  transition: width $ref-fan-duration $ref-ease;
 
   .compact & {
     width: $frame-w-compact;
@@ -443,9 +446,16 @@ $frame-h-compact: 50px;
   transform: translate(var(--stack-x, 0), var(--stack-y, 0)) rotate(var(--stack-rotate, 0deg));
   transform-origin: center bottom;
   transition:
-    transform 0.52s cubic-bezier(0.22, 1, 0.36, 1) var(--fan-delay, 0ms),
-    opacity 0.38s cubic-bezier(0.22, 1, 0.36, 1),
-    z-index 0s;
+    transform $ref-fan-duration $ref-ease var(--fan-delay, 0ms),
+    opacity $ref-fade-duration $ref-ease var(--fan-delay, 0ms),
+    z-index 0s $ref-fan-duration;
+
+  .ref-image-stack__track.expanded & {
+    transition:
+      transform $ref-fan-duration $ref-ease var(--fan-delay, 0ms),
+      opacity $ref-fade-duration $ref-ease var(--fan-delay, 0ms),
+      z-index 0s;
+  }
 
   &.stack-hidden {
     opacity: 0;
@@ -465,8 +475,8 @@ $frame-h-compact: 50px;
     transform-origin: center bottom;
     overflow: hidden;
     transition:
-      transform 0.28s cubic-bezier(0.22, 1, 0.36, 1),
-      box-shadow 0.28s ease;
+      transform 0.38s $ref-ease,
+      box-shadow 0.38s ease;
   }
 
   .compact &__surface {
@@ -482,9 +492,9 @@ $frame-h-compact: 50px;
     z-index: 20;
 
     .ref-image-frame__surface {
-      transform: scale(1.12) translateY(-10px);
+      transform: scale(1.08) translateY(-6px);
       box-shadow:
-        0 12px 28px rgba(15, 23, 42, 0.24),
+        0 10px 24px rgba(15, 23, 42, 0.2),
         0 0 0 0.5px rgba(15, 23, 42, 0.08);
     }
   }
@@ -497,7 +507,7 @@ $frame-h-compact: 50px;
   }
 
   .compact .ref-image-stack__track:not(.expanded) &:hover .ref-image-frame__surface {
-    transform: scale(1.1) translateY(-8px);
+    transform: scale(1.06) translateY(-5px);
   }
 
   .ref-image-stack__track.expanded & {
@@ -508,9 +518,9 @@ $frame-h-compact: 50px;
       z-index: 20;
 
       .ref-image-frame__surface {
-        transform: scale(1.12) translateY(-10px);
+        transform: scale(1.08) translateY(-6px);
         box-shadow:
-          0 12px 28px rgba(15, 23, 42, 0.24),
+          0 10px 24px rgba(15, 23, 42, 0.2),
           0 0 0 0.5px rgba(15, 23, 42, 0.08);
       }
     }
@@ -520,6 +530,10 @@ $frame-h-compact: 50px;
     transform: translateX(var(--fan-x, 0)) rotate(var(--fan-rotate, 0deg));
     opacity: 0;
     pointer-events: none;
+    transition:
+      transform $ref-fan-duration $ref-ease var(--fan-delay, 0ms),
+      opacity $ref-fade-duration $ref-ease calc(var(--fan-delay, 0ms) + 40ms),
+      z-index 0s;
 
     &.is-active {
       opacity: 1;
@@ -534,7 +548,7 @@ $frame-h-compact: 50px;
   }
 
   .compact .ref-image-stack__track.expanded &:hover .ref-image-frame__surface {
-    transform: scale(1.1) translateY(-8px);
+    transform: scale(1.06) translateY(-5px);
   }
 }
 
@@ -657,12 +671,12 @@ $frame-h-compact: 50px;
   background: rgba(15, 23, 42, 0.72);
   pointer-events: none;
   transition:
-    opacity 0.32s cubic-bezier(0.22, 1, 0.36, 1),
-    transform 0.32s cubic-bezier(0.22, 1, 0.36, 1);
+    opacity 0.44s $ref-ease,
+    transform 0.44s $ref-ease;
 
   &--hidden {
     opacity: 0;
-    transform: scale(0.82);
+    transform: scale(0.9);
   }
 }
 
@@ -684,20 +698,20 @@ $frame-h-compact: 50px;
   transform: none;
   transform-origin: center center;
   transition:
-    width 0.34s cubic-bezier(0.22, 1, 0.36, 1),
-    height 0.34s cubic-bezier(0.22, 1, 0.36, 1),
-    border-radius 0.28s ease,
-    transform 0.34s cubic-bezier(0.22, 1, 0.36, 1),
-    opacity 0.32s cubic-bezier(0.22, 1, 0.36, 1),
-    background 0.15s ease,
-    border-color 0.2s ease,
-    color 0.2s ease,
-    box-shadow 0.25s ease;
+    width 0.44s $ref-ease,
+    height 0.44s $ref-ease,
+    border-radius 0.36s ease,
+    transform 0.44s $ref-ease,
+    opacity 0.44s $ref-ease,
+    background 0.2s ease,
+    border-color 0.24s ease,
+    color 0.24s ease,
+    box-shadow 0.3s ease;
 
   &--dot:not(.is-active) {
     opacity: 0;
     pointer-events: none;
-    transform: scale(0.88);
+    transform: scale(0.92);
   }
 
   .compact & {

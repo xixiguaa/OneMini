@@ -46,6 +46,11 @@ class SyncBody(BaseModel):
     items: list[CreateHistoryItemIn] = Field(default_factory=list)
 
 
+class PublishPublicBody(BaseModel):
+    title: str = Field(min_length=1, max_length=20)
+    description: str = Field(default="", max_length=500)
+
+
 @router.get("/media/{item_id}")
 def get_create_history_media(
     item_id: str,
@@ -112,11 +117,17 @@ def get_public_gallery_media(
 @router.post("/public/{item_id}", status_code=201)
 def publish_to_public_gallery(
     item_id: str,
+    body: PublishPublicBody,
     user_id: str = Depends(get_current_user),
 ):
     """将个人创作发布到发现页 / 公共短片。"""
     try:
-        item = public_gallery_store.publish_item(user_id, item_id)
+        item = public_gallery_store.publish_item(
+            user_id,
+            item_id,
+            title=body.title.strip(),
+            description=body.description.strip(),
+        )
         return item
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc

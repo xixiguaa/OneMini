@@ -55,6 +55,7 @@ const gallerySearch = ref('')
 const showFloatingComposer = ref(false)
 const floatingExpanded = ref(false)
 const floatingBarRef = ref<HTMLElement | null>(null)
+const floatingLipsyncRef = ref<InstanceType<typeof LipSyncComposerCard> | null>(null)
 const floatingInputRef = ref<HTMLTextAreaElement | null>(null)
 const suspendFloatingCollapse = ref(false)
 const showScrollTop = ref(false)
@@ -300,6 +301,11 @@ function expandFloatingComposer() {
 }
 
 function collapseFloatingComposer() {
+  if (agent.createMode === 'digitalHuman') {
+    if (floatingLipsyncRef.value?.shouldKeepExpandedOnScroll?.()) return
+    floatingLipsyncRef.value?.collapseComposer?.()
+    return
+  }
   if (!floatingExpanded.value) return
   floatingExpanded.value = false
   closeComposerMenus()
@@ -354,6 +360,21 @@ async function locateSessionInGallery(sessionId: string) {
   requestAnimationFrame(() => {
     highlightGallerySession(sessionId)
     agent.createGalleryLocateSessionId = null
+  })
+}
+
+async function locatePublicItemInGallery(itemId: string) {
+  const { galleryItems, hydrate } = usePublicGallery()
+  await hydrate(true)
+  const item = galleryItems.value.find((i) => i.id === itemId)
+  galleryMainTab.value = item?.type === 'video' ? 'video' : 'discover'
+  galleryMediaTab.value = item?.type === 'video' ? 'video' : 'image'
+  await nextTick()
+  gallerySection.value?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  await nextTick()
+  requestAnimationFrame(() => {
+    highlightGallerySession(itemId)
+    agent.createGalleryLocatePublicItemId = null
   })
 }
 
@@ -477,14 +498,13 @@ watch(
 )
 
 watch(
-  () => agent.createMode,
-  (mode) => {
-    if (mode === 'digitalHuman') {
-      showFloatingComposer.value = false
-      collapseFloatingComposer()
-    }
+  [() => agent.createGalleryLocatePublicItemId, () => agent.currentView],
+  ([itemId, view]) => {
+    if (!itemId || view !== 'create') return
+    void locatePublicItemInGallery(itemId)
   },
 )
+
 
 watch(showFloatingComposer, (visible) => {
   if (!visible) collapseFloatingComposer()
@@ -505,8 +525,7 @@ function setupComposerObserver() {
   if (!composerAnchor.value || !studioRoot.value) return
   composerObserver = new IntersectionObserver(
     ([entry]) => {
-      showFloatingComposer.value =
-        !entry.isIntersecting && agent.createMode !== 'digitalHuman'
+      showFloatingComposer.value = !entry.isIntersecting
     },
     { root: studioRoot.value, threshold: 0, rootMargin: '-8px 0px 0px 0px' },
   )
@@ -585,17 +604,13 @@ const docAttachments = computed(() =>
           <CreateGenerationPill @view="locateSessionInGallery" />
         </div>
         <div class="composer-inner">
-          <div
+          <LipSyncComposerCard
             v-if="agent.createMode === 'digitalHuman'"
-            class="composer-card composer-card--digital-human"
-          >
-            <LipSyncComposerCard
-              embedded
-              :image-url="digitalHumanImageUrl"
-              :busy="isCreateBusy"
-              @send="sendFromStudio"
-            />
-          </div>
+            embedded
+            :image-url="digitalHumanImageUrl"
+            :busy="isCreateBusy"
+            @send="sendFromStudio"
+          />
           <div v-else class="composer-card">
             <div v-if="docAttachments.length" class="attachments">
               <ChatAttachmentCard
@@ -789,13 +804,12 @@ const docAttachments = computed(() =>
 
     <ImageEditOverlay />
 
-    <!-- 下滑后底部浮动输入条（数字人模式使用专用输入框，不显示浮动条） -->
+    <!-- 下滑后底部浮动输入条 -->
     <div
-      v-if="agent.createMode !== 'digitalHuman'"
       class="floating-composer"
       :class="{
         visible: showFloatingComposer,
-        expanded: floatingExpanded,
+        expanded: floatingExpanded && agent.createMode !== 'digitalHuman',
         'composer-menu-active': floatingExpanded && composerMenuActive,
       }"
       aria-hidden="false"
@@ -803,7 +817,17 @@ const docAttachments = computed(() =>
       <div v-if="showFloatingComposer" class="composer-gen-pill-slot composer-gen-pill-slot--float">
         <CreateGenerationPill @view="locateSessionInGallery" />
       </div>
+      <LipSyncComposerCard
+        v-if="agent.createMode === 'digitalHuman'"
+        ref="floatingLipsyncRef"
+        collapsible
+        embedded
+        :image-url="digitalHumanImageUrl"
+        :busy="isCreateBusy"
+        @send="sendFromStudio"
+      />
       <div
+        v-else
         ref="floatingBarRef"
         class="floating-bar"
         :class="{
@@ -1202,12 +1226,12 @@ $floating-duration-collapse: 0.52s;
     transform: rotate(-8deg);
     transform-origin: center bottom;
     transition:
-      transform 0.52s cubic-bezier(0.22, 1, 0.36, 1),
-      box-shadow 0.25s ease,
-      filter 0.36s ease;
+      transform 0.72s cubic-bezier(0.16, 1, 0.3, 1),
+      box-shadow 0.3s ease,
+      filter 0.48s ease;
 
     &.expanded {
-      transform: none;
+      transform: rotate(0deg) scale(1);
     }
   }
 
@@ -1217,11 +1241,11 @@ $floating-duration-collapse: 0.52s;
   }
 
   &:hover :deep(.ref-image-stack:not(.expanded)) {
-    transform: rotate(-8deg) scale(1.08);
+    transform: rotate(-8deg) scale(1.06);
   }
 
   &:hover :deep(.ref-image-stack.expanded) {
-    transform: none;
+    transform: rotate(0deg) scale(1);
   }
 }
 
@@ -1310,17 +1334,6 @@ $floating-duration-collapse: 0.52s;
 
   :deep(.model-logo) {
     background: var(--composer-logo-bg);
-  }
-
-  &--digital-human {
-    padding: 12px 14px 10px;
-    min-height: $composer-min-height;
-    overflow: visible;
-
-    :deep(.lipsync-composer--embedded) {
-      min-height: 0;
-      height: auto;
-    }
   }
 }
 

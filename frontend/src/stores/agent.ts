@@ -121,6 +121,8 @@ export const useAgentStore = defineStore('agent', () => {
   const lipsyncDigitalMode = ref<DigitalHumanMode>('fast')
   /** 关闭编辑层后滚动定位到创作瀑布流中的会话卡片 */
   const createGalleryLocateSessionId = ref<string | null>(null)
+  /** 关闭编辑层后定位到发现页中的已发布作品 */
+  const createGalleryLocatePublicItemId = ref<string | null>(null)
 
   let pollTimer: ReturnType<typeof setInterval> | null = null
 
@@ -1311,6 +1313,12 @@ export const useAgentStore = defineStore('agent', () => {
     createGalleryLocateSessionId.value = sessionId
   }
 
+  function locatePublicGalleryItem(itemId: string) {
+    closeImageEdit()
+    setCurrentView('create')
+    createGalleryLocatePublicItemId.value = itemId
+  }
+
   function selectImageEditVersion(id: string) {
     imageEditActiveId.value = id
   }
@@ -1697,7 +1705,9 @@ export const useAgentStore = defineStore('agent', () => {
     lipsyncVoiceLabel,
     lipsyncDigitalMode,
     createGalleryLocateSessionId,
+    createGalleryLocatePublicItemId,
     locateCreateGallerySession,
+    locatePublicGalleryItem,
     openImageEdit,
     closeImageEdit,
     selectImageEditVersion,

@@ -234,11 +234,16 @@ function onWindowRefocus() {
 
 function expandComposer(focus = true) {
   if (!props.collapsible) return
+  const wasExpanded = expanded.value
   expanded.value = true
-  if (!focus) return
+  if (!focus || wasExpanded) return
   void nextTick(() => {
     requestAnimationFrame(() => inputRef.value?.focus())
   })
+}
+
+function isExpanded() {
+  return expanded.value
 }
 
 function collapseComposer() {
@@ -366,7 +371,13 @@ onUnmounted(() => {
   if (collapseTimer) clearTimeout(collapseTimer)
 })
 
-defineExpose({ collapseComposer, expandComposer, shouldKeepExpanded, shouldKeepExpandedOnScroll })
+defineExpose({
+  collapseComposer,
+  expandComposer,
+  isExpanded,
+  shouldKeepExpanded,
+  shouldKeepExpandedOnScroll,
+})
 </script>
 
 <template>
@@ -863,12 +874,12 @@ $floating-duration-collapse: 0.52s;
     transform: rotate(-8deg);
     transform-origin: center bottom;
     transition:
-      transform 0.52s cubic-bezier(0.22, 1, 0.36, 1),
-      box-shadow 0.25s ease,
-      filter 0.36s ease;
+      transform 0.72s cubic-bezier(0.16, 1, 0.3, 1),
+      box-shadow 0.3s ease,
+      filter 0.48s ease;
 
     &.expanded {
-      transform: none;
+      transform: rotate(0deg) scale(1);
     }
   }
 
@@ -878,11 +889,11 @@ $floating-duration-collapse: 0.52s;
   }
 
   &:hover :deep(.ref-image-stack:not(.expanded)) {
-    transform: rotate(-8deg) scale(1.08);
+    transform: rotate(-8deg) scale(1.06);
   }
 
   &:hover :deep(.ref-image-stack.expanded) {
-    transform: none;
+    transform: rotate(0deg) scale(1);
   }
 }
 

@@ -57,8 +57,11 @@ export function usePublicGallery() {
     return hydrateTask
   }
 
-  async function publish(itemId: string) {
-    const item = await publishPublicGallery(itemId)
+  async function publish(
+    itemId: string,
+    payload: { title: string; description?: string },
+  ) {
+    const item = await publishPublicGallery(itemId, payload)
     publishedIds.value = new Set([...publishedIds.value, item.id])
     const idx = items.value.findIndex((i) => i.id === item.id)
     if (idx >= 0) items.value[idx] = item

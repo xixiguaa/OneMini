@@ -70,6 +70,8 @@ def _normalize_item(raw: dict[str, Any]) -> dict[str, Any]:
     return {
         "id": item_id,
         "prompt": str(raw.get("prompt") or ""),
+        "title": str(raw.get("title") or ""),
+        "description": str(raw.get("description") or ""),
         "type": media_type,
         "url": url,
         "previewUrl": url,
@@ -95,7 +97,13 @@ def _save_raw(items: list[dict[str, Any]]) -> None:
     path.write_text(json.dumps(items, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
-def publish_item(user_id: str, item_id: str) -> dict[str, Any]:
+def publish_item(
+    user_id: str,
+    item_id: str,
+    *,
+    title: str = "",
+    description: str = "",
+) -> dict[str, Any]:
     """将用户创作记录发布到公共画廊（复制媒体文件）。"""
     items = create_history_store.list_items(user_id)
     source = next((i for i in items if i.get("id") == item_id), None)
@@ -117,6 +125,8 @@ def publish_item(user_id: str, item_id: str) -> dict[str, Any]:
     record = {
         "id": item_id,
         "prompt": source.get("prompt") or "",
+        "title": title,
+        "description": description,
         "type": source.get("type") or "image",
         "url": media_public_url(item_id),
         "previewUrl": media_public_url(item_id),
