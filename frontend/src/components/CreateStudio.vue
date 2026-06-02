@@ -16,7 +16,7 @@ import {
   X,
 } from 'lucide-vue-next'
 import { computed, nextTick, onMounted, onUnmounted, provide, reactive, ref, watch, type VNodeRef } from 'vue'
-import { ACCEPT_CHAT_FILES } from '../config/constants'
+import { acceptFilesForCreateMode } from '../utils/files'
 import { useAnchoredPopover } from '../composables/useAnchoredPopover'
 import { usePublicGallery } from '../composables/usePublicGallery'
 import { useTypewriter } from '../composables/useTypewriter'
@@ -568,12 +568,17 @@ const imageAttachments = computed(() =>
 )
 
 const digitalHumanImageUrl = computed(
-  () => imageAttachments.value.find((a) => a.previewUrl)?.previewUrl ?? '',
+  () =>
+    agent.pendingAttachments.find(
+      (a) => (a.kind === 'image' || a.kind === 'video') && a.previewUrl,
+    )?.previewUrl ?? '',
 )
 
 const docAttachments = computed(() =>
   agent.pendingAttachments.filter((a) => a.kind !== 'image'),
 )
+
+const fileAccept = computed(() => acceptFilesForCreateMode(agent.createMode))
 </script>
 
 <template>
@@ -822,6 +827,7 @@ const docAttachments = computed(() =>
         ref="floatingLipsyncRef"
         collapsible
         embedded
+        popover-placement="above"
         :image-url="digitalHumanImageUrl"
         :busy="isCreateBusy"
         @send="sendFromStudio"
@@ -1021,7 +1027,7 @@ const docAttachments = computed(() =>
     <input
       ref="fileInput"
       type="file"
-      :accept="ACCEPT_CHAT_FILES"
+      :accept="fileAccept"
       multiple
       hidden
       @change="onFiles"

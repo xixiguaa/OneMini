@@ -80,9 +80,7 @@ const isAutoMode = computed(() => settings.settings.generationPrefs.autoMode)
 const imagePanelStyle = computed(() => imagePopover.panelStyle.value)
 const videoRatioPanelStyle = computed(() => videoRatioPopover.panelStyle.value)
 const videoDurationPanelStyle = computed(() => videoDurationPopover.panelStyle.value)
-const isVideo = computed(
-  () => agent.createMode === 'video' || agent.createMode === 'digitalHuman',
-)
+const isVideo = computed(() => agent.createMode === 'video')
 const showMediaTypeTabs = computed(
   () => agent.createMode === 'image' || agent.createMode === 'video',
 )

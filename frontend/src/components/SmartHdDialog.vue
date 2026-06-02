@@ -2,7 +2,6 @@
 import {
   Check,
   ChevronUp,
-  Gem,
   SlidersHorizontal,
   Sparkles,
   X,
@@ -22,13 +21,10 @@ const props = withDefaults(
     open: boolean
     imageUrl?: string
     aspectRatio?: string
-    /** 消耗积分，暂无后端时默认 0 */
-    cost?: number
   }>(),
   {
     imageUrl: '',
     aspectRatio: '16 / 9',
-    cost: 0,
   },
 )
 
@@ -205,12 +201,11 @@ onUnmounted(() => {
           <footer class="smart-hd-foot">
             <button
               type="button"
-              class="smart-hd-cost"
+              class="smart-hd-submit"
               :disabled="submitting || !imageUrl"
               @click="onSubmit"
             >
-              <Gem :size="14" />
-              <span>{{ cost }}</span>
+              生成
             </button>
           </footer>
         </div>
@@ -333,17 +328,25 @@ onUnmounted(() => {
   border-radius: 10px;
   font-size: 13px;
   font-weight: 500;
-  color: rgba(255, 255, 255, 0.92);
-  background: rgba(255, 255, 255, 0.12);
-  border: 1px solid rgba(255, 255, 255, 0.16);
-  backdrop-filter: blur(12px);
-  transition: background 0.15s, border-color 0.15s;
+  color: $text-primary;
+  background: color-mix(in srgb, var(--bg-elevated) 90%, transparent);
+  border: 1px solid color-mix(in srgb, $border-light 85%, transparent);
+  backdrop-filter: blur(var(--glass-blur, 24px)) saturate(var(--glass-saturate, 1.35));
+  -webkit-backdrop-filter: blur(var(--glass-blur, 24px)) saturate(var(--glass-saturate, 1.35));
+  box-shadow: var(--glass-inset-highlight, inset 1px 1px 0 rgba(255, 255, 255, 0.15));
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+  outline: none;
 
   &:hover:not(:disabled),
   &.active,
   &.open {
-    background: rgba(255, 255, 255, 0.18);
-    border-color: rgba(255, 255, 255, 0.28);
+    background: color-mix(in srgb, var(--bg-elevated) 96%, $accent-light);
+    border-color: color-mix(in srgb, $accent 35%, $border-light);
+    color: $text-primary;
+  }
+
+  &:focus-visible {
+    box-shadow: var(--shadow-focus, 0 0 0 1px rgba(124, 95, 232, 0.28));
   }
 
   &:disabled {
@@ -358,11 +361,10 @@ onUnmounted(() => {
   bottom: calc(100% + 8px);
   width: min(240px, calc(100vw - 120px));
   padding: 12px 14px;
-  border-radius: 12px;
-  background: rgba(18, 18, 24, 0.92);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.35);
-  backdrop-filter: blur(16px);
+  @include cosmic.cosmic-glass-frost(12px);
+  background: var(--composer-menu-bg, var(--glass-fill-gradient));
+  border: 1px solid $border-light;
+  box-shadow: var(--glass-float-shadow, $shadow-md);
 }
 
 .smart-hd-detail-head {
@@ -372,19 +374,19 @@ onUnmounted(() => {
   gap: 10px;
   margin-bottom: 10px;
   font-size: 12px;
-  color: rgba(255, 255, 255, 0.72);
+  color: $text-muted;
 
   strong {
     font-size: 13px;
     font-weight: 600;
-    color: #fff;
+    color: $text-primary;
     font-variant-numeric: tabular-nums;
   }
 }
 
 .smart-hd-detail-slider {
   width: 100%;
-  accent-color: $accent-cyan;
+  accent-color: $accent;
 }
 
 .smart-hd-res-menu {
@@ -393,11 +395,10 @@ onUnmounted(() => {
   bottom: calc(100% + 8px);
   min-width: 132px;
   padding: 6px;
-  border-radius: 12px;
-  background: rgba(18, 18, 24, 0.94);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.35);
-  backdrop-filter: blur(16px);
+  @include cosmic.cosmic-glass-frost(12px);
+  background: var(--composer-menu-bg, var(--glass-fill-gradient));
+  border: 1px solid $border-light;
+  box-shadow: var(--glass-float-shadow, $shadow-md);
 }
 
 .smart-hd-res-option {
@@ -409,23 +410,24 @@ onUnmounted(() => {
   border-radius: 8px;
   font-size: 13px;
   font-weight: 500;
-  color: rgba(255, 255, 255, 0.88);
+  color: $text-secondary;
   text-align: left;
-  transition: background 0.15s;
+  transition: background 0.15s, color 0.15s;
 
   &:hover,
   &.active {
-    background: rgba(255, 255, 255, 0.08);
+    background: var(--composer-option-hover, $accent-light);
   }
 
   &.active {
-    color: $accent-cyan;
+    color: $accent-emphasis;
+    font-weight: 600;
   }
 }
 
 .smart-hd-res-sparkle {
   flex-shrink: 0;
-  color: $accent-cyan;
+  color: $accent;
   opacity: 0.95;
 
   &--placeholder {
@@ -438,7 +440,7 @@ onUnmounted(() => {
 .smart-hd-res-check {
   margin-left: auto;
   flex-shrink: 0;
-  color: $accent-cyan;
+  color: $accent;
 }
 
 .smart-hd-res-chevron {
@@ -456,20 +458,18 @@ onUnmounted(() => {
   justify-content: flex-end;
 }
 
-.smart-hd-cost {
+.smart-hd-submit {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  height: 34px;
-  padding: 0 12px;
+  justify-content: center;
+  height: 36px;
+  padding: 0 18px;
   border-radius: 999px;
   font-size: 13px;
   font-weight: 600;
-  font-variant-numeric: tabular-nums;
-  color: $text-primary;
-  background: var(--bg-card);
-  border: 1px solid $border-light;
-  box-shadow: $shadow-sm;
+  color: $btn-primary-text;
+  background: var(--btn-primary-gradient, $accent);
+  box-shadow: var(--btn-primary-shadow, $shadow-sm);
   transition: filter 0.15s, transform 0.15s;
 
   &:hover:not(:disabled) {
@@ -480,10 +480,6 @@ onUnmounted(() => {
   &:disabled {
     opacity: 0.45;
     cursor: not-allowed;
-  }
-
-  svg {
-    color: $accent-cyan;
   }
 }
 

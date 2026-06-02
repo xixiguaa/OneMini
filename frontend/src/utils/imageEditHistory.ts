@@ -114,6 +114,8 @@ export function displayEditPrompt(
 export interface DetailMetaRow {
   label: string
   value: string
+  /** 长文本（如台词）纵向排列 */
+  multiline?: boolean
 }
 
 export function formatDetailDateTime(ms: number): string {
@@ -142,14 +144,29 @@ export function buildDigitalHumanSpecsSummary(modeId?: DigitalHumanMode, duratio
 
 export function buildDigitalHumanDetailRows(
   item: CreateHistoryItem,
-  opts?: { digitalHumanModeId?: DigitalHumanMode; videoResolution?: string },
+  opts?: {
+    digitalHumanModeId?: DigitalHumanMode
+    videoResolution?: string
+    prompt?: string
+  },
 ): DetailMetaRow[] {
-  return [
+  const rows: DetailMetaRow[] = [
+    { label: '数字人模式', value: digitalHumanModeLabel(opts?.digitalHumanModeId ?? 'fast') },
     { label: '视频比例', value: resolveAspectRatioLabel(item) },
-    { label: '帧率', value: '25' },
+    { label: '帧率', value: '25 fps' },
     { label: '分辨率', value: resolveVideoResolutionLabel(opts?.videoResolution) },
-    { label: '使用过', value: EDIT_ACTION_LABELS.lipsync },
-    { label: '生成时间', value: formatDetailDateTime(item.createdAt) },
-    { label: '生成提示', value: '可能调用检索' },
   ]
+
+  if (item.modelName) {
+    rows.push({ label: '模型', value: item.modelName })
+  }
+
+  rows.push({ label: '生成时间', value: formatDetailDateTime(item.createdAt) })
+
+  const prompt = opts?.prompt?.trim()
+  if (prompt) {
+    rows.push({ label: '角色台词', value: prompt, multiline: true })
+  }
+
+  return rows
 }

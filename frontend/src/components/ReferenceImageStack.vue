@@ -147,7 +147,7 @@ function onAddClick(e: MouseEvent) {
 }
 
 const timePopper = useHoverPopper({ placement: 'below', offsetX: -6 })
-const namePopper = useHoverPopper({ placement: 'above', gap: 10 })
+const namePopper = useHoverPopper({ placement: 'above', gap: 24 })
 
 const showTimePopper = computed(
   () =>
@@ -239,15 +239,17 @@ function onFrameLeave() {
             @mouseleave="onFrameLeave"
           >
             <div class="ref-image-frame__surface">
-              <template v-if="item.loading">
-                <div class="ref-image-skeleton" aria-hidden="true" />
-              </template>
-              <img
-                v-else-if="item.previewUrl"
-                :src="item.previewUrl"
-                :alt="item.name"
-                class="ref-image-img"
-              />
+              <div class="ref-image-frame__media">
+                <template v-if="item.loading">
+                  <div class="ref-image-skeleton" aria-hidden="true" />
+                </template>
+                <img
+                  v-else-if="item.previewUrl"
+                  :src="item.previewUrl"
+                  :alt="item.name"
+                  class="ref-image-img"
+                />
+              </div>
               <button
                 v-if="!item.loading && (showExpanded || index === allImages.length - 1)"
                 type="button"
@@ -290,15 +292,6 @@ function onFrameLeave() {
             :class="{ 'is-active': !showExpanded }"
             :title="single ? '上传参考图' : '继续上传参考图'"
             :tabindex="showExpanded ? -1 : 0"
-            @click="onAddClick"
-          >
-            <Plus :size="compact ? 12 : 14" stroke-width="2.25" />
-          </button>
-          <button
-            v-if="!canExpand"
-            type="button"
-            class="ref-image-add"
-            :title="single ? '上传参考图' : '继续上传参考图'"
             @click="onAddClick"
           >
             <Plus :size="compact ? 12 : 14" stroke-width="2.25" />
@@ -443,6 +436,7 @@ $ref-fade-duration: 0.56s;
 .ref-image-frame {
   position: absolute;
   inset: 0;
+  overflow: visible;
   transform: translate(var(--stack-x, 0), var(--stack-y, 0)) rotate(var(--stack-rotate, 0deg));
   transform-origin: center bottom;
   transition:
@@ -473,10 +467,21 @@ $ref-fade-duration: 0.56s;
       0 2px 8px rgba(15, 23, 42, 0.14),
       0 0 0 0.5px rgba(15, 23, 42, 0.06);
     transform-origin: center bottom;
-    overflow: hidden;
+    overflow: visible;
     transition:
       transform 0.38s $ref-ease,
       box-shadow 0.38s ease;
+  }
+
+  &__media {
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    border-radius: 3px;
+  }
+
+  .compact &__media {
+    border-radius: 2px;
   }
 
   .compact &__surface {
@@ -627,9 +632,9 @@ $ref-fade-duration: 0.56s;
 
 .ref-image-remove {
   position: absolute;
-  top: 4px;
-  right: 4px;
-  z-index: 2;
+  top: -5px;
+  right: -5px;
+  z-index: 3;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -641,6 +646,7 @@ $ref-fade-duration: 0.56s;
   opacity: 0;
   transition: opacity 0.15s ease, background 0.15s ease;
 
+  .ref-image-stack.single &,
   .ref-image-frame.top:hover &,
   .ref-image-frame.top:focus-within &,
   .expanded .ref-image-frame:hover &,

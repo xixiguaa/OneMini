@@ -17,12 +17,10 @@ import { formatGenerationTime } from '../utils/formatGenerationTime'
 import { resolveCreateHistoryImageUrl } from '../utils/createHistoryMedia'
 import {
   buildDigitalHumanDetailRows,
-  buildDigitalHumanSpecsSummary,
   buildEditHistoryMeta,
   displayEditPrompt,
   EDIT_ACTION_LABELS,
   isRootEditVersion,
-  isSystemEditPrompt,
   resolveEditAction,
   resolveEditActionLabel,
   resolveEditTagThumb,
@@ -102,14 +100,15 @@ function metaLine(item: CreateHistoryItem) {
   })
 }
 
-function digitalHumanSpecsLine(_item: CreateHistoryItem) {
-  return buildDigitalHumanSpecsSummary(props.digitalHumanModeId)
+function isDigitalHumanEntry(item: CreateHistoryItem) {
+  return props.digitalHumanMode || resolveEditAction(item, props.versions) === 'lipsync'
 }
 
 function detailRows(item: CreateHistoryItem) {
   return buildDigitalHumanDetailRows(item, {
     digitalHumanModeId: props.digitalHumanModeId,
     videoResolution: props.videoResolution,
+    prompt: displayEditPrompt(item, props.versions),
   })
 }
 
@@ -133,13 +132,13 @@ function pickOpFilter(value: OpFilter) {
 function onUsePrompt(item: CreateHistoryItem, e: MouseEvent) {
   e.stopPropagation()
   const prompt = displayEditPrompt(item, props.versions)
-  if (!prompt || isSystemEditPrompt(prompt)) return
+  if (!prompt) return
   emit('usePrompt', prompt)
 }
 
-function isPromptableItem(item: CreateHistoryItem) {
-  const prompt = displayEditPrompt(item, props.versions)
-  return !!prompt && !isSystemEditPrompt(prompt)
+/** 顶部可 hover 展开的条目（含细节修复等系统提示词） */
+function hasHoverPromptHeader(item: CreateHistoryItem) {
+  return !!displayEditPrompt(item, props.versions)
 }
 
 watch(
@@ -247,11 +246,11 @@ onUnmounted(() => {
         <div class="edit-history-entry__meta-row">
           <div
             class="edit-history-entry__prompt-anchor"
-            :class="{ 'edit-history-entry__prompt-anchor--promptable': isPromptableItem(item) }"
+            :class="{ 'edit-history-entry__prompt-anchor--promptable': hasHoverPromptHeader(item) }"
           >
             <div
               class="edit-history-entry__content-line"
-              :class="{ 'edit-history-entry__content-line--promptable': isPromptableItem(item) }"
+              :class="{ 'edit-history-entry__content-line--promptable': hasHoverPromptHeader(item) }"
             >
               <span class="edit-history-entry__tag">
                 <img
@@ -266,32 +265,45 @@ onUnmounted(() => {
               </span>
               <p class="edit-history-entry__prompt">
                 <span class="edit-history-entry__prompt-text">{{ displayEditPrompt(item, versions) || '（无提示词）' }}</span><span
-                  v-if="isPromptableItem(item)"
+                  v-if="hasHoverPromptHeader(item)"
                   class="edit-history-entry__prompt-specs"
-                ><template v-if="digitalHumanMode">{{ digitalHumanSpecsLine(item) }}</template><template v-else><span v-if="metaLine(item)">{{ metaLine(item) }}</span><span v-if="item.createdAt" class="edit-history-entry__time">{{ item.status === 'RUNNING' ? '生成中…' : formatGenerationTime(item.createdAt) }}</span></template></span><button
-                  v-if="isPromptableItem(item)"
+                ><span v-if="metaLine(item)">{{ metaLine(item) }}</span><span v-if="item.createdAt" class="edit-history-entry__time">{{ item.status === 'RUNNING' ? '生成中…' : formatGenerationTime(item.createdAt) }}</span><span
+                  v-if="isDigitalHumanEntry(item)"
+                  class="edit-history-entry__info"
+                  @mouseenter="onDetailEnter(item, $event)"
+                  @mouseleave="onDetailLeave"
+                  @click.stop
+                >
+                  <Info :size="11" />
+                  详细信息
+                </span></span><button
+                  v-if="hasHoverPromptHeader(item)"
                   type="button"
                   class="edit-history-entry__use-prompt"
                   @click="onUsePrompt(item, $event)"
                 >
                   <ClipboardCopy :size="12" />
                   使用提示词
-                </button>
+                </button><span
+                  v-if="hasHoverPromptHeader(item) && isDigitalHumanEntry(item)"
+                  class="edit-history-entry__info edit-history-entry__info--hover"
+                  @mouseenter="onDetailEnter(item, $event)"
+                  @mouseleave="onDetailLeave"
+                  @click.stop
+                >
+                  <Info :size="11" />
+                  详细信息
+                </span>
               </p>
             </div>
           </div>
-          <div v-if="!isPromptableItem(item) || digitalHumanMode" class="edit-history-entry__specs">
-            <template v-if="!isPromptableItem(item)">
-              <span v-if="digitalHumanMode">{{ digitalHumanSpecsLine(item) }}</span>
-              <template v-else>
-                <span v-if="metaLine(item)">{{ metaLine(item) }}</span>
-                <span v-if="item.createdAt" class="edit-history-entry__time">
-                  {{ item.status === 'RUNNING' ? '生成中…' : formatGenerationTime(item.createdAt) }}
-                </span>
-              </template>
-            </template>
+          <div v-if="!hasHoverPromptHeader(item)" class="edit-history-entry__specs">
+            <span v-if="metaLine(item)">{{ metaLine(item) }}</span>
+            <span v-if="item.createdAt" class="edit-history-entry__time">
+              {{ item.status === 'RUNNING' ? '生成中…' : formatGenerationTime(item.createdAt) }}
+            </span>
             <span
-              v-if="digitalHumanMode"
+              v-if="isDigitalHumanEntry(item)"
               class="edit-history-entry__info"
               @mouseenter="onDetailEnter(item, $event)"
               @mouseleave="onDetailLeave"
@@ -373,19 +385,23 @@ onUnmounted(() => {
 
     <Teleport to="body">
       <div
-        v-if="digitalHumanMode && hoveredDetailItem"
+        v-if="hoveredDetailItem && isDigitalHumanEntry(hoveredDetailItem)"
         class="edit-history-detail-popper"
         :style="detailPopper.panelStyle.value"
         @mouseenter="detailPopper.cancelHide()"
         @mouseleave="detailPopper.hide()"
       >
-        <div
-          v-for="row in detailRows(hoveredDetailItem)"
-          :key="row.label"
-          class="edit-history-detail-popper__row"
-        >
-          <span class="edit-history-detail-popper__label">{{ row.label }}</span>
-          <span class="edit-history-detail-popper__value">{{ row.value }}</span>
+        <p class="edit-history-detail-popper__title">详细信息</p>
+        <div class="edit-history-detail-popper__rows">
+          <div
+            v-for="row in detailRows(hoveredDetailItem)"
+            :key="row.label"
+            class="edit-history-detail-popper__row"
+            :class="{ 'edit-history-detail-popper__row--multiline': row.multiline }"
+          >
+            <span class="edit-history-detail-popper__label">{{ row.label }}</span>
+            <span class="edit-history-detail-popper__value">{{ row.value }}</span>
+          </div>
         </div>
       </div>
     </Teleport>
@@ -394,6 +410,7 @@ onUnmounted(() => {
 
 <style scoped lang="scss">
 @use '../styles/variables.scss' as *;
+@use '../styles/cosmic-glass.scss' as cosmic;
 
 .edit-history-feed {
   width: 100%;
@@ -679,6 +696,10 @@ $prompt-ref-gap: 10px;
   .edit-history-entry__time {
     margin-left: 8px;
   }
+
+  .edit-history-entry__info {
+    margin-left: 8px;
+  }
 }
 
 .edit-history-entry__content-line--promptable:hover .edit-history-entry__prompt-specs,
@@ -724,39 +745,82 @@ $prompt-ref-gap: 10px;
   &:hover {
     color: $text-secondary;
   }
+
+  &--hover {
+    display: none;
+  }
+}
+
+.edit-history-entry__content-line--promptable:hover .edit-history-entry__info--hover,
+.edit-history-entry__content-line--promptable:focus-within .edit-history-entry__info--hover {
+  display: inline-flex;
 }
 
 .edit-history-detail-popper {
-  min-width: 240px;
-  padding: 14px 16px;
-  border-radius: 14px;
-  background: color-mix(in srgb, var(--bg-elevated) 92%, #000 8%);
+  @include cosmic.cosmic-glass-frost(14px);
+  min-width: 280px;
+  max-width: min(340px, calc(100vw - 32px));
+  padding: 0;
+  background: var(--composer-menu-bg, var(--glass-fill-gradient));
   border: 1px solid $border-light;
   box-shadow: var(--glass-float-shadow, $shadow-md);
   pointer-events: auto;
   animation: edit-history-detail-popper-in 0.16s ease;
+  overflow: hidden;
+
+  &__title {
+    margin: 0;
+    padding: 12px 16px 10px;
+    font-size: 12px;
+    font-weight: 600;
+    color: $text-muted;
+    letter-spacing: 0.02em;
+    border-bottom: 1px solid color-mix(in srgb, $border-light 75%, transparent);
+  }
+
+  &__rows {
+    display: flex;
+    flex-direction: column;
+    padding: 6px 0 10px;
+  }
 
   &__row {
     display: flex;
     align-items: baseline;
     justify-content: space-between;
     gap: 20px;
+    padding: 7px 16px;
     font-size: 12px;
-    line-height: 1.6;
+    line-height: 1.5;
 
-    & + & {
-      margin-top: 6px;
+    &--multiline {
+      flex-direction: column;
+      align-items: stretch;
+      gap: 5px;
+      padding-top: 8px;
+      padding-bottom: 8px;
+
+      .edit-history-detail-popper__value {
+        text-align: left;
+        font-weight: 400;
+        line-height: 1.6;
+        word-break: break-word;
+        white-space: pre-wrap;
+      }
     }
   }
 
   &__label {
     flex-shrink: 0;
     color: $text-muted;
+    font-weight: 500;
   }
 
   &__value {
+    min-width: 0;
     text-align: right;
     color: $text-primary;
+    font-weight: 600;
     font-variant-numeric: tabular-nums;
   }
 }
@@ -764,10 +828,12 @@ $prompt-ref-gap: 10px;
 @keyframes edit-history-detail-popper-in {
   from {
     opacity: 0;
+    transform: translateY(4px);
   }
 
   to {
     opacity: 1;
+    transform: translateY(0);
   }
 }
 

@@ -25,7 +25,9 @@ import type {
 } from '../types/agent'
 import {
   classifyFile,
+  createModeAttachmentHint,
   formatAttachmentsForPrompt,
+  isFileAllowedForCreateMode,
   parseFile,
   revokeAttachmentPreviews,
   type ParsedAttachment,
@@ -227,17 +229,50 @@ export const useAgentStore = defineStore('agent', () => {
   )
 
   watch(createMode, (mode) => {
-    if (mode !== 'digitalHuman') return
-    const images = pendingAttachments.value.filter((a) => a.kind === 'image')
-    if (images.length <= 1) return
-    const keep = images[images.length - 1]!
-    for (const img of images) {
-      if (img.id !== keep.id && img.previewUrl) URL.revokeObjectURL(img.previewUrl)
-    }
-    pendingAttachments.value = pendingAttachments.value.filter(
-      (a) => a.kind !== 'image' || a.id === keep.id,
-    )
+    pruneAttachmentsForCreateMode(mode)
   })
+
+  function pruneAttachmentsForCreateMode(mode: CreateMode) {
+    if (mode === 'digitalHuman') {
+      const media = pendingAttachments.value.filter((a) => a.kind === 'image' || a.kind === 'video')
+      if (media.length <= 1) {
+        pendingAttachments.value = pendingAttachments.value.filter(
+          (a) => a.kind === 'image' || a.kind === 'video',
+        )
+        return
+      }
+      const keep = media[media.length - 1]!
+      for (const item of media) {
+        if (item.id !== keep.id && item.previewUrl) URL.revokeObjectURL(item.previewUrl)
+      }
+      pendingAttachments.value = pendingAttachments.value.filter(
+        (a) => (a.kind !== 'image' && a.kind !== 'video') || a.id === keep.id,
+      )
+      return
+    }
+
+    const kept = pendingAttachments.value.filter((a) => {
+      if (mode === 'image') return a.kind === 'image'
+      if (mode === 'video') return a.kind === 'image' || a.kind === 'video'
+      return true
+    })
+    for (const removed of pendingAttachments.value) {
+      if (!kept.some((k) => k.id === removed.id) && removed.previewUrl) {
+        URL.revokeObjectURL(removed.previewUrl)
+      }
+    }
+    pendingAttachments.value = kept
+  }
+
+  function filterFilesForCreateMode(files: File[], mode: CreateMode) {
+    const allowed: File[] = []
+    let rejected = 0
+    for (const file of files) {
+      if (isFileAllowedForCreateMode(file, mode)) allowed.push(file)
+      else rejected += 1
+    }
+    return { allowed, rejected }
+  }
 
   function addMessage(
     msg: Omit<ChatMessage, 'id' | 'timestamp'>,
@@ -321,14 +356,22 @@ export const useAgentStore = defineStore('agent', () => {
   }
 
   async function addAttachments(files: FileList | File[]) {
-    let queue = Array.from(files)
-    if (createMode.value === 'digitalHuman') {
-      const imageFiles = queue.filter(
-        (f) => classifyFile(f) === 'image' || f.type.startsWith('image/'),
+    const mode = createMode.value
+    const { allowed, rejected } = filterFilesForCreateMode(Array.from(files), mode)
+    if (rejected > 0) {
+      useToastStore().show({
+        message: createModeAttachmentHint(mode),
+        kind: 'warning',
+      })
+    }
+    if (!allowed.length) return
+
+    let queue = allowed
+    if (mode === 'digitalHuman') {
+      pendingAttachments.value = pendingAttachments.value.filter(
+        (a) => a.kind !== 'image' && a.kind !== 'video',
       )
-      if (!imageFiles.length) return
-      pendingAttachments.value = pendingAttachments.value.filter((a) => a.kind !== 'image')
-      queue = imageFiles.slice(0, 1)
+      queue = queue.slice(0, 1)
     }
 
     for (const file of queue) {
@@ -1251,6 +1294,7 @@ export const useAgentStore = defineStore('agent', () => {
     if (imageEditComposeMode.value === 'video') {
       cancelVideoComposeFromImageEdit()
     }
+    createMode.value = 'digitalHuman'
     imageEditComposeMode.value = 'lipsync'
     lipsyncDialogue.value = dialogue
     lipsyncAction.value = ''

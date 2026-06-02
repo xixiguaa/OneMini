@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Sparkles, X } from 'lucide-vue-next'
+import { X } from 'lucide-vue-next'
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 
 const EXPANSION_SCALES = [1.5, 2, 3] as const
@@ -21,24 +21,35 @@ const props = withDefaults(
     imageUrl?: string
     /** 原图宽高比 id，如 16:9 */
     sourceRatioId?: string
-    cost?: number
   }>(),
   {
     imageUrl: '',
     sourceRatioId: '16:9',
-    cost: 1,
   },
 )
 
 const emit = defineEmits<{
   'update:open': [value: boolean]
-  submit: [payload: { prompt: string; scale: ExpansionScale; ratio: RatioPreset }]
+  submit: [payload: { prompt: string; scale: number; ratio: RatioPreset }]
 }>()
+
+type FrameInsets = { top: number; right: number; bottom: number; left: number }
+type HandleId = 'tl' | 'tr' | 'bl' | 'br' | 't' | 'b' | 'l' | 'r'
 
 const prompt = ref('')
 const expansionScale = ref<ExpansionScale>(1.5)
 const ratioPreset = ref<RatioPreset>('original')
 const submitting = ref(false)
+const isManualFrame = ref(false)
+const frameInsets = ref<FrameInsets>({ top: 0, right: 0, bottom: 0, left: 0 })
+
+const dragging = ref<{
+  handle: HandleId
+  startX: number
+  startY: number
+  startInsets: FrameInsets
+  fitScale: number
+} | null>(null)
 
 function parseRatio(id: string): [number, number] {
   const parts = id.split(':').map((n) => parseInt(n, 10))
@@ -46,17 +57,21 @@ function parseRatio(id: string): [number, number] {
   return [parts[0], parts[1]]
 }
 
-const layout = computed(() => {
+function getBaseImageSize() {
   const [srcW, srcH] = parseRatio(props.sourceRatioId || '16:9')
   const base = 280
   const imgW = srcW >= srcH ? base : Math.round((base * srcW) / srcH)
   const imgH = srcW >= srcH ? Math.round((base * srcH) / srcW) : base
+  return { imgW, imgH }
+}
 
-  let frameW = imgW * expansionScale.value
-  let frameH = imgH * expansionScale.value
+function computeInsetsFromPreset(scale: ExpansionScale, ratio: RatioPreset): FrameInsets {
+  const { imgW, imgH } = getBaseImageSize()
+  let frameW = imgW * scale
+  let frameH = imgH * scale
 
-  if (ratioPreset.value !== 'original') {
-    const [tw, th] = parseRatio(ratioPreset.value)
+  if (ratio !== 'original') {
+    const [tw, th] = parseRatio(ratio)
     const targetAspect = tw / th
     const frameAspect = frameW / frameH
     if (targetAspect > frameAspect) {
@@ -68,16 +83,134 @@ const layout = computed(() => {
     frameH = Math.max(frameH, imgH * 1.08)
   }
 
+  return {
+    top: (frameH - imgH) / 2,
+    right: (frameW - imgW) / 2,
+    bottom: (frameH - imgH) / 2,
+    left: (frameW - imgW) / 2,
+  }
+}
+
+function applyPresetInsets() {
+  frameInsets.value = computeInsetsFromPreset(expansionScale.value, ratioPreset.value)
+  isManualFrame.value = false
+}
+
+function minInset() {
+  const { imgW, imgH } = getBaseImageSize()
+  return Math.round(Math.min(imgW, imgH) * 0.04)
+}
+
+const layout = computed(() => {
+  const { imgW, imgH } = getBaseImageSize()
+  const frameW = imgW + frameInsets.value.left + frameInsets.value.right
+  const frameH = imgH + frameInsets.value.top + frameInsets.value.bottom
   const displayScale = Math.max(frameW / imgW, frameH / imgH)
 
+  // 高倍数时缩小预览框，避免与角标、倍数切换等控件重叠
+  const maxFrameW = 720
+  const maxFrameH = 300
+  const fitScale = Math.min(1, maxFrameW / frameW, maxFrameH / frameH)
+
   return {
-    imgW,
-    imgH,
-    frameW: Math.round(frameW),
-    frameH: Math.round(frameH),
+    imgW: Math.round(imgW * fitScale),
+    imgH: Math.round(imgH * fitScale),
+    frameW: Math.round(frameW * fitScale),
+    frameH: Math.round(frameH * fitScale),
+    insetTop: Math.round(frameInsets.value.top * fitScale),
+    insetLeft: Math.round(frameInsets.value.left * fitScale),
     displayScale: displayScale.toFixed(1),
+    fitScale,
   }
 })
+
+function setExpansionScale(scale: ExpansionScale) {
+  expansionScale.value = scale
+  applyPresetInsets()
+}
+
+function setRatioPreset(ratio: RatioPreset) {
+  ratioPreset.value = ratio
+  applyPresetInsets()
+}
+
+function onHandlePointerDown(e: PointerEvent, handle: HandleId) {
+  e.preventDefault()
+  e.stopPropagation()
+  dragging.value = {
+    handle,
+    startX: e.clientX,
+    startY: e.clientY,
+    startInsets: { ...frameInsets.value },
+    fitScale: layout.value.fitScale,
+  }
+  isManualFrame.value = true
+  window.addEventListener('pointermove', onHandlePointerMove)
+  window.addEventListener('pointerup', onHandlePointerUp)
+  window.addEventListener('pointercancel', onHandlePointerUp)
+}
+
+function onHandlePointerMove(e: PointerEvent) {
+  if (!dragging.value) return
+  const { handle, startX, startY, startInsets, fitScale } = dragging.value
+  const dx = (e.clientX - startX) / fitScale
+  const dy = (e.clientY - startY) / fitScale
+  const min = minInset()
+
+  const next = { ...startInsets }
+  switch (handle) {
+    case 'tl':
+      next.left = Math.max(min, startInsets.left - dx)
+      next.top = Math.max(min, startInsets.top - dy)
+      break
+    case 'tr':
+      next.right = Math.max(min, startInsets.right + dx)
+      next.top = Math.max(min, startInsets.top - dy)
+      break
+    case 'bl':
+      next.left = Math.max(min, startInsets.left - dx)
+      next.bottom = Math.max(min, startInsets.bottom + dy)
+      break
+    case 'br':
+      next.right = Math.max(min, startInsets.right + dx)
+      next.bottom = Math.max(min, startInsets.bottom + dy)
+      break
+    case 't':
+      next.top = Math.max(min, startInsets.top - dy)
+      break
+    case 'b':
+      next.bottom = Math.max(min, startInsets.bottom + dy)
+      break
+    case 'l':
+      next.left = Math.max(min, startInsets.left - dx)
+      break
+    case 'r':
+      next.right = Math.max(min, startInsets.right + dx)
+      break
+  }
+  frameInsets.value = next
+}
+
+function onHandlePointerUp() {
+  dragging.value = null
+  window.removeEventListener('pointermove', onHandlePointerMove)
+  window.removeEventListener('pointerup', onHandlePointerUp)
+  window.removeEventListener('pointercancel', onHandlePointerUp)
+}
+
+function handleCursor(handle: HandleId) {
+  const map: Record<HandleId, string> = {
+    tl: 'nwse-resize',
+    tr: 'nesw-resize',
+    bl: 'nesw-resize',
+    br: 'nwse-resize',
+    t: 'ns-resize',
+    b: 'ns-resize',
+    l: 'ew-resize',
+    r: 'ew-resize',
+  }
+  return map[handle]
+}
 
 function close() {
   if (submitting.value) return
@@ -87,9 +220,12 @@ function close() {
 function onSubmit() {
   if (!props.imageUrl || submitting.value) return
   submitting.value = true
+  const { imgW, imgH } = getBaseImageSize()
+  const frameW = imgW + frameInsets.value.left + frameInsets.value.right
+  const frameH = imgH + frameInsets.value.top + frameInsets.value.bottom
   emit('submit', {
     prompt: prompt.value.trim(),
-    scale: expansionScale.value,
+    scale: Math.max(frameW / imgW, frameH / imgH),
     ratio: ratioPreset.value,
   })
 }
@@ -107,12 +243,16 @@ watch(
       expansionScale.value = 1.5
       ratioPreset.value = 'original'
       submitting.value = false
+      applyPresetInsets()
     }
   },
 )
 
 onMounted(() => window.addEventListener('keydown', onKeydown))
-onUnmounted(() => window.removeEventListener('keydown', onKeydown))
+onUnmounted(() => {
+  window.removeEventListener('keydown', onKeydown)
+  onHandlePointerUp()
+})
 </script>
 
 <template>
@@ -128,41 +268,56 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
           </header>
 
           <div class="outpaint-canvas-wrap">
-            <div class="outpaint-canvas">
-              <span class="outpaint-scale-badge">{{ layout.displayScale }}x</span>
-
-              <div
-                class="outpaint-frame"
-                :style="{ width: `${layout.frameW}px`, height: `${layout.frameH}px` }"
-              >
-                <div class="outpaint-checker" aria-hidden="true" />
-                <div
-                  class="outpaint-image-box"
-                  :style="{ width: `${layout.imgW}px`, height: `${layout.imgH}px` }"
-                >
-                  <img v-if="imageUrl" :src="imageUrl" alt="" class="outpaint-image" />
-                </div>
-                <span class="outpaint-handle outpaint-handle--tl" aria-hidden="true" />
-                <span class="outpaint-handle outpaint-handle--tr" aria-hidden="true" />
-                <span class="outpaint-handle outpaint-handle--bl" aria-hidden="true" />
-                <span class="outpaint-handle outpaint-handle--br" aria-hidden="true" />
-                <span class="outpaint-handle outpaint-handle--t" aria-hidden="true" />
-                <span class="outpaint-handle outpaint-handle--b" aria-hidden="true" />
-                <span class="outpaint-handle outpaint-handle--l" aria-hidden="true" />
-                <span class="outpaint-handle outpaint-handle--r" aria-hidden="true" />
+            <div
+              class="outpaint-canvas"
+              :class="{ 'outpaint-canvas--large-scale': Number(layout.displayScale) >= 2 }"
+            >
+              <div class="outpaint-canvas-top">
+                <span class="outpaint-scale-badge">{{ layout.displayScale }}x</span>
               </div>
 
-              <div class="outpaint-scale-pills" role="tablist" aria-label="扩图倍数">
-                <button
-                  v-for="scale in EXPANSION_SCALES"
-                  :key="scale"
-                  type="button"
-                  class="outpaint-scale-pill"
-                  :class="{ active: expansionScale === scale }"
-                  @click="expansionScale = scale"
+              <div class="outpaint-canvas-stage">
+                <div
+                  class="outpaint-frame"
+                  :class="{ 'outpaint-frame--dragging': dragging }"
+                  :style="{ width: `${layout.frameW}px`, height: `${layout.frameH}px` }"
                 >
-                  {{ scale }}x
-                </button>
+                  <div class="outpaint-checker" aria-hidden="true" />
+                  <div
+                    class="outpaint-image-box"
+                    :style="{
+                      width: `${layout.imgW}px`,
+                      height: `${layout.imgH}px`,
+                      left: `${layout.insetLeft}px`,
+                      top: `${layout.insetTop}px`,
+                    }"
+                  >
+                    <img v-if="imageUrl" :src="imageUrl" alt="" class="outpaint-image" />
+                  </div>
+                  <span
+                    v-for="handle in (['tl', 'tr', 'bl', 'br', 't', 'b', 'l', 'r'] as HandleId[])"
+                    :key="handle"
+                    class="outpaint-handle"
+                    :class="`outpaint-handle--${handle}`"
+                    :style="{ cursor: handleCursor(handle) }"
+                    @pointerdown="onHandlePointerDown($event, handle)"
+                  />
+                </div>
+              </div>
+
+              <div class="outpaint-canvas-foot">
+                <div class="outpaint-scale-pills" role="tablist" aria-label="扩图倍数">
+                  <button
+                    v-for="scale in EXPANSION_SCALES"
+                    :key="scale"
+                    type="button"
+                    class="outpaint-scale-pill"
+                    :class="{ active: !isManualFrame && expansionScale === scale }"
+                    @click="setExpansionScale(scale)"
+                  >
+                    {{ scale }}x
+                  </button>
+                </div>
               </div>
             </div>
           </div>
@@ -173,8 +328,8 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
               :key="preset.id"
               type="button"
               class="outpaint-ratio-btn"
-              :class="{ active: ratioPreset === preset.id }"
-              @click="ratioPreset = preset.id"
+              :class="{ active: !isManualFrame && ratioPreset === preset.id }"
+              @click="setRatioPreset(preset.id)"
             >
               <span
                 class="outpaint-ratio-icon"
@@ -205,8 +360,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
               :disabled="submitting || !imageUrl"
               @click="onSubmit"
             >
-              <Sparkles :size="14" />
-              <span>{{ cost }}</span>
+              生成
             </button>
           </footer>
         </div>
@@ -227,7 +381,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
   @include cosmic.cosmic-modal-panel-wide(920px);
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 16px;
   padding: 18px 18px 16px;
   width: min(920px, calc(100vw - 48px));
 }
@@ -269,37 +423,72 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
 .outpaint-canvas {
   position: relative;
   display: flex;
-  align-items: center;
-  justify-content: center;
+  flex-direction: column;
+  gap: 12px;
   min-height: min(52vh, 420px);
-  padding: 28px 20px 52px;
+  padding: 16px 20px 18px;
   border-radius: var(--glass-radius-sm, 14px);
   background: rgba(0, 0, 0, 0.32);
   border: 1px solid $border-light;
+  box-sizing: border-box;
+
+  &--large-scale {
+    gap: 14px;
+    padding: 18px 24px 20px;
+  }
+}
+
+.outpaint-canvas-top {
+  flex-shrink: 0;
+  min-height: 28px;
+  display: flex;
+  align-items: center;
+}
+
+.outpaint-canvas-stage {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 0;
+  padding: 8px 4px;
+  overflow: hidden;
+}
+
+.outpaint-canvas-foot {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 40px;
+  padding-top: 2px;
 }
 
 .outpaint-scale-badge {
-  position: absolute;
-  top: 14px;
-  left: 14px;
-  z-index: 2;
-  padding: 4px 8px;
-  border-radius: 6px;
+  display: inline-flex;
+  align-items: center;
+  padding: 5px 10px;
+  border-radius: 8px;
   font-size: 12px;
   font-weight: 600;
   font-variant-numeric: tabular-nums;
-  color: rgba(255, 255, 255, 0.88);
-  background: rgba(0, 0, 0, 0.45);
-  backdrop-filter: blur(8px);
+  color: $text-primary;
+  background: color-mix(in srgb, var(--bg-elevated) 92%, transparent);
+  border: 1px solid color-mix(in srgb, $border-light 85%, transparent);
+  backdrop-filter: blur(var(--glass-blur, 24px));
 }
 
 .outpaint-frame {
   position: relative;
-  display: flex;
-  align-items: center;
-  justify-content: center;
   border: 1.5px solid rgba(255, 255, 255, 0.82);
   box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.25);
+  user-select: none;
+
+  &--dragging {
+    .outpaint-handle {
+      opacity: 1;
+    }
+  }
 }
 
 .outpaint-checker {
@@ -320,7 +509,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
 }
 
 .outpaint-image-box {
-  position: relative;
+  position: absolute;
   z-index: 1;
   overflow: hidden;
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.35);
@@ -339,7 +528,13 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
   background: #fff;
   border: 1px solid rgba(0, 0, 0, 0.2);
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.2);
-  pointer-events: none;
+  touch-action: none;
+
+  &::after {
+    content: '';
+    position: absolute;
+    inset: -8px;
+  }
 
   &--tl,
   &--tr,
@@ -403,47 +598,58 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
   &--r {
     right: -3px;
   }
+
+  &:hover {
+    background: #fff;
+    box-shadow: 0 0 0 2px rgba(124, 95, 232, 0.45);
+  }
 }
 
 .outpaint-scale-pills {
-  position: absolute;
-  left: 50%;
-  bottom: 14px;
-  transform: translateX(-50%);
   display: inline-flex;
-  gap: 2px;
-  padding: 3px;
+  gap: 4px;
+  padding: 4px;
   border-radius: 999px;
-  background: rgba(0, 0, 0, 0.55);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  backdrop-filter: blur(10px);
+  background: color-mix(in srgb, var(--bg-elevated) 92%, transparent);
+  border: 1px solid color-mix(in srgb, $border-light 85%, transparent);
+  backdrop-filter: blur(var(--glass-blur, 24px)) saturate(var(--glass-saturate, 1.35));
+  -webkit-backdrop-filter: blur(var(--glass-blur, 24px)) saturate(var(--glass-saturate, 1.35));
+  box-shadow: var(--glass-inset-highlight, inset 1px 1px 0 rgba(255, 255, 255, 0.15));
 }
 
 .outpaint-scale-pill {
-  min-width: 44px;
-  padding: 6px 10px;
+  min-width: 48px;
+  padding: 7px 12px;
   border-radius: 999px;
   font-size: 12px;
   font-weight: 600;
   font-variant-numeric: tabular-nums;
-  color: rgba(255, 255, 255, 0.72);
-  transition: background 0.15s, color 0.15s;
+  color: $text-muted;
+  border: 1px solid transparent;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+  outline: none;
 
   &:hover {
-    color: #fff;
+    color: $text-secondary;
   }
 
   &.active {
-    color: $text-primary;
-    background: var(--bg-card);
-    box-shadow: $shadow-sm;
+    color: $accent-emphasis;
+    background: var(--composer-option-hover, $accent-light);
+    border-color: color-mix(in srgb, $accent 35%, $border-light);
+    box-shadow: none;
+  }
+
+  &:focus-visible {
+    box-shadow: var(--shadow-focus, 0 0 0 1px rgba(124, 95, 232, 0.28));
   }
 }
 
 .outpaint-ratio-row {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: 10px;
+  margin-top: 2px;
 }
 
 .outpaint-ratio-btn {
@@ -467,9 +673,9 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
   }
 
   &.active {
-    color: $accent-cyan;
-    background: color-mix(in srgb, $accent-cyan 10%, transparent);
-    border-color: color-mix(in srgb, $accent-cyan 35%, transparent);
+    color: $accent-emphasis;
+    background: var(--composer-option-hover, $accent-light);
+    border-color: color-mix(in srgb, $accent 35%, $border-light);
   }
 }
 
@@ -514,7 +720,8 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
   font-size: 14px;
   line-height: 1.55;
   color: $text-primary;
-  background: var(--bg-elevated);
+  @include cosmic.cosmic-glass-frost(12px);
+  background: var(--composer-bg, var(--glass-fill-gradient));
   border: 1px solid $border-light;
   outline: none;
   box-sizing: border-box;
@@ -537,17 +744,15 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
 .outpaint-submit {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  justify-content: center;
   height: 36px;
-  padding: 0 14px;
+  padding: 0 18px;
   border-radius: 999px;
   font-size: 13px;
   font-weight: 600;
-  font-variant-numeric: tabular-nums;
-  color: $text-primary;
-  background: var(--bg-card);
-  border: 1px solid $border-light;
-  box-shadow: $shadow-sm;
+  color: $btn-primary-text;
+  background: var(--btn-primary-gradient, $accent);
+  box-shadow: var(--btn-primary-shadow, $shadow-sm);
   transition: filter 0.15s, transform 0.15s;
 
   &:hover:not(:disabled) {
@@ -558,10 +763,6 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
   &:disabled {
     opacity: 0.45;
     cursor: not-allowed;
-  }
-
-  svg {
-    color: $accent-cyan;
   }
 }
 

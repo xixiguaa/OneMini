@@ -64,13 +64,11 @@ export const VOICE_FILTERS: Record<VoiceFilterKey, { label: string; options: Voi
 
 export const VOICE_EMOTIONS = [
   '中性',
-  '吆喝',
   '愤怒',
-  '舒缓',
+  '冷漠',
   '开心',
   '憎恨',
   '悲伤',
-  '惊讶',
 ] as const
 
 export type VoiceEmotion = (typeof VOICE_EMOTIONS)[number]

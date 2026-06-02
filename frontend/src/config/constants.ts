@@ -1,5 +1,15 @@
-export const ACCEPT_CHAT_FILES =
-  'image/*,.pdf,.doc,.docx,.xlsx,.xlsm,.xls,.txt,.md,.markdown,.html,.htm,.json,.csv'
+export const ACCEPT_CREATE_IMAGE = 'image/*'
+
+export const ACCEPT_CREATE_VIDEO = 'image/*,video/*'
+
+export const ACCEPT_CREATE_DIGITAL_HUMAN = 'image/*,video/*'
+
+/** Agent：图片、视频、文档等；不含表格 xlsx/xls/xlsm */
+export const ACCEPT_CREATE_AGENT =
+  'image/*,video/*,.pdf,.doc,.docx,.txt,.md,.markdown,.html,.htm,.json,.csv'
+
+/** @deprecated 使用 acceptFilesForCreateMode */
+export const ACCEPT_CHAT_FILES = ACCEPT_CREATE_AGENT
 
 export const ASPECT_RATIOS = [
   { id: 'smart', label: '智能' },

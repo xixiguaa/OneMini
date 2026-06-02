@@ -12,7 +12,7 @@ import {
   X,
 } from 'lucide-vue-next'
 import { computed, nextTick, onMounted, onUnmounted, provide, reactive, ref, watch, type VNodeRef } from 'vue'
-import { ACCEPT_CHAT_FILES } from '../config/constants'
+import { acceptFilesForCreateMode } from '../utils/files'
 import { useAnchoredPopover } from '../composables/useAnchoredPopover'
 import {
   composerSubmenuOpenKey,
@@ -188,6 +188,8 @@ const canSend = computed(
 )
 
 const isBusy = computed(() => agent.isCreateProcessing || props.busy)
+
+const fileAccept = computed(() => acceptFilesForCreateMode(agent.createMode))
 
 function shouldKeepExpanded() {
   if (composerMenuActive.value || suspendAutoCollapse.value) return true
@@ -594,7 +596,7 @@ defineExpose({
     <input
       ref="fileInput"
       type="file"
-      :accept="ACCEPT_CHAT_FILES"
+      :accept="fileAccept"
       multiple
       hidden
       @change="onFiles"

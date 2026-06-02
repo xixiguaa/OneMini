@@ -48,7 +48,6 @@ import PublishWorkDialog from './PublishWorkDialog.vue'
 import SmartHdDialog from './SmartHdDialog.vue'
 import { downloadMediaUrl } from '../utils/downloadMedia'
 import { formatGenerationTime } from '../utils/formatGenerationTime'
-import { isSystemEditPrompt } from '../utils/imageEditHistory'
 import { resolveCreateHistoryImageUrl } from '../utils/createHistoryMedia'
 
 const agent = useAgentStore()
@@ -67,8 +66,12 @@ const editCompletedFlashId = ref<string | null>(null)
 let prevEditRunningIds = new Set<string>()
 const EDIT_STAGE_BOTTOM_THRESHOLD = 48
 const showScrollToBottom = ref(false)
-const showFloatingEditComposer = computed(() => showScrollToBottom.value && !isLipsyncMode.value)
-const showFloatingLipsyncComposer = computed(() => showScrollToBottom.value && isLipsyncMode.value)
+const showFloatingEditComposer = computed(
+  () => showScrollToBottom.value && !isDigitalHumanComposer.value,
+)
+const showFloatingLipsyncComposer = computed(
+  () => showScrollToBottom.value && isDigitalHumanComposer.value,
+)
 const smartHdOpen = ref(false)
 const outpaintOpen = ref(false)
 const deleteMode = ref<'session' | 'version' | 'blocked' | null>(null)
@@ -92,7 +95,7 @@ const {
 
 const isVideoEdit = computed(() => agent.imageEditActive?.type === 'video')
 const isVideoComposeMode = computed(() => agent.imageEditComposeMode === 'video')
-const isLipsyncMode = computed(() => agent.imageEditComposeMode === 'lipsync')
+const isDigitalHumanComposer = computed(() => agent.createMode === 'digitalHuman')
 
 const editMediaType = computed(() => (isVideoEdit.value ? 'video' : 'image') as 'image' | 'video')
 
@@ -147,7 +150,7 @@ function focusEditComposer() {
 
 function onEditStageScroll(e: Event) {
   updateScrollToBottomVisibility(e.target as HTMLElement)
-  if (isLipsyncMode.value) {
+  if (isDigitalHumanComposer.value) {
     if (editFloatingLipsyncRef.value?.shouldKeepExpandedOnScroll?.()) return
     editFloatingLipsyncRef.value?.collapseComposer?.()
     return
@@ -156,16 +159,43 @@ function onEditStageScroll(e: Event) {
 }
 
 watch(showScrollToBottom, (scrolledUp) => {
-  if (scrolledUp && !isLipsyncMode.value) {
+  if (scrolledUp && !isDigitalHumanComposer.value) {
     void nextTick(() => editFloatingComposerRef.value?.collapseComposer?.())
   }
 })
 
 watch(
-  isLipsyncMode,
-  (lipsync, wasLipsync) => {
-    if (wasLipsync && !lipsync && agent.imageEditOpen) {
+  isDigitalHumanComposer,
+  (digitalHuman, wasDigitalHuman) => {
+    if (wasDigitalHuman && !digitalHuman && agent.imageEditOpen) {
       void nextTick(() => scrollEditStageToBottom())
+    }
+  },
+)
+
+watch(
+  () => agent.createMode,
+  async (mode, prev) => {
+    if (!agent.imageEditOpen) return
+    if (mode === 'digitalHuman') {
+      if (agent.imageEditComposeMode === 'lipsync') return
+      const url = displayUrl.value
+      if (!url) {
+        toast.showError('当前素材不可用')
+        agent.createMode = prev ?? (isVideoEdit.value ? 'video' : 'image')
+        return
+      }
+      if (isVideoComposeMode.value) agent.cancelVideoComposeFromImageEdit()
+      try {
+        await agent.startLipsyncFromImageEdit(url, activePrompt.value)
+      } catch (err) {
+        toast.showError(formatUserError(err, '素材加载失败'))
+        agent.createMode = isVideoEdit.value ? 'video' : 'image'
+      }
+      return
+    }
+    if (prev === 'digitalHuman' && agent.imageEditComposeMode === 'lipsync') {
+      agent.cancelLipsyncFromImageEdit()
     }
   },
 )
@@ -373,7 +403,7 @@ function soonFeature(label?: string) {
 async function startDetailRepair() {
   smartHdOpen.value = false
   outpaintOpen.value = false
-  if (isLipsyncMode.value) agent.cancelLipsyncFromImageEdit()
+  if (isDigitalHumanComposer.value) agent.cancelLipsyncFromImageEdit()
   if (isVideoComposeMode.value) agent.cancelVideoComposeFromImageEdit()
   if (isLoading.value) {
     toast.show({ message: '正在生成中，请稍候', kind: 'info' })
@@ -411,29 +441,15 @@ function onSideToolClick(tool: SideTool) {
   if (tool.id === 'lipsync') {
     smartHdOpen.value = false
     outpaintOpen.value = false
-    if (isLipsyncMode.value) {
-      agent.cancelLipsyncFromImageEdit()
+    if (isDigitalHumanComposer.value) {
+      agent.createMode = isVideoEdit.value ? 'video' : 'image'
       return
     }
     if (isVideoComposeMode.value) agent.cancelVideoComposeFromImageEdit()
-    void startLipsync()
+    agent.createMode = 'digitalHuman'
     return
   }
   soonFeature(tool.label)
-}
-
-async function startLipsync() {
-  const url = displayUrl.value
-  if (!url) {
-    toast.showError('当前素材不可用')
-    return
-  }
-  try {
-    await agent.startLipsyncFromImageEdit(url, activePrompt.value)
-    toast.showSuccess('已切换为对口型创作')
-  } catch (err) {
-    toast.showError(formatUserError(err, '素材加载失败'))
-  }
 }
 
 function sendLipsyncFromOverlay() {
@@ -489,7 +505,7 @@ function sendVideoFromOverlay() {
 }
 
 const editComposerPlaceholder = computed(() => {
-  if (isLipsyncMode.value || isVideoComposeMode.value) return undefined
+  if (isDigitalHumanComposer.value || isVideoComposeMode.value) return undefined
   return isVideoEdit.value
     ? '描述新的短片画面、镜头与运镜…'
     : '描述编辑'
@@ -504,7 +520,7 @@ const referenceGeneratedAt = computed(() => {
 })
 
 function sendFromEditComposer() {
-  if (isLipsyncMode.value) {
+  if (isDigitalHumanComposer.value) {
     sendLipsyncFromOverlay()
     return
   }
@@ -540,7 +556,7 @@ async function onHistoryRegenerate(versionId: string) {
 }
 
 function onUseHistoryPrompt(prompt: string) {
-  if (!prompt || isSystemEditPrompt(prompt)) return
+  if (!prompt) return
   agent.inputText = prompt
   focusEditComposer()
   toast.showSuccess('已填入提示词')
@@ -579,11 +595,11 @@ const editCompletedFlashItem = computed(() => {
 })
 
 const showCompletedGenStatus = computed(
-  () => !!editCompletedFlashItem.value && showScrollToBottom.value && !isLipsyncMode.value,
+  () => !!editCompletedFlashItem.value && showScrollToBottom.value && !isDigitalHumanComposer.value,
 )
 
 const showGeneratingGenStatus = computed(
-  () => scrollBottomGenerating.value && !isLipsyncMode.value,
+  () => scrollBottomGenerating.value && !isDigitalHumanComposer.value,
 )
 
 const showGenStatusBar = computed(
@@ -872,7 +888,7 @@ function onDeleteCancel() {
                   :versions="agent.imageEditVersions"
                   :active-id="agent.imageEditActive?.id ?? null"
                   :is-video="isVideoEdit"
-                  :digital-human-mode="isLipsyncMode"
+                  :digital-human-mode="isDigitalHumanComposer"
                   :digital-human-mode-id="agent.lipsyncDigitalMode"
                   :image-resolution="settings.settings.generationPrefs.imageResolution"
                   :video-resolution="settings.settings.generationPrefs.videoResolution"
@@ -933,7 +949,9 @@ function onDeleteCancel() {
                     <CreateGenerationPill @view="(id) => agent.locateCreateGallerySession(id)" />
                   </div>
                   <LipSyncComposerCard
-                    v-if="isLipsyncMode"
+                    v-if="isDigitalHumanComposer"
+                    embedded
+                    popover-placement="above"
                     :image-url="displayUrl"
                     :busy="isLoading"
                     @send="sendLipsyncFromOverlay"
@@ -957,7 +975,7 @@ function onDeleteCancel() {
             class="edit-floating-composer"
             :class="{
               visible: showFloatingEditComposer || showFloatingLipsyncComposer,
-              'edit-floating-composer--lipsync': isLipsyncMode,
+              'edit-floating-composer--lipsync': isDigitalHumanComposer,
             }"
           >
             <button
@@ -1016,6 +1034,8 @@ function onDeleteCancel() {
               <LipSyncComposerCard
                 ref="editFloatingLipsyncRef"
                 collapsible
+                embedded
+                popover-placement="above"
                 :image-url="displayUrl"
                 :busy="isLoading"
                 @send="sendLipsyncFromOverlay"
@@ -1127,7 +1147,7 @@ function onDeleteCancel() {
                     active:
                       (tool.id === 'smart-hd' && smartHdOpen) ||
                       (tool.id === 'outpaint' && outpaintOpen) ||
-                      (tool.id === 'lipsync' && isLipsyncMode),
+                      (tool.id === 'lipsync' && isDigitalHumanComposer),
                   }"
                   @click="onSideToolClick(tool)"
                 >
@@ -1991,9 +2011,9 @@ $floating-ease-expand: cubic-bezier(0.22, 1, 0.36, 1);
   }
 
   &.active {
-    color: $accent-cyan;
-    background: color-mix(in srgb, $accent-cyan 12%, transparent);
-    border: 1px solid color-mix(in srgb, $accent-cyan 28%, transparent);
+    color: $accent-emphasis;
+    background: var(--composer-option-hover, $accent-light);
+    border: 1px solid color-mix(in srgb, $accent 35%, $border-light);
   }
 
   &--wide {
@@ -2014,8 +2034,8 @@ $floating-ease-expand: cubic-bezier(0.22, 1, 0.36, 1);
   font-weight: 700;
   padding: 1px 4px;
   border-radius: 3px;
-  background: color-mix(in srgb, $accent-cyan 18%, transparent);
-  color: $accent-cyan;
+  background: color-mix(in srgb, $accent 18%, transparent);
+  color: $accent-emphasis;
 }
 
 .side-publish-hint {
@@ -2100,8 +2120,8 @@ $floating-ease-expand: cubic-bezier(0.22, 1, 0.36, 1);
 
 .thumb-delete {
   position: absolute;
-  top: 0;
-  right: 0;
+  top: -2px;
+  right: -2px;
   z-index: 3;
   width: 20px;
   height: 20px;

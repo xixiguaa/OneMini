@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ArrowUp, ChevronDown, Loader2, Plus } from 'lucide-vue-next'
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
-import { ACCEPT_CHAT_FILES } from '../config/constants'
+import { ACCEPT_CREATE_AGENT } from '../config/constants'
 import ChatAttachmentCard from './ChatAttachmentCard.vue'
 import ChatKnowledgeModeToggle from './ChatKnowledgeModeToggle.vue'
 import ModelLogo from './ModelLogo.vue'
@@ -186,7 +186,7 @@ onUnmounted(() => {
         <input
           ref="fileInput"
           type="file"
-          :accept="ACCEPT_CHAT_FILES"
+          :accept="ACCEPT_CREATE_AGENT"
           multiple
           hidden
           @change="onFiles"

@@ -17,7 +17,10 @@ const emit = defineEmits<{
     class="attach-card"
     :class="{
       loading: attachment.loading,
-      'attach-card--image': !attachment.loading && attachment.kind === 'image' && attachment.previewUrl,
+      'attach-card--image':
+        !attachment.loading &&
+        attachment.previewUrl &&
+        (attachment.kind === 'image' || attachment.kind === 'video'),
     }"
   >
     <button
@@ -30,7 +33,7 @@ const emit = defineEmits<{
       <X :size="12" />
     </button>
 
-    <p v-if="!attachment.previewUrl || attachment.kind !== 'image'" class="attach-name">
+    <p v-if="!attachment.previewUrl || (attachment.kind !== 'image' && attachment.kind !== 'video')" class="attach-name">
       {{ attachment.name }}
     </p>
 
@@ -44,6 +47,9 @@ const emit = defineEmits<{
       </template>
       <template v-else-if="attachment.previewUrl && attachment.kind === 'image'">
         <img :src="attachment.previewUrl" :alt="attachment.name" class="attach-img" />
+      </template>
+      <template v-else-if="attachment.previewUrl && attachment.kind === 'video'">
+        <video :src="attachment.previewUrl" class="attach-img attach-video" muted playsinline />
       </template>
       <template v-else>
         <FileText :size="26" class="attach-doc-icon" aria-hidden="true" />

@@ -11,6 +11,7 @@ import {
   Sparkles,
   Upload,
   Video,
+  X,
 } from 'lucide-vue-next'
 import { computed, nextTick, onMounted, onUnmounted, ref, watch, type VNodeRef } from 'vue'
 import {
@@ -20,7 +21,8 @@ import {
   type DigitalHumanMode,
 } from '../config/digitalHumanModes'
 import type { VoiceItem } from '../config/voicePicker'
-import { useAnchoredPopover } from '../composables/useAnchoredPopover'
+import { acceptFilesForCreateMode } from '../utils/files'
+import { useAnchoredPopover, type PopoverPlacement } from '../composables/useAnchoredPopover'
 import { useAgentStore } from '../stores/agent'
 import { useSettingsStore } from '../stores/settings'
 import { useToastStore } from '../stores/toast'
@@ -35,16 +37,22 @@ const props = withDefaults(
     busy?: boolean
     /** 创作页：参考图栈 + 创作类型菜单 */
     embedded?: boolean
+    /** 编辑页等场景：沿用 embedded 布局，但不展示创作类型切换 */
+    hideCreateModeMenu?: boolean
     /** 浮动输入条：点击/聚焦后展开完整输入区 */
     collapsible?: boolean
     autoCollapseOnBlur?: boolean
+    /** 顶部输入区默认向下；底部浮动/编辑页输入条固定向上 */
+    popoverPlacement?: Exclude<PopoverPlacement, 'auto'>
   }>(),
   {
     imageUrl: '',
     busy: false,
     embedded: false,
+    hideCreateModeMenu: false,
     collapsible: false,
     autoCollapseOnBlur: true,
+    popoverPlacement: 'below',
   },
 )
 
@@ -61,11 +69,26 @@ const imageInput = ref<HTMLInputElement | null>(null)
 const composerAnchor = ref<HTMLElement | null>(null)
 const voicePickerOpen = ref(false)
 const digitalMenuOpen = ref(false)
-const modeMenuOpen = ref(false)
 const expanded = ref(false)
 const collapsedInputRef = ref<HTMLInputElement | null>(null)
 const suspendAutoCollapse = ref(false)
 let collapseTimer: ReturnType<typeof setTimeout> | null = null
+
+const createModePopover = useAnchoredPopover({
+  minWidth: 220,
+  fitContent: true,
+  placement: props.popoverPlacement,
+})
+const createModeMenuOpen = createModePopover.open
+const createModePanelStyle = computed(() => createModePopover.panelStyle.value)
+
+const digitalModePopover = useAnchoredPopover({
+  minWidth: 320,
+  fitContent: true,
+  placement: props.popoverPlacement,
+})
+const modeMenuOpen = digitalModePopover.open
+const digitalModePanelStyle = computed(() => digitalModePopover.panelStyle.value)
 
 const composerMenuActive = computed(
   () =>
@@ -75,16 +98,20 @@ const composerMenuActive = computed(
     voicePickerOpen.value,
 )
 
-const createModePopover = useAnchoredPopover({ minWidth: 220, fitContent: true, placement: 'below' })
-const createModeMenuOpen = createModePopover.open
-const createModePanelStyle = computed(() => createModePopover.panelStyle.value)
-
 const bindCreateModeTrigger: VNodeRef = (el) => {
   createModePopover.triggerRef.value = el as HTMLElement | null
 }
 
 const bindCreateModePanel: VNodeRef = (el) => {
   createModePopover.panelRef.value = el as HTMLElement | null
+}
+
+const bindDigitalModeTrigger: VNodeRef = (el) => {
+  digitalModePopover.triggerRef.value = el as HTMLElement | null
+}
+
+const bindDigitalModePanel: VNodeRef = (el) => {
+  digitalModePopover.panelRef.value = el as HTMLElement | null
 }
 
 const modes = [
@@ -104,8 +131,25 @@ const imageAttachments = computed(() =>
   agent.pendingAttachments.filter((a) => a.kind === 'image'),
 )
 
+const videoAttachments = computed(() =>
+  agent.pendingAttachments.filter((a) => a.kind === 'video'),
+)
+
+const mediaAttachments = computed(() =>
+  agent.pendingAttachments.filter((a) => a.kind === 'image' || a.kind === 'video'),
+)
+
+const fileAccept = computed(() => acceptFilesForCreateMode('digitalHuman'))
+
 const displayImageUrl = computed(
-  () => props.imageUrl || imageAttachments.value.find((a) => a.previewUrl)?.previewUrl || '',
+  () =>
+    props.imageUrl ||
+    imageAttachments.value.find((a) => a.previewUrl)?.previewUrl ||
+    '',
+)
+
+const displayVideoUrl = computed(
+  () => videoAttachments.value.find((a) => a.previewUrl)?.previewUrl || '',
 )
 
 const selectedDigitalMode = computed(() =>
@@ -160,7 +204,7 @@ function closeSubmenus(except?: 'digital' | 'mode' | 'voice') {
     digitalMenuOpen.value = false
     createModePopover.close()
   }
-  if (except !== 'mode') modeMenuOpen.value = false
+  if (except !== 'mode') digitalModePopover.close()
   if (except !== 'voice') voicePickerOpen.value = false
 }
 
@@ -175,15 +219,17 @@ function pickDigitalHuman(label: string) {
   toast.show({ message: `${label} 即将推出`, kind: 'info' })
 }
 
-function toggleModeMenu() {
-  const next = !modeMenuOpen.value
-  closeSubmenus(next ? 'mode' : undefined)
-  modeMenuOpen.value = next
+function toggleModeMenu(e: MouseEvent) {
+  e.stopPropagation()
+  if (!digitalModePopover.open.value) {
+    closeSubmenus('mode')
+  }
+  digitalModePopover.toggle(e)
 }
 
 function pickDigitalMode(id: DigitalHumanMode) {
   agent.lipsyncDigitalMode = id
-  modeMenuOpen.value = false
+  digitalModePopover.close()
 }
 
 function triggerAudioUpload() {
@@ -191,6 +237,7 @@ function triggerAudioUpload() {
 }
 
 function triggerImageUpload() {
+  if (mediaAttachments.value.length >= 1) return
   imageInput.value?.click()
 }
 
@@ -372,6 +419,26 @@ defineExpose({
                   @add="triggerImageUpload"
                   @remove="onRemoveImage"
                 />
+                <div
+                  v-else-if="videoAttachments.length"
+                  class="ref-upload-card ref-upload-card--filled ref-upload-card--video"
+                >
+                  <video
+                    v-if="displayVideoUrl"
+                    :src="displayVideoUrl"
+                    class="ref-upload-card__video"
+                    muted
+                    playsinline
+                  />
+                  <button
+                    type="button"
+                    class="ref-upload-card__remove"
+                    title="移除"
+                    @click.stop="onRemoveImage(videoAttachments[0]!.id)"
+                  >
+                    <X :size="10" stroke-width="2.5" />
+                  </button>
+                </div>
                 <button
                   v-else
                   type="button"
@@ -408,6 +475,7 @@ defineExpose({
       <VoicePickerPopover
         v-model:open="voicePickerOpen"
         :anchor="composerAnchor"
+        :placement="popoverPlacement"
         @select="onVoiceSelect"
       />
 
@@ -481,43 +549,52 @@ defineExpose({
       <div class="lipsync-footer-left">
         <div class="lipsync-pill-wrap">
           <template v-if="embedded">
-            <button
-              :ref="bindCreateModeTrigger"
-              type="button"
-              class="composer-pill create-composer-trigger mode-pill"
-              :class="{ active: createModeMenuOpen }"
-              @click="toggleCreateModeMenu"
+            <span
+              v-if="hideCreateModeMenu"
+              class="composer-pill mode-pill mode-pill--static"
             >
-              <component :is="currentCreateMode?.icon ?? ScanFace" :size="14" />
-              {{ currentCreateMode?.label ?? '数字人' }}
-              <ChevronDown :size="12" class="chevron" :class="{ open: createModeMenuOpen }" />
-            </button>
-            <Teleport to="body">
-              <div
-                v-if="createModeMenuOpen"
-                :ref="bindCreateModePanel"
-                class="composer-popover create-composer-popover mode-menu lipsync-create-mode-popover"
-                :style="createModePanelStyle"
-                @click.stop
+              <ScanFace :size="14" />
+              数字人
+            </span>
+            <template v-else>
+              <button
+                :ref="bindCreateModeTrigger"
+                type="button"
+                class="composer-pill create-composer-trigger mode-pill"
+                :class="{ active: createModeMenuOpen }"
+                @click="toggleCreateModeMenu"
               >
-                <p class="menu-kicker">创作类型</p>
-                <button
-                  v-for="m in modes"
-                  :key="m.id"
-                  type="button"
-                  class="mode-item"
-                  :class="{ active: agent.createMode === m.id }"
-                  @click="pickCreateMode(m.id)"
+                <component :is="currentCreateMode?.icon ?? ScanFace" :size="14" />
+                {{ currentCreateMode?.label ?? '数字人' }}
+                <ChevronDown :size="12" class="chevron" :class="{ open: createModeMenuOpen }" />
+              </button>
+              <Teleport to="body">
+                <div
+                  v-if="createModeMenuOpen"
+                  :ref="bindCreateModePanel"
+                  class="composer-popover create-composer-popover mode-menu lipsync-create-mode-popover"
+                  :style="createModePanelStyle"
+                  @click.stop
                 >
-                  <component :is="m.icon" :size="16" />
-                  <span class="mode-text">
-                    <span class="mode-label">{{ m.label }}</span>
-                    <span class="mode-desc">{{ m.desc }}</span>
-                  </span>
-                  <Check v-if="agent.createMode === m.id" :size="16" class="mode-check" />
-                </button>
-              </div>
-            </Teleport>
+                  <p class="menu-kicker">创作类型</p>
+                  <button
+                    v-for="m in modes"
+                    :key="m.id"
+                    type="button"
+                    class="mode-item"
+                    :class="{ active: agent.createMode === m.id }"
+                    @click="pickCreateMode(m.id)"
+                  >
+                    <component :is="m.icon" :size="16" />
+                    <span class="mode-text">
+                      <span class="mode-label">{{ m.label }}</span>
+                      <span class="mode-desc">{{ m.desc }}</span>
+                    </span>
+                    <Check v-if="agent.createMode === m.id" :size="16" class="mode-check" />
+                  </button>
+                </div>
+              </Teleport>
+            </template>
           </template>
           <template v-else>
             <button
@@ -530,7 +607,12 @@ defineExpose({
               <span>数字人</span>
               <ChevronDown :size="12" class="lipsync-chevron" :class="{ open: digitalMenuOpen }" />
             </button>
-            <div v-if="digitalMenuOpen" class="lipsync-digital-menu" @click.stop>
+            <div
+              v-if="digitalMenuOpen"
+              class="lipsync-digital-menu"
+              :class="`lipsync-digital-menu--${popoverPlacement}`"
+              @click.stop
+            >
               <button type="button" @click="pickDigitalHuman('默认数字人')">默认数字人</button>
               <button type="button" @click="pickDigitalHuman('写实数字人')">写实数字人</button>
             </div>
@@ -538,6 +620,7 @@ defineExpose({
         </div>
         <div class="lipsync-pill-wrap">
           <button
+            :ref="bindDigitalModeTrigger"
             type="button"
             class="lipsync-pill lipsync-mode-trigger"
             :class="{ active: modeMenuOpen }"
@@ -547,34 +630,42 @@ defineExpose({
             <span>{{ digitalHumanModeLabel(agent.lipsyncDigitalMode) }}</span>
             <ChevronDown :size="12" class="lipsync-chevron" :class="{ open: modeMenuOpen }" />
           </button>
-          <div v-if="modeMenuOpen" class="lipsync-mode-menu" @click.stop>
-            <p class="lipsync-mode-menu__title">{{ modeMenuTitle }}</p>
-            <button
-              v-for="mode in DIGITAL_HUMAN_MODES"
-              :key="mode.id"
-              type="button"
-              class="lipsync-mode-option"
-              :class="{ active: agent.lipsyncDigitalMode === mode.id }"
-              @click="pickDigitalMode(mode.id)"
+          <Teleport to="body">
+            <div
+              v-if="modeMenuOpen"
+              :ref="bindDigitalModePanel"
+              class="lipsync-mode-menu create-composer-popover"
+              :style="digitalModePanelStyle"
+              @click.stop
             >
-              <span class="lipsync-mode-option__thumb">
-                <img v-if="imageUrl" :src="imageUrl" alt="" />
-                <span v-else class="lipsync-mode-option__thumb-fallback" />
-              </span>
-              <span class="lipsync-mode-option__text">
-                <span class="lipsync-mode-option__label">
-                  {{ mode.label }}
-                  <Sparkles v-if="mode.premium" :size="12" class="lipsync-mode-option__sparkle" />
+              <p class="lipsync-mode-menu__title">{{ modeMenuTitle }}</p>
+              <button
+                v-for="mode in DIGITAL_HUMAN_MODES"
+                :key="mode.id"
+                type="button"
+                class="lipsync-mode-option"
+                :class="{ active: agent.lipsyncDigitalMode === mode.id }"
+                @click="pickDigitalMode(mode.id)"
+              >
+                <span class="lipsync-mode-option__thumb">
+                  <img v-if="displayImageUrl" :src="displayImageUrl" alt="" />
+                  <span v-else class="lipsync-mode-option__thumb-fallback" />
                 </span>
-                <span class="lipsync-mode-option__desc">{{ mode.desc }}</span>
-              </span>
-              <Check
-                v-if="agent.lipsyncDigitalMode === mode.id"
-                :size="16"
-                class="lipsync-mode-option__check"
-              />
-            </button>
-          </div>
+                <span class="lipsync-mode-option__text">
+                  <span class="lipsync-mode-option__label">
+                    {{ mode.label }}
+                    <Sparkles v-if="mode.premium" :size="12" class="lipsync-mode-option__sparkle" />
+                  </span>
+                  <span class="lipsync-mode-option__desc">{{ mode.desc }}</span>
+                </span>
+                <Check
+                  v-if="agent.lipsyncDigitalMode === mode.id"
+                  :size="16"
+                  class="lipsync-mode-option__check"
+                />
+              </button>
+            </div>
+          </Teleport>
         </div>
         <button type="button" class="lipsync-pill" @click="triggerAudioUpload">
           <Upload :size="14" />
@@ -610,7 +701,7 @@ defineExpose({
       v-if="embedded"
       ref="imageInput"
       type="file"
-      accept="image/*"
+      :accept="fileAccept"
       hidden
       @change="onImageChange"
     />
@@ -735,6 +826,11 @@ $floating-duration-collapse: 0.52s;
       background: var(--composer-pill-hover-bg, $accent-light);
       color: var(--composer-text, $text-primary);
       border-color: color-mix(in srgb, var(--composer-border-focus, $accent) 45%, transparent);
+    }
+
+    &.mode-pill--static {
+      cursor: default;
+      pointer-events: none;
     }
   }
 
@@ -1020,6 +1116,39 @@ $floating-duration-collapse: 0.52s;
     height: 100%;
     color: var(--composer-muted, $text-muted);
   }
+
+  &--video {
+    overflow: visible;
+  }
+
+  &__video {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    border-radius: 4px;
+    background: #000;
+  }
+
+  &__remove {
+    position: absolute;
+    top: -5px;
+    right: -5px;
+    z-index: 2;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    color: #fff;
+    background: rgba(0, 0, 0, 0.52);
+    transition: background 0.15s ease;
+
+    &:hover {
+      background: rgba(220, 53, 69, 0.88);
+    }
+  }
 }
 
 .lipsync-voice-card {
@@ -1248,7 +1377,6 @@ $floating-duration-collapse: 0.52s;
 .lipsync-digital-menu {
   position: absolute;
   left: 0;
-  bottom: calc(100% + 6px);
   z-index: 5;
   min-width: 140px;
   padding: 6px;
@@ -1256,6 +1384,14 @@ $floating-duration-collapse: 0.52s;
   background: var(--composer-menu-bg, var(--bg-card));
   border: 1px solid $border-light;
   box-shadow: var(--glass-float-shadow, $shadow-md);
+
+  &--above {
+    bottom: calc(100% + 6px);
+  }
+
+  &--below {
+    top: calc(100% + 6px);
+  }
 
   button {
     display: block;
@@ -1295,10 +1431,7 @@ $floating-duration-collapse: 0.52s;
 }
 
 .lipsync-mode-menu {
-  position: absolute;
-  left: 0;
-  bottom: calc(100% + 8px);
-  z-index: 6;
+  z-index: 10005;
   width: min(320px, calc(100vw - 32px));
   padding: 12px;
   border-radius: 14px;
