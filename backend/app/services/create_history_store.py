@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+import json
 import re
 import time
 from pathlib import Path
@@ -65,6 +66,46 @@ def read_media_bytes(user_id: str, item_id: str) -> bytes | None:
     return None
 
 
+def _ref_storage_id(parent_id: str, index: int) -> str:
+    return f"{_safe_item_id(parent_id)}-ref-{index}"
+
+
+def _parse_reference_urls(raw: Any) -> list[str]:
+    if raw is None:
+        return []
+    if isinstance(raw, list):
+        return [str(u) for u in raw if u]
+    if isinstance(raw, str):
+        text = raw.strip()
+        if not text:
+            return []
+        try:
+            parsed = json.loads(text)
+            if isinstance(parsed, list):
+                return [str(u) for u in parsed if u]
+        except json.JSONDecodeError:
+            return [text]
+    return []
+
+
+def _cache_reference_urls(user_id: str, item_id: str, urls: list[str] | None) -> list[str]:
+    if not urls:
+        return []
+    served: list[str] = []
+    for i, url in enumerate(urls):
+        if not url:
+            continue
+        ref_id = _ref_storage_id(item_id, i)
+        if url.startswith("/api/platform/create-history/media/"):
+            served.append(url)
+            continue
+        if media_exists(user_id, ref_id) or cache_media_from_url(user_id, ref_id, url):
+            served.append(media_public_url(user_id, ref_id))
+        else:
+            served.append(url)
+    return served
+
+
 def _row_to_dict(row: CreateHistoryItemRow) -> dict[str, Any]:
     user_id = row.user_id
     item_id = row.id
@@ -87,6 +128,7 @@ def _row_to_dict(row: CreateHistoryItemRow) -> dict[str, Any]:
         "parentId": row.parent_id,
         "aspectRatio": row.aspect_ratio,
         "editAction": row.edit_action,
+        "referenceUrls": row.reference_urls_list,
     }
 
 
@@ -112,6 +154,9 @@ def _normalize_item(raw: dict[str, Any]) -> dict[str, Any]:
         "parentId": raw.get("parentId") or raw.get("parent_id"),
         "aspectRatio": raw.get("aspectRatio") or raw.get("aspect_ratio"),
         "editAction": raw.get("editAction") or raw.get("edit_action"),
+        "referenceUrls": _parse_reference_urls(
+            raw.get("referenceUrls") or raw.get("reference_urls")
+        ),
     }
 
 
@@ -171,6 +216,9 @@ def _apply_served_url(user_id: str, record: dict[str, Any]) -> dict[str, Any]:
 def _finalize_item(user_id: str, record: dict[str, Any]) -> dict[str, Any]:
     norm = _normalize_item(record)
     _maybe_cache_item_media(user_id, norm)
+    ref_urls = _cache_reference_urls(user_id, norm["id"], norm.get("referenceUrls"))
+    if ref_urls:
+        norm = {**norm, "referenceUrls": ref_urls}
     return _apply_served_url(user_id, {**record, **norm})
 
 
@@ -182,6 +230,14 @@ def _upsert_row(session, user_id: str, item: dict[str, Any], prev: dict[str, Any
     storage_key = row.storage_key if row else None
     if not storage_key and media_exists(user_id, item["id"]):
         storage_key = _storage_key(user_id, item["id"])
+    if item.get("referenceUrls") is not None:
+        merged_refs = _parse_reference_urls(item.get("referenceUrls"))
+    elif prev.get("referenceUrls") is not None:
+        merged_refs = _parse_reference_urls(prev.get("referenceUrls"))
+    elif row is not None:
+        merged_refs = row.reference_urls_list
+    else:
+        merged_refs = []
     payload = {
         "id": item["id"],
         "user_id": user_id,
@@ -199,6 +255,7 @@ def _upsert_row(session, user_id: str, item: dict[str, Any], prev: dict[str, Any
         "aspect_ratio": item.get("aspectRatio") or prev.get("aspectRatio"),
         "edit_action": item.get("editAction") or prev.get("editAction"),
         "storage_key": storage_key,
+        "reference_urls": json.dumps(merged_refs, ensure_ascii=False) if merged_refs else None,
     }
     if row is None:
         row = CreateHistoryItemRow(**payload)

@@ -1,4 +1,5 @@
 import json
+import re
 from collections.abc import AsyncIterator
 from typing import Any
 
@@ -7,6 +8,45 @@ import httpx
 from app.config import Settings, get_settings
 
 # OpenAI 兼容族服务商默认 Base URL（与 frontend/server/index.js 对齐）
+# DeepSeek 思考模式：https://api-docs.deepseek.com/zh-cn/guides/thinking_mode
+_DEEPSEEK_V4_THINKING_MODEL = re.compile(
+    r"deepseek-v4-(pro|flash)|^deepseek-(chat|reasoner)$",
+    re.I,
+)
+
+
+def deepseek_supports_thinking_param(model: str | None) -> bool:
+    mid = (model or "").strip().lower()
+    if not mid:
+        return False
+    if "reasoner" in mid:
+        return True
+    return bool(_DEEPSEEK_V4_THINKING_MODEL.search(mid))
+
+
+def apply_provider_thinking_options(
+    payload: dict[str, Any],
+    *,
+    provider: str | None,
+    model: str | None,
+    thinking_enabled: bool | None,
+    reasoning_effort: str | None = None,
+) -> None:
+    """仅 DeepSeek OpenAI 兼容接口支持 thinking / reasoning_effort 请求字段。"""
+    if thinking_enabled is None or provider != "deepseek":
+        return
+    if not deepseek_supports_thinking_param(model):
+        return
+    if thinking_enabled:
+        payload["thinking"] = {"type": "enabled"}
+        effort = (reasoning_effort or "high").strip().lower()
+        payload["reasoning_effort"] = effort if effort in ("high", "max") else "high"
+        # 思考模式下 temperature 等参数不生效，见官方文档
+        payload.pop("temperature", None)
+    else:
+        payload["thinking"] = {"type": "disabled"}
+
+
 PROVIDER_BASE_URLS: dict[str, str] = {
     "openai": "https://api.openai.com/v1",
     "deepseek": "https://api.deepseek.com/v1",
@@ -99,6 +139,8 @@ async def chat_completion(
     api_key: str | None = None,
     base_url: str | None = None,
     temperature: float = 0.3,
+    thinking_enabled: bool | None = None,
+    reasoning_effort: str | None = None,
     timeout: float = 120.0,
     response_format: dict[str, str] | None = None,
     settings: Settings | None = None,
@@ -129,6 +171,13 @@ async def chat_completion(
     }
     if response_format:
         payload["response_format"] = response_format
+    apply_provider_thinking_options(
+        payload,
+        provider=provider,
+        model=model,
+        thinking_enabled=thinking_enabled,
+        reasoning_effort=reasoning_effort,
+    )
 
     async with httpx.AsyncClient(timeout=timeout) as client:
         resp = await client.post(
@@ -145,8 +194,12 @@ async def chat_completion(
         choice = data.get("choices") or []
         if not choice:
             raise RuntimeError("模型未返回 choices（可能被限流或请求超时）")
-        content = choice[0].get("message", {}).get("content")
-        return (content or "").strip()
+        msg = choice[0].get("message") or {}
+        reasoning = (msg.get("reasoning_content") or msg.get("reasoning") or "").strip()
+        content = (msg.get("content") or "").strip()
+        if reasoning and content:
+            return content
+        return content or reasoning
 
 
 async def stream_chat_completion(
@@ -157,6 +210,8 @@ async def stream_chat_completion(
     api_key: str | None = None,
     base_url: str | None = None,
     temperature: float = 0.3,
+    thinking_enabled: bool | None = None,
+    reasoning_effort: str | None = None,
     settings: Settings | None = None,
 ) -> AsyncIterator[dict[str, str]]:
     """产出 SSE 事件：type=thinking|content, delta=文本片段"""
@@ -181,12 +236,19 @@ async def stream_chat_completion(
         return
 
     url = resolved_base + "/chat/completions"
-    payload = {
+    payload: dict[str, Any] = {
         "model": model or settings.chat_model,
         "messages": messages,
         "temperature": temperature,
         "stream": True,
     }
+    apply_provider_thinking_options(
+        payload,
+        provider=provider,
+        model=model,
+        thinking_enabled=thinking_enabled,
+        reasoning_effort=reasoning_effort,
+    )
 
     async with httpx.AsyncClient(timeout=120.0) as client:
         async with client.stream(
@@ -216,7 +278,7 @@ async def stream_chat_completion(
                 try:
                     chunk = json.loads(payload_str)
                     delta_obj = chunk["choices"][0].get("delta") or {}
-                    reasoning = delta_obj.get("reasoning_content")
+                    reasoning = delta_obj.get("reasoning_content") or delta_obj.get("reasoning")
                     content = delta_obj.get("content")
                     if reasoning:
                         yield {"type": "thinking", "delta": reasoning}

@@ -122,7 +122,7 @@ onUnmounted(() => {
               :disabled="loading"
               @click="onConfirm"
             >
-              <LoadingIndicator v-if="loading" label="处理中…" variant="button" :size="13" />
+              <LoadingIndicator v-if="loading" label="处理中" variant="button" :size="13" />
               <template v-else>{{ confirmLabel }}</template>
             </button>
           </div>
@@ -245,8 +245,9 @@ onUnmounted(() => {
   border: var(--glass-border-width, 0.5px) solid rgba(255, 255, 255, 0.12);
   box-shadow: var(--btn-primary-shadow, $shadow-glow);
 
-  .om-loading,
-  .om-loading-label {
+  :deep(.om-loading),
+  :deep(.om-loading-label),
+  :deep(.om-loading-spinner) {
     color: inherit;
   }
 
@@ -272,8 +273,9 @@ onUnmounted(() => {
     border-color: $color-danger;
     box-shadow: none;
 
-    .om-loading,
-    .om-loading-label {
+    :deep(.om-loading),
+    :deep(.om-loading-label),
+    :deep(.om-loading-spinner) {
       color: inherit;
     }
 

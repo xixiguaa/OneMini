@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { Lock, Pencil, Share2, X } from 'lucide-vue-next'
+import { Image, Lock, Pencil, Share2, Video, X } from 'lucide-vue-next'
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useGalleryLikes } from '../composables/useGalleryLikes'
 import { usePublicGallery } from '../composables/usePublicGallery'
+import { useUserFollow } from '../composables/useUserFollow'
 import { useAgentStore } from '../stores/agent'
 import { useAuthStore } from '../stores/auth'
 import {
@@ -15,17 +16,43 @@ import { useToastStore } from '../stores/toast'
 import WorksWaterfall from './WorksWaterfall.vue'
 
 type ProfileTab = 'published' | 'liked'
+type PublishedMediaTab = 'image' | 'video'
 
 const BIO_MAX = 200
+
+const publishedMediaTabs = [
+  { id: 'image' as const, label: '图片', icon: Image },
+  { id: 'video' as const, label: '短片', icon: Video },
+]
 
 const agent = useAgentStore()
 const auth = useAuthStore()
 const creatorProfile = useCreatorProfileStore()
 const toast = useToastStore()
 const { likeCount } = useGalleryLikes()
-const { galleryItems: publicItems, hydrate: hydratePublicGallery } = usePublicGallery()
+const { galleryItems: publicItems, hydrate: hydratePublicGallery, hydrated } = usePublicGallery()
+
+const PROFILE_WORKS_MIN_SKELETON_MS = 420
+const worksListLoading = ref(true)
+let worksLoadSeq = 0
+
+function delay(ms: number) {
+  return new Promise<void>((resolve) => {
+    window.setTimeout(resolve, ms)
+  })
+}
+
+async function loadProfileWorks(force = false) {
+  const seq = ++worksLoadSeq
+  worksListLoading.value = true
+  const minWait = delay(PROFILE_WORKS_MIN_SKELETON_MS)
+  await Promise.all([hydratePublicGallery(force || !hydrated.value), minWait])
+  if (seq !== worksLoadSeq) return
+  worksListLoading.value = false
+}
 
 const activeTab = ref<ProfileTab>('published')
+const publishedMediaTab = ref<PublishedMediaTab>('image')
 const bioDialogOpen = ref(false)
 const bioDraft = ref('')
 const bioTextareaRef = ref<HTMLTextAreaElement | null>(null)
@@ -66,15 +93,28 @@ const receivedLikes = computed(() =>
   userPublishedItems.value.reduce((sum, item) => sum + likeCount(item.id), 0),
 )
 
+const {
+  canFollow,
+  isFollowing,
+  followerCount,
+  followingCount,
+  toggling: followToggling,
+  loadStats: loadFollowStats,
+  toggleFollow,
+} = useUserFollow(() => profileTargetId.value || undefined)
+
 const worksOwnerId = computed(() =>
   activeTab.value === 'published' || !isOwnProfile.value ? profileTargetId.value : undefined,
 )
 const worksLikedOnly = computed(() => isOwnProfile.value && activeTab.value === 'liked')
 
+const worksMediaType = computed(() => (worksLikedOnly.value ? 'all' : publishedMediaTab.value))
+
 const worksEmptyHint = computed(() => {
   if (worksLikedOnly.value) return '还没有赞过的作品'
-  if (isOwnProfile.value) return '还没有发布作品，去创作页发布吧'
-  return '还没有发布作品'
+  const mediaLabel = publishedMediaTab.value === 'video' ? '短片' : '图片'
+  if (isOwnProfile.value) return `还没有发布${mediaLabel}，去创作页发布吧`
+  return `还没有发布${mediaLabel}`
 })
 
 function openBioDialog() {
@@ -102,7 +142,16 @@ function onBioKeydown(e: KeyboardEvent) {
 }
 
 function onFollow() {
-  toast.show({ message: '关注功能即将上线', kind: 'info' })
+  if (!canFollow.value || followToggling.value) return
+  void (async () => {
+    try {
+      const wasFollowing = isFollowing.value
+      await toggleFollow()
+      toast.showSuccess(wasFollowing ? '已取消关注' : '关注成功')
+    } catch (err: unknown) {
+      toast.showError(err instanceof Error ? err.message : '操作失败')
+    }
+  })()
 }
 
 async function shareProfile() {
@@ -123,12 +172,22 @@ watch(isOwnProfile, (own) => {
   if (!own) activeTab.value = 'published'
 })
 
+watch(
+  profileTargetId,
+  (id) => {
+    if (id) {
+      void loadFollowStats(true)
+      void loadProfileWorks(true)
+    }
+  },
+  { immediate: true },
+)
+
 watch(bioDialogOpen, (open) => {
   document.body.style.overflow = open ? 'hidden' : ''
 })
 
 onMounted(() => {
-  void hydratePublicGallery(true)
   if (auth.user?.id && isOwnProfile.value) {
     creatorProfile.syncPublicProfile(auth.user.id)
   }
@@ -142,41 +201,63 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="user-profile" :class="{ 'user-profile--visitor': !isOwnProfile }">
+  <div class="user-profile">
     <aside class="user-profile-aside">
       <div class="user-profile-head">
-        <span class="user-profile-avatar" aria-hidden="true">
-          <img v-if="avatar.avatarUrl" :src="avatar.avatarUrl" alt="" />
-          <span v-else class="user-profile-avatar-fallback">{{ avatar.initial }}</span>
-        </span>
-        <div class="user-profile-head-meta">
+        <div class="user-profile-head-top">
+          <span class="user-profile-avatar" aria-hidden="true">
+            <img v-if="avatar.avatarUrl" :src="avatar.avatarUrl" alt="" />
+            <span v-else class="user-profile-avatar-fallback">{{ avatar.initial }}</span>
+          </span>
           <h1 class="user-profile-name">{{ displayName }}</h1>
-          <div class="user-profile-stats">
-            <p class="user-profile-stats-row">
-              <span><strong>0</strong> 粉丝</span>
-              <span class="user-profile-stats-sep" aria-hidden="true">|</span>
-              <span><strong>0</strong> 关注</span>
-            </p>
-            <p v-if="!isOwnProfile" class="user-profile-stats-row">
-              <span><strong>{{ publishedCount }}</strong> 总使用量</span>
-              <span class="user-profile-stats-sep" aria-hidden="true">|</span>
-              <span><strong>{{ receivedLikes }}</strong> 获赞</span>
-            </p>
-          </div>
+        </div>
+        <div class="user-profile-stats">
+          <p class="user-profile-stats-row">
+            <span class="user-profile-stat">
+              <strong>{{ followerCount }}</strong>
+              <span class="user-profile-stat-label">粉丝</span>
+            </span>
+            <span class="user-profile-stats-sep" aria-hidden="true">|</span>
+            <span class="user-profile-stat">
+              <strong>{{ followingCount }}</strong>
+              <span class="user-profile-stat-label">关注</span>
+            </span>
+          </p>
+          <p class="user-profile-stats-row">
+            <span class="user-profile-stat">
+              <strong>{{ publishedCount }}</strong>
+              <span class="user-profile-stat-label">总使用量</span>
+            </span>
+            <span class="user-profile-stats-sep" aria-hidden="true">|</span>
+            <span class="user-profile-stat">
+              <strong>{{ receivedLikes }}</strong>
+              <span class="user-profile-stat-label">获赞</span>
+            </span>
+          </p>
         </div>
       </div>
 
-      <div v-if="!isOwnProfile" class="user-profile-actions">
-        <button type="button" class="user-profile-follow" @click="onFollow">+ 关注</button>
-        <button type="button" class="user-profile-share user-profile-share--inline" @click="shareProfile">
+      <div class="user-profile-actions">
+        <button
+          v-if="canFollow"
+          type="button"
+          class="user-profile-follow"
+          :class="{ 'user-profile-follow--active': isFollowing }"
+          :disabled="followToggling"
+          @click="onFollow"
+        >
+          {{ isFollowing ? '已关注' : '+ 关注' }}
+        </button>
+        <button
+          type="button"
+          class="user-profile-share"
+          :class="{ 'user-profile-share--inline': canFollow }"
+          @click="shareProfile"
+        >
           <Share2 :size="16" />
           分享主页
         </button>
       </div>
-      <button v-else type="button" class="user-profile-share" @click="shareProfile">
-        <Share2 :size="16" />
-        分享主页
-      </button>
 
       <div
         v-if="isOwnProfile"
@@ -193,45 +274,61 @@ onUnmounted(() => {
           <Pencil :size="14" />
         </span>
       </div>
-      <p v-else-if="bioText" class="user-profile-bio-readonly">{{ bioText }}</p>
+      <div v-else-if="bioText" class="user-profile-bio user-profile-bio--readonly">
+        <span class="user-profile-bio-text">{{ bioText }}</span>
+      </div>
     </aside>
 
     <div class="user-profile-main">
-      <nav v-if="isOwnProfile" class="user-profile-tabs" aria-label="主页分类">
+      <nav class="user-profile-tabs" aria-label="主页分类">
         <button
           type="button"
           class="user-profile-tab"
-          :class="{ active: activeTab === 'published' }"
-          @click="activeTab = 'published'"
+          :class="{ active: isOwnProfile ? activeTab === 'published' : true }"
+          @click="isOwnProfile && (activeTab = 'published')"
         >
           已发布
         </button>
-        <button
-          type="button"
-          class="user-profile-tab"
-          :class="{ active: activeTab === 'liked' }"
-          @click="activeTab = 'liked'"
-        >
-          赞过
-          <Lock :size="12" class="user-profile-tab-lock" aria-hidden="true" />
-        </button>
+        <div v-if="isOwnProfile" class="user-profile-tab-wrap">
+          <button
+            type="button"
+            class="user-profile-tab"
+            :class="{ active: activeTab === 'liked' }"
+            @click="activeTab = 'liked'"
+          >
+            赞过
+            <Lock :size="12" class="user-profile-tab-lock" aria-hidden="true" />
+          </button>
+          <span class="user-profile-liked-tip" role="tooltip">你赞过的内容仅对自己可见</span>
+        </div>
       </nav>
-      <div v-else class="user-profile-section-label">已发布</div>
 
-      <p v-if="isOwnProfile && activeTab === 'liked'" class="user-profile-privacy">
-        你赞过的内容仅对自己可见
-      </p>
+      <div v-if="!worksLikedOnly" class="user-profile-subtabs">
+        <div class="user-profile-subtabs-inner">
+          <button
+            v-for="tab in publishedMediaTabs"
+            :key="tab.id"
+            type="button"
+            class="user-profile-subtab"
+            :class="{ active: publishedMediaTab === tab.id }"
+            @click="publishedMediaTab = tab.id"
+          >
+            <component :is="tab.icon" :size="12" />
+            {{ tab.label }}
+          </button>
+        </div>
+      </div>
 
       <div class="user-profile-content">
         <WorksWaterfall
           v-if="profileTargetId"
           source="public"
-          media-type="all"
+          :media-type="worksMediaType"
           :owner-id="worksOwnerId"
           :liked-only="worksLikedOnly"
+          :loading="worksListLoading"
           :empty-hint="worksEmptyHint"
-          end-hint="没有更多了"
-          :compact="!isOwnProfile"
+          end-hint="没有更多啦～"
         />
       </div>
     </div>
@@ -296,11 +393,6 @@ onUnmounted(() => {
   padding: 28px 0 40px 36px;
   overflow: hidden;
   box-sizing: border-box;
-
-  &--visitor {
-    gap: 32px;
-    padding: 24px 0 36px 32px;
-  }
 }
 
 .user-profile-aside {
@@ -309,21 +401,19 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   gap: 16px;
-
-  .user-profile--visitor & {
-    width: 280px;
-    gap: 14px;
-  }
 }
 
 .user-profile-head {
   display: flex;
-  align-items: flex-start;
-  gap: 14px;
+  flex-direction: column;
+  gap: 12px;
+}
 
-  .user-profile--visitor & {
-    gap: 16px;
-  }
+.user-profile-head-top {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-width: 0;
 }
 
 .user-profile-avatar {
@@ -338,11 +428,6 @@ onUnmounted(() => {
   background: $accent-light;
   border: 1px solid $glass-border;
 
-  .user-profile--visitor & {
-    width: 72px;
-    height: 72px;
-  }
-
   img {
     width: 100%;
     height: 100%;
@@ -354,52 +439,56 @@ onUnmounted(() => {
   font-size: 24px;
   font-weight: 700;
   color: $accent-emphasis;
-
-  .user-profile--visitor & {
-    font-size: 28px;
-  }
-}
-
-.user-profile-head-meta {
-  min-width: 0;
-  padding-top: 4px;
 }
 
 .user-profile-name {
-  margin: 0 0 8px;
+  margin: 0;
+  flex: 1;
+  min-width: 0;
   font-size: 18px;
   font-weight: 700;
   color: $text-primary;
+  line-height: 1.3;
   word-break: break-word;
-
-  .user-profile--visitor & {
-    font-size: 20px;
-    margin-bottom: 10px;
-  }
 }
 
 .user-profile-stats {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  margin-top: 18px;
+  gap: 4px;
 }
 
 .user-profile-stats-row {
   margin: 0;
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 8px;
   font-size: 13px;
-  color: $text-muted;
+  line-height: 1.4;
+}
+
+.user-profile-stat {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
 
   strong {
-    color: $text-secondary;
+    color: $text-primary;
     font-weight: 600;
+    font-variant-numeric: tabular-nums;
   }
 }
 
+.user-profile-stat-label {
+  color: $text-muted;
+}
+
 .user-profile-stats-sep {
+  color: $text-muted;
   opacity: 0.45;
+  user-select: none;
 }
 
 .user-profile-actions {
@@ -414,13 +503,38 @@ onUnmounted(() => {
   border-radius: 10px;
   font-size: 14px;
   font-weight: 600;
-  color: $bg-page;
-  background: $text-primary;
-  border: none;
-  transition: opacity 0.15s ease;
+  color: $text-primary;
+  background: rgba(255, 255, 255, 0.88);
+  border: 1px solid color-mix(in srgb, $border-light 70%, #fff);
+  box-shadow: $shadow-sm;
+  transition:
+    background 0.15s ease,
+    border-color 0.15s ease,
+    box-shadow 0.15s ease,
+    color 0.15s ease;
 
-  &:hover {
-    opacity: 0.9;
+  &:hover:not(:disabled) {
+    background: #fff;
+    border-color: color-mix(in srgb, $accent 22%, $border-light);
+    box-shadow: $shadow-md;
+  }
+
+  &:disabled {
+    opacity: 0.65;
+    cursor: wait;
+  }
+
+  &--active {
+    color: $text-secondary;
+    background: color-mix(in srgb, var(--bg-input) 88%, transparent);
+    border: 1px solid $border-light;
+    box-shadow: none;
+
+    &:hover:not(:disabled) {
+      background: $accent-light;
+      border-color: color-mix(in srgb, $accent 28%, $border-light);
+      color: $text-primary;
+    }
   }
 }
 
@@ -434,14 +548,18 @@ onUnmounted(() => {
   border-radius: 10px;
   font-size: 14px;
   font-weight: 500;
-  color: $text-primary;
-  background: $bg-input;
-  border: 1px solid $glass-border;
-  transition: background 0.15s ease, border-color 0.15s ease;
+  color: $text-secondary;
+  background: color-mix(in srgb, var(--bg-input) 72%, transparent);
+  border: 1px solid color-mix(in srgb, $border-light 80%, transparent);
+  transition:
+    background 0.15s ease,
+    border-color 0.15s ease,
+    color 0.15s ease;
 
   &:hover {
-    background: $accent-light;
-    border-color: color-mix(in srgb, $accent 35%, $glass-border);
+    color: $text-primary;
+    background: color-mix(in srgb, var(--bg-elevated) 80%, $accent-light);
+    border-color: color-mix(in srgb, $accent 28%, $border-light);
   }
 
   &--inline {
@@ -451,13 +569,8 @@ onUnmounted(() => {
   }
 }
 
-.user-profile-bio-readonly {
-  margin: 0;
-  font-size: 13px;
-  line-height: 1.55;
-  color: $text-secondary;
-  white-space: pre-wrap;
-  word-break: break-word;
+.user-profile-bio--readonly {
+  cursor: default;
 }
 
 .user-profile-bio {
@@ -521,19 +634,51 @@ onUnmounted(() => {
   min-height: 0;
 }
 
-.user-profile-section-label {
-  flex-shrink: 0;
-  margin: 0 48px 16px 0;
-  font-size: 14px;
-  font-weight: 600;
-  color: $text-primary;
-}
-
 .user-profile-tabs {
   flex-shrink: 0;
   display: flex;
   gap: 6px;
-  margin: 0 48px 16px 0;
+  margin: 0 48px 10px 0;
+}
+
+.user-profile-subtabs {
+  flex-shrink: 0;
+  margin: 0 48px 14px 0;
+}
+
+.user-profile-subtabs-inner {
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  border-radius: 999px;
+  background: rgba($text-muted, 0.06);
+  border: 1px solid $border-light;
+}
+
+.user-profile-subtab {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 11px;
+  border-radius: 999px;
+  font-size: 12px;
+  color: $text-muted;
+  transition:
+    background 0.15s ease,
+    color 0.15s ease,
+    box-shadow 0.15s ease;
+
+  &:hover:not(.active) {
+    color: $text-primary;
+    background: color-mix(in srgb, $accent 10%, transparent);
+  }
+
+  &.active {
+    background: var(--bg-card);
+    color: $text-primary;
+    font-weight: 600;
+    box-shadow: $shadow-sm;
+  }
 }
 
 .user-profile-tab {
@@ -563,15 +708,38 @@ onUnmounted(() => {
   opacity: 0.5;
 }
 
-.user-profile-privacy {
-  flex-shrink: 0;
-  margin: 0 48px 16px 0;
+.user-profile-tab-wrap {
+  position: relative;
+
+  &:hover .user-profile-liked-tip,
+  &:focus-within .user-profile-liked-tip {
+    opacity: 1;
+    visibility: visible;
+    transform: translate(0, -50%);
+  }
+}
+
+.user-profile-liked-tip {
+  position: absolute;
+  top: 50%;
+  left: calc(100% + 10px);
+  z-index: 4;
+  width: max-content;
+  max-width: 260px;
   padding: 10px 14px;
   border-radius: 10px;
   font-size: 13px;
+  line-height: 1.45;
   color: $text-secondary;
   background: $bg-input;
   border: 1px solid $glass-border;
+  box-shadow: $shadow-sm;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  visibility: hidden;
+  transform: translate(-6px, -50%);
+  transition: opacity 0.18s ease, transform 0.18s ease, visibility 0.18s ease;
 }
 
 .user-profile-content {
@@ -595,14 +763,15 @@ onUnmounted(() => {
     overflow-y: auto;
   }
 
-  .user-profile-aside,
-  .user-profile--visitor .user-profile-aside {
+  .user-profile-aside {
     width: 100%;
   }
 
-  .user-profile-tabs,
-  .user-profile-section-label,
-  .user-profile-privacy {
+  .user-profile-tabs {
+    margin-right: 0;
+  }
+
+  .user-profile-subtabs {
     margin-right: 0;
   }
 

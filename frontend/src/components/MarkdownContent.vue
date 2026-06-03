@@ -1,19 +1,64 @@
 <script setup lang="ts">
 import DOMPurify from 'dompurify'
 import { marked } from 'marked'
-import { computed, nextTick, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { splitMarkdownParts } from '../utils/markdownParts'
+import { prepareMarkdownForRender } from '../utils/streamingMarkdown'
 import MermaidDiagram from './MermaidDiagram.vue'
 
-const props = defineProps<{
-  content: string
-}>()
+const props = withDefaults(
+  defineProps<{
+    content: string
+    /** 流式输出中：节流重绘、暂不渲染 mermaid */
+    streaming?: boolean
+  }>(),
+  {
+    streaming: false,
+  },
+)
 
 const rootRef = ref<HTMLElement | null>(null)
+const renderContent = ref('')
+let debounceTimer: ReturnType<typeof setTimeout> | null = null
 
 marked.setOptions({ breaks: true, gfm: true })
 
-const parts = computed(() => splitMarkdownParts(props.content))
+type RenderedPart =
+  | { type: 'md'; html: string; key: string }
+  | { type: 'mermaid'; content: string; key: string }
+
+function syncRenderContent(content: string, immediate: boolean) {
+  const prepared = prepareMarkdownForRender(content)
+  if (immediate) {
+    if (debounceTimer) clearTimeout(debounceTimer)
+    debounceTimer = null
+    renderContent.value = prepared
+    return
+  }
+  if (debounceTimer) clearTimeout(debounceTimer)
+  debounceTimer = setTimeout(() => {
+    renderContent.value = prepared
+    debounceTimer = null
+  }, 48)
+}
+
+const renderedParts = computed<RenderedPart[]>(() => {
+  const parts = splitMarkdownParts(renderContent.value)
+  const rendered: RenderedPart[] = []
+
+  parts.forEach((part, i) => {
+    if (part.type === 'mermaid') {
+      if (props.streaming || !part.content.trim()) return
+      rendered.push({ type: 'mermaid', content: part.content, key: `m-${i}` })
+      return
+    }
+    const html = renderMd(part.content)
+    if (!html.trim()) return
+    rendered.push({ type: 'md', html, key: `d-${i}` })
+  })
+
+  return rendered
+})
 
 function renderMd(fragment: string): string {
   if (!fragment.trim()) return ''
@@ -35,23 +80,43 @@ function hideBrokenImages() {
   })
 }
 
+watch(
+  () => props.content,
+  (content) => syncRenderContent(content, !props.streaming),
+  { immediate: true },
+)
+
+watch(
+  () => props.streaming,
+  (streaming, wasStreaming) => {
+    if (wasStreaming && !streaming) {
+      syncRenderContent(props.content, true)
+    }
+  },
+)
+
+watch(renderContent, () => {
+  void nextTick(hideBrokenImages)
+})
+
 onMounted(() => {
   void nextTick(hideBrokenImages)
 })
 
-watch(
-  () => props.content,
-  () => {
-    void nextTick(hideBrokenImages)
-  },
-)
+onBeforeUnmount(() => {
+  if (debounceTimer) clearTimeout(debounceTimer)
+})
 </script>
 
 <template>
-  <div ref="rootRef" class="markdown-body">
-    <template v-for="(part, i) in parts" :key="i">
-      <div v-if="part.type === 'md' && part.content.trim()" v-html="renderMd(part.content)" />
-      <MermaidDiagram v-else-if="part.type === 'mermaid'" :source="part.content" />
+  <div
+    ref="rootRef"
+    class="markdown-body"
+    :class="{ 'markdown-body--streaming': streaming }"
+  >
+    <template v-for="part in renderedParts" :key="part.key">
+      <div v-if="part.type === 'md'" v-html="part.html" />
+      <MermaidDiagram v-else :source="part.content" />
     </template>
   </div>
 </template>
@@ -64,6 +129,23 @@ watch(
   line-height: 1.7;
   color: $text-primary;
   word-break: break-word;
+
+  &--streaming {
+    :deep(p:last-child),
+    :deep(li:last-child),
+    :deep(blockquote:last-child) {
+      &::after {
+        content: '';
+        display: inline-block;
+        width: 2px;
+        height: 1em;
+        margin-left: 2px;
+        vertical-align: text-bottom;
+        background: color-mix(in srgb, $accent 55%, transparent);
+        animation: md-cursor-blink 1s step-end infinite;
+      }
+    }
+  }
 
   :deep(p) {
     margin: 0 0 0.75em;
@@ -182,6 +264,12 @@ watch(
     height: auto;
     border-radius: 8px;
     margin: 0.5em 0;
+  }
+}
+
+@keyframes md-cursor-blink {
+  50% {
+    opacity: 0;
   }
 }
 </style>

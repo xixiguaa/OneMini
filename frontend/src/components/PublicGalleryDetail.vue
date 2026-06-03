@@ -41,10 +41,14 @@ const {
   liked,
   likes,
   canUseReference,
+  canFollow,
+  isFollowing,
+  followToggling,
   refLoading,
   onMakeSameStyle,
   onUseReference,
   onToggleLike,
+  onToggleFollow,
   openAuthorProfile,
 } = useDiscoverGalleryActions(currentItem)
 
@@ -115,7 +119,7 @@ function onReport() {
 }
 
 function onFollow() {
-  toast.show({ message: '关注功能即将上线', kind: 'info' })
+  void onToggleFollow()
 }
 
 function goAuthorProfile() {
@@ -227,7 +231,16 @@ onUnmounted(() => {
               </span>
               <span class="public-detail-author-name">{{ authorName }}</span>
             </button>
-            <button type="button" class="public-detail-follow" @click="onFollow">+ 关注</button>
+            <button
+              v-if="canFollow"
+              type="button"
+              class="public-detail-follow"
+              :class="{ 'public-detail-follow--active': isFollowing }"
+              :disabled="followToggling"
+              @click="onFollow"
+            >
+              {{ isFollowing ? '已关注' : '+ 关注' }}
+            </button>
 
             <div class="public-detail-head-actions">
               <button
@@ -495,9 +508,21 @@ onUnmounted(() => {
   color: #fff;
   background: rgba(255, 255, 255, 0.12);
   border: 1px solid rgba(255, 255, 255, 0.2);
+  transition: background 0.15s ease, border-color 0.15s ease, opacity 0.15s ease;
 
-  &:hover {
+  &:hover:not(:disabled) {
     background: rgba(255, 255, 255, 0.2);
+  }
+
+  &:disabled {
+    opacity: 0.65;
+    cursor: wait;
+  }
+
+  &--active {
+    color: rgba(255, 255, 255, 0.82);
+    background: rgba(255, 255, 255, 0.06);
+    border-color: rgba(255, 255, 255, 0.16);
   }
 }
 

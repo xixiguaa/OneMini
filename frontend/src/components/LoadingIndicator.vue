@@ -57,6 +57,15 @@ withDefaults(
   }
 }
 
+.om-loading--button {
+  color: inherit;
+
+  .om-loading-label,
+  .om-loading-spinner {
+    color: inherit;
+  }
+}
+
 @keyframes thinking-pulse {
   0%, 100% { opacity: 0.55; }
   50% { opacity: 1; }

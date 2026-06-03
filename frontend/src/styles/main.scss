@@ -274,13 +274,14 @@ input.login-field-input {
   color: $text-muted;
 }
 
-/* 主色按钮内加载态与按钮文字同色 */
+/* 主色 / 危险按钮内加载态与按钮文字同色 */
 .btn-primary,
 .btn.enable,
-.btn-confirm:not(.btn-confirm--danger),
+.btn-confirm,
 .action-btn.primary {
   .om-loading,
-  .om-loading-label {
+  .om-loading-label,
+  .om-loading-spinner {
     color: inherit;
   }
 }

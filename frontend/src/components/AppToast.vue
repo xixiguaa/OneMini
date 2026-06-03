@@ -66,6 +66,10 @@ $edit-stage-shift: 32px;
 
 .app-toast {
   @include cosmic-top-toast;
+  background: color-mix(in srgb, var(--bg-elevated, #fff) 92%, transparent);
+  color: $text-primary;
+  border: 1px solid color-mix(in srgb, $border-light 85%, transparent);
+  box-shadow: var(--glass-float-shadow, $shadow-md);
 
   &--in-edit-rail {
     left: calc(#{$edit-rail-w} + (100vw - #{$edit-rail-w} - #{$edit-side-w}) / 2 + #{$edit-stage-shift});
@@ -100,10 +104,72 @@ $edit-stage-shift: 32px;
   }
 
   &--warning {
-    border-color: color-mix(in srgb, #e6a817 45%, $glass-border);
+    border-color: color-mix(in srgb, $color-warning 45%, $glass-border);
 
     .app-toast-icon {
-      color: #e6a817;
+      color: $color-warning;
+    }
+  }
+
+  &--in-edit {
+    background: rgba(18, 16, 30, 0.96);
+    color: rgba(255, 255, 255, 0.94);
+    border-color: rgba(255, 255, 255, 0.14);
+    box-shadow:
+      0 16px 48px rgba(0, 0, 0, 0.42),
+      0 4px 16px rgba(60, 40, 120, 0.22);
+
+    .app-toast-text {
+      color: rgba(255, 255, 255, 0.94);
+    }
+
+    .app-toast-action {
+      color: #c4b5ff;
+
+      &:hover {
+        color: #ddd4ff;
+      }
+    }
+
+    .app-toast-close {
+      color: rgba(255, 255, 255, 0.58);
+
+      &:hover {
+        background: rgba(255, 255, 255, 0.1);
+        color: rgba(255, 255, 255, 0.92);
+      }
+    }
+
+    &.app-toast--error {
+      border-color: color-mix(in srgb, $color-danger 55%, rgba(255, 255, 255, 0.14));
+
+      .app-toast-icon {
+        color: #ff8fa8;
+      }
+    }
+
+    &.app-toast--success {
+      border-color: color-mix(in srgb, $color-success 55%, rgba(255, 255, 255, 0.14));
+
+      .app-toast-icon {
+        color: #5eead4;
+      }
+    }
+
+    &.app-toast--info {
+      border-color: color-mix(in srgb, $accent 50%, rgba(255, 255, 255, 0.14));
+
+      .app-toast-icon {
+        color: #b8a8ff;
+      }
+    }
+
+    &.app-toast--warning {
+      border-color: color-mix(in srgb, #ffb830 55%, rgba(255, 255, 255, 0.14));
+
+      .app-toast-icon {
+        color: #ffd060;
+      }
     }
   }
 }
@@ -117,7 +183,9 @@ $edit-stage-shift: 32px;
   flex: 1;
   min-width: 0;
   font-size: 13px;
+  font-weight: 500;
   line-height: 1.5;
+  color: inherit;
   white-space: pre-line;
 }
 
@@ -125,7 +193,7 @@ $edit-stage-shift: 32px;
   flex-shrink: 0;
   padding: 0;
   font-size: 13px;
-  font-weight: 500;
+  font-weight: 600;
   color: $accent;
   white-space: nowrap;
   transition: color 0.15s;

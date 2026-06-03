@@ -58,13 +58,16 @@ import {
   WORKING_MEMORY_PROTOCOL,
 } from '../utils/workingMemory'
 import {
-  isReasonerModel,
-  runTwoPhaseDeepThinking,
+  resolveThinkingApiParams,
+  runSinglePassDeepThinking,
+  usesNativeThinkingStream,
 } from '../services/deepThinkingChat'
 import {
   composeDeepThinkingBlock,
   composeWebSearchBlock,
-  parseAssistantReplyWithFallback,
+  normalizeAssistantDisplay,
+  peelTaggedThinkingFromContent,
+  stripComposerStatusPrefixes,
 } from '../utils/deepThinking'
 import { resolveChatBaseUrl } from '../config/providers'
 import { resolveChatModel } from '../utils/resolveModel'
@@ -96,6 +99,10 @@ export const useAgentStore = defineStore('agent', () => {
   const createMode = ref<CreateMode>('image')
   const activeSkill = ref<SkillId>('chat')
   const inputText = ref('')
+  /** 编辑历史提问时指向原消息 id，发送后创建同级分支 */
+  const editingUserMessageId = ref<string | null>(null)
+  /** 递增以触发输入框聚焦 */
+  const inputFocusToken = ref(0)
   type ProcessingScope = 'chat' | 'create' | 'world'
   const processingScope = ref<ProcessingScope | null>(null)
   const isProcessing = computed(() => processingScope.value !== null)
@@ -317,17 +324,34 @@ export const useAgentStore = defineStore('agent', () => {
     raw: string,
     opts?: { thinkingStartedAt?: number; forceDeepThink?: boolean },
   ) {
-    const parsed = parseAssistantReplyWithFallback(raw, opts)
     const prev = getAllGraphMessages().find((m) => m.id === messageId)
+    const prevThinking = prev?.metadata?.thinking?.content?.trim()
+
+    const normalized = normalizeAssistantDisplay(raw, {
+      existingThinking: prevThinking,
+      forceHeuristic: opts?.forceDeepThink ?? Boolean(prevThinking),
+      thinkingDurationMs:
+        prev?.metadata?.thinking?.durationMs ??
+        (opts?.thinkingStartedAt != null
+          ? Math.max(0, Date.now() - opts.thinkingStartedAt)
+          : undefined),
+    })
+
     const meta = { ...prev?.metadata }
-    if (parsed.thinking?.content?.trim()) {
-      meta.thinking = parsed.thinking
-    } else if (prev?.metadata?.thinking?.content?.trim()) {
-      meta.thinking = prev.metadata.thinking
+    if (normalized.thinking?.content?.trim()) {
+      meta.thinking = normalized.thinking
+    } else if (prevThinking && prev) {
+      meta.thinking = prev.metadata!.thinking
     }
-    if (parsed.workingMemory) meta.workingMemory = parsed.workingMemory
+    if (normalized.workingMemory) meta.workingMemory = normalized.workingMemory
+
+    const content =
+      normalized.displayContent?.trim() ||
+      prev?.content?.trim() ||
+      stripComposerStatusPrefixes(raw)
+
     patchMessage(messageId, {
-      content: parsed.displayContent || raw,
+      content,
       metadata: Object.keys(meta).length ? meta : undefined,
     })
   }
@@ -528,7 +552,11 @@ export const useAgentStore = defineStore('agent', () => {
       ),
       WORKING_MEMORY_PROTOCOL,
       TOOL_AWARENESS_PROTOCOL,
-      composeDeepThinkingBlock(platform.deepThinkingEnabled),
+      composeDeepThinkingBlock(platform.deepThinkingEnabled, {
+        singlePass:
+          platform.deepThinkingEnabled &&
+          !usesNativeThinkingStream(model, true),
+      }),
       wmBlock,
       composeEpisodicMemoryBlock(episodicSnippets),
       webSearchBlock,
@@ -693,6 +721,10 @@ export const useAgentStore = defineStore('agent', () => {
           ...history,
           { role: 'user', content: fullContent },
         ]
+        const thinkingApi = resolveThinkingApiParams(
+          model,
+          platform.deepThinkingEnabled,
+        )
         const streamBase = {
           messages: chatMessages,
           model: model.model,
@@ -700,6 +732,7 @@ export const useAgentStore = defineStore('agent', () => {
           baseUrl: resolveChatBaseUrl(model.provider, model.baseUrl),
           modelConfigId: model.id,
           temperature,
+          ...thinkingApi,
         }
 
         const deepThinkStart = platform.deepThinkingEnabled ? Date.now() : 0
@@ -709,7 +742,7 @@ export const useAgentStore = defineStore('agent', () => {
         if (platform.deepThinkingEnabled) {
           patchThinkingContent(aid, '正在分析问题…', accumulated)
 
-          if (isReasonerModel(model)) {
+          if (usesNativeThinkingStream(model, true)) {
             await sendChatStream({
               ...streamBase,
               onThinkingDelta: (chunk) => {
@@ -723,6 +756,16 @@ export const useAgentStore = defineStore('agent', () => {
                   patchThinkingContent(aid, thinkingAcc, accumulated, elapsed)
                 }
                 accumulated += chunk
+
+                if (!thinkingAcc.trim()) {
+                  const peeled = peelTaggedThinkingFromContent(accumulated)
+                  if (peeled) {
+                    thinkingAcc = peeled.thinking
+                    accumulated = peeled.answer
+                    if (!thinkingClosed) thinkingClosed = true
+                  }
+                }
+
                 patchThinkingContent(
                   aid,
                   thinkingAcc,
@@ -733,9 +776,8 @@ export const useAgentStore = defineStore('agent', () => {
             })
           } else {
             let thinkDurationMs = 0
-            const twoPhase = await runTwoPhaseDeepThinking({
+            const singlePass = await runSinglePassDeepThinking({
               ...streamBase,
-              userQuestion: fullContent,
               handlers: {
                 onThinkingDelta: (chunk) => {
                   thinkingAcc += chunk
@@ -755,9 +797,9 @@ export const useAgentStore = defineStore('agent', () => {
                 },
               },
             })
-            thinkingAcc = twoPhase.thinking || thinkingAcc
-            accumulated = twoPhase.answer || accumulated
-            thinkDurationMs = twoPhase.thinkingDurationMs || thinkDurationMs
+            thinkingAcc = singlePass.thinking || thinkingAcc
+            accumulated = singlePass.answer || accumulated
+            thinkDurationMs = singlePass.thinkingDurationMs || thinkDurationMs
             patchThinkingContent(
               aid,
               thinkingAcc,
@@ -767,17 +809,14 @@ export const useAgentStore = defineStore('agent', () => {
           }
 
           if (assistantId) {
-            if (!accumulated.trim() && thinkingAcc.trim()) {
-              accumulated = thinkingAcc
-            }
             finalizeAssistantContent(assistantId, accumulated, {
               thinkingStartedAt: deepThinkStart,
-              forceDeepThink: false,
+              forceDeepThink: platform.deepThinkingEnabled && !thinkingAcc.trim(),
             })
             const after = getAllGraphMessages().find((m) => m.id === assistantId)
-            if (thinkingAcc && !after?.metadata?.thinking?.content) {
+            if (thinkingAcc && !after?.metadata?.thinking?.content?.trim()) {
               patchMessage(assistantId, {
-                content: after?.content || accumulated,
+                content: after?.content?.trim() || accumulated.trim(),
                 metadata: {
                   ...after?.metadata,
                   thinking: {
@@ -786,11 +825,11 @@ export const useAgentStore = defineStore('agent', () => {
                   },
                 },
               })
-            } else if (thinkingAcc && after) {
+            } else if (thinkingAcc && after && !after.content?.trim() && accumulated.trim()) {
               patchThinkingContent(
                 assistantId,
                 thinkingAcc,
-                after.content || accumulated,
+                accumulated,
                 after.metadata?.thinking?.durationMs ?? Date.now() - deepThinkStart,
               )
             }
@@ -947,10 +986,23 @@ export const useAgentStore = defineStore('agent', () => {
     }))
   }
 
+  function beginEditUserMessage(messageId: string) {
+    if (processingScope.value) return
+    const msg = getAllGraphMessages().find((m) => m.id === messageId)
+    if (!msg || msg.role !== 'user' || msg.type !== 'text') return
+
+    editingUserMessageId.value = messageId
+    inputText.value = msg.content === '（含附件）' ? '' : msg.content
+    setActiveLeafId(msg.parentId ?? null)
+    inputFocusToken.value += 1
+  }
+
   async function sendMessage(skillOverride?: SkillId) {
     const content = inputText.value.trim()
     if (!content && !pendingAttachments.value.length) return
     if (processingScope.value) return
+
+    editingUserMessageId.value = null
 
     const skill = skillOverride ?? activeSkill.value
     const displayContent = content || '（含附件）'
@@ -1193,6 +1245,28 @@ export const useAgentStore = defineStore('agent', () => {
     return 'chat'
   }
 
+  function referenceUrlsFromAttachments() {
+    return pendingAttachments.value
+      .filter((a) => a.kind === 'image' && !a.loading)
+      .map((a) => {
+        if (a.base64) {
+          const mime = a.mime || 'image/jpeg'
+          return `data:${mime};base64,${a.base64}`
+        }
+        return a.previewUrl || ''
+      })
+      .filter(Boolean)
+  }
+
+  function firstReferenceImageUrl() {
+    const att = pendingAttachments.value.find((a) => a.kind === 'image' && !a.loading)
+    if (!att) return undefined
+    if (att.base64) {
+      return `data:${att.mime || 'image/jpeg'};base64,${att.base64}`
+    }
+    return att.previewUrl
+  }
+
   async function generateCreateMedia(skill: 'image' | 'video') {
     const content = inputText.value.trim()
     if (!content && !pendingAttachments.value.length) return
@@ -1203,6 +1277,7 @@ export const useAgentStore = defineStore('agent', () => {
     const prompt = buildUserContent(content)
     const createHistory = useCreateHistoryStore()
     const model = requireModelForSkill(skill)
+    const referenceUrls = skill === 'image' ? referenceUrlsFromAttachments() : []
 
     const entry = createHistory.add({
       prompt: displayContent,
@@ -1215,6 +1290,7 @@ export const useAgentStore = defineStore('agent', () => {
         skill === 'video'
           ? settings.settings.generationPrefs.videoAspectRatio
           : settings.settings.generationPrefs.aspectRatio,
+      referenceUrls: referenceUrls.length ? referenceUrls : undefined,
     })
 
     openImageEdit(entry)
@@ -1230,12 +1306,15 @@ export const useAgentStore = defineStore('agent', () => {
       }
 
       if (skill === 'image') {
-        const result = await generateImage(imageGenParams(prompt, model))
+        const result = await generateImage(
+          imageGenParams(prompt, model, firstReferenceImageUrl()),
+        )
         await createHistory.complete(entry.id, {
           url: result.url,
           previewUrl: result.url,
           status: 'DONE',
           sessionId: entry.id,
+          referenceUrls: referenceUrls.length ? referenceUrls : undefined,
         })
       } else {
         const imageAtt = pendingAttachments.value.find((a) => a.base64)
@@ -1807,6 +1886,9 @@ export const useAgentStore = defineStore('agent', () => {
     branchTimeline,
     workingMemory,
     inputText,
+    editingUserMessageId,
+    inputFocusToken,
+    beginEditUserMessage,
     isProcessing,
     isChatProcessing,
     isCreateProcessing,

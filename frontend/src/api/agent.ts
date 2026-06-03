@@ -8,6 +8,8 @@ export interface ChatMessagePayload {
 
 export type ChatStreamEventType = 'content' | 'thinking'
 
+export type ReasoningEffort = 'high' | 'max'
+
 export interface ChatStreamOptions {
   messages: ChatMessagePayload[]
   model?: string
@@ -15,9 +17,12 @@ export interface ChatStreamOptions {
   baseUrl?: string
   modelConfigId?: string
   temperature?: number
+  /** DeepSeek：thinking.type=enabled/disabled，其它服务商忽略 */
+  thinkingEnabled?: boolean
+  reasoningEffort?: ReasoningEffort
   signal?: AbortSignal
   onDelta: (text: string) => void
-  /** DeepSeek Reasoner 等模型的推理流 */
+  /** DeepSeek / Reasoner 等模型的 reasoning_content 推理流 */
   onThinkingDelta?: (text: string) => void
 }
 
@@ -36,6 +41,8 @@ export async function sendChatStream(opts: ChatStreamOptions): Promise<string> {
       base_url: opts.baseUrl,
       model_config_id: opts.modelConfigId,
       temperature: opts.temperature,
+      thinking_enabled: opts.thinkingEnabled,
+      reasoning_effort: opts.reasoningEffort,
     }),
     signal: opts.signal,
   })

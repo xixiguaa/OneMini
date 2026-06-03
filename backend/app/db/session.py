@@ -72,6 +72,19 @@ def get_session(settings: Settings | None = None) -> Iterator[Session]:
 def init_db(settings: Settings | None = None) -> None:
     engine = get_engine(settings)
     Base.metadata.create_all(bind=engine)
+    _ensure_create_history_columns(engine)
+
+
+def _ensure_create_history_columns(engine: Engine) -> None:
+    """create_all 不增列；轻量迁移 reference_urls。"""
+    with engine.connect() as conn:
+        conn.execute(
+            text(
+                "ALTER TABLE create_history_items "
+                "ADD COLUMN IF NOT EXISTS reference_urls TEXT"
+            )
+        )
+        conn.commit()
 
 
 def ping_postgres(settings: Settings | None = None) -> dict[str, Any]:

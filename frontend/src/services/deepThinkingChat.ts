@@ -1,10 +1,50 @@
 import { sendChatStream, type ChatStreamOptions } from '../api/agent'
 import type { ModelConfig } from '../types/agent'
-import { THINKING_ONLY_SYSTEM } from '../utils/deepThinking'
+import {
+  splitThinkingAnswerStream,
+  type ThinkingAnswerStreamSlice,
+} from '../utils/deepThinking'
 
 export function isReasonerModel(model: Pick<ModelConfig, 'model'>): boolean {
   const id = (model.model || '').toLowerCase()
   return /reasoner|r1|o1|think/.test(id)
+}
+
+/** DeepSeek API 支持 thinking / reasoning_effort 的模型（见官方思考模式文档） */
+export function supportsDeepSeekThinkingApi(
+  provider?: string,
+  model?: string,
+): boolean {
+  if (provider !== 'deepseek') return false
+  const id = (model || '').trim().toLowerCase()
+  if (!id) return false
+  if (/reasoner/.test(id)) return true
+  if (/^deepseek-v4-(pro|flash)$/.test(id)) return true
+  if (id === 'deepseek-chat' || id === 'deepseek-reasoner') return true
+  return false
+}
+
+/** 开启深度思考时走服务商原生推理流（reasoning_content），而非 XML 单次解析 */
+export function usesNativeThinkingStream(
+  model: Pick<ModelConfig, 'model' | 'provider'>,
+  deepThinkingEnabled: boolean,
+): boolean {
+  if (!deepThinkingEnabled) return false
+  if (isReasonerModel(model)) return true
+  return supportsDeepSeekThinkingApi(model.provider, model.model)
+}
+
+export function resolveThinkingApiParams(
+  model: Pick<ModelConfig, 'model' | 'provider'>,
+  deepThinkingEnabled: boolean,
+): { thinkingEnabled?: boolean; reasoningEffort?: 'high' | 'max' } {
+  if (!supportsDeepSeekThinkingApi(model.provider, model.model)) {
+    return {}
+  }
+  return {
+    thinkingEnabled: deepThinkingEnabled,
+    reasoningEffort: deepThinkingEnabled ? 'high' : undefined,
+  }
 }
 
 export interface DeepThinkingStreamHandlers {
@@ -12,57 +52,47 @@ export interface DeepThinkingStreamHandlers {
   onAnswerDelta: (chunk: string) => void
 }
 
-/** 非 Reasoner 模型：先流式生成推理，再流式生成正式回答 */
-export async function runTwoPhaseDeepThinking(
+/** 非 Reasoner + 深度思考：单次请求，完整 context，按 <thinking>/<answer> 分流式解析 */
+export async function runSinglePassDeepThinking(
   opts: Omit<ChatStreamOptions, 'onDelta'> & {
-    userQuestion: string
     handlers: DeepThinkingStreamHandlers
   },
 ): Promise<{ thinking: string; answer: string; thinkingDurationMs: number }> {
   const thinkStart = Date.now()
-  let thinking = ''
+  let raw = ''
+  let lastThinkingLen = 0
+  let lastAnswerLen = 0
+
+  const emitSlice = (split: ThinkingAnswerStreamSlice) => {
+    const thinking = split.thinking ?? ''
+    if (thinking.length > lastThinkingLen) {
+      opts.handlers.onThinkingDelta(thinking.slice(lastThinkingLen))
+      lastThinkingLen = thinking.length
+    }
+    const answer = split.answer ?? ''
+    if (answer.length > lastAnswerLen) {
+      opts.handlers.onAnswerDelta(answer.slice(lastAnswerLen))
+      lastAnswerLen = answer.length
+    }
+  }
 
   await sendChatStream({
     ...opts,
-    messages: [
-      { role: 'system', content: THINKING_ONLY_SYSTEM },
-      {
-        role: 'user',
-        content: `请分析以下用户问题并输出推理过程（不要写最终答案）：\n\n${opts.userQuestion}`,
-      },
-    ],
-    temperature: Math.min(opts.temperature ?? 0.3, 0.35),
     onDelta: (chunk) => {
-      thinking += chunk
-      opts.handlers.onThinkingDelta(chunk)
+      raw += chunk
+      emitSlice(splitThinkingAnswerStream(raw))
     },
   })
 
-  const thinkingDurationMs = Date.now() - thinkStart
-  thinking = thinking.trim()
+  const final = splitThinkingAnswerStream(raw)
+  emitSlice(final)
 
-  const answerSystem = [
-    opts.messages.find((m) => m.role === 'system')?.content ?? '',
-    thinking
-      ? `【深度思考·推理摘要（内部参考，勿原样复述）】\n${thinking}\n\n请基于上述推理，输出面向用户的正式回答。`
-      : '',
-  ]
-    .filter(Boolean)
-    .join('\n\n')
+  const thinking = (final.thinking ?? '').trim()
+  const answer = (final.answer ?? raw).trim()
 
-  const answerMessages = opts.messages.map((m, i) =>
-    i === 0 && m.role === 'system' ? { role: 'system', content: answerSystem } : m,
-  )
-
-  let answer = ''
-  await sendChatStream({
-    ...opts,
-    messages: answerMessages,
-    onDelta: (chunk) => {
-      answer += chunk
-      opts.handlers.onAnswerDelta(chunk)
-    },
-  })
-
-  return { thinking, answer, thinkingDurationMs }
+  return {
+    thinking,
+    answer: answer || raw.trim(),
+    thinkingDurationMs: Date.now() - thinkStart,
+  }
 }

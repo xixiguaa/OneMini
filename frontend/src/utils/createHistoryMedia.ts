@@ -35,6 +35,25 @@ export function withCreateHistoryMediaToken(url: string): string {
   }
 }
 
+export function createHistoryRefMediaUrl(itemId: string, index: number): string {
+  return createHistoryMediaUrl(`${itemId}-ref-${index}`)
+}
+
+export function resolveReferenceUrls(item: {
+  id: string
+  referenceUrls?: string[]
+}): string[] {
+  if (!item.referenceUrls?.length) return []
+  return item.referenceUrls
+    .map((url, index) => {
+      if (!url) return ''
+      if (url.includes(MEDIA_PATH)) return withCreateHistoryMediaToken(url)
+      if (url.startsWith('http') || url.startsWith('data:') || url.startsWith('blob:')) return url
+      return createHistoryRefMediaUrl(item.id, index)
+    })
+    .filter(Boolean)
+}
+
 export function resolveCreateHistoryImageUrl(item: {
   id: string
   type: string

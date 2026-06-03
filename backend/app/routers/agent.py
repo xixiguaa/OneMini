@@ -61,6 +61,9 @@ class AgentChatRequest(BaseModel):
     base_url: str | None = None
     model_config_id: str | None = None
     temperature: float = 0.2
+    # DeepSeek 思考模式：thinking.type=enabled/disabled，见官方「思考模式」文档
+    thinking_enabled: bool | None = None
+    reasoning_effort: str | None = None
 
 
 class ImageGenRequest(BaseModel):
@@ -122,6 +125,8 @@ async def agent_chat(req: AgentChatRequest, user_id: str = Depends(get_current_u
             api_key=api_key,
             base_url=base or None,
             temperature=req.temperature,
+            thinking_enabled=req.thinking_enabled,
+            reasoning_effort=req.reasoning_effort,
         )
         return {"content": content}
     except Exception as exc:
@@ -152,6 +157,8 @@ async def agent_chat_stream(req: AgentChatRequest, user_id: str = Depends(get_cu
                 api_key=api_key,
                 base_url=base or None,
                 temperature=req.temperature,
+                thinking_enabled=req.thinking_enabled,
+                reasoning_effort=req.reasoning_effort,
             ):
                 yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
             yield "data: [DONE]\n\n"

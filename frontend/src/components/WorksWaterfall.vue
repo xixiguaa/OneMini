@@ -27,6 +27,8 @@ const props = withDefaults(
     endHint?: string
     /** 个人主页等场景：更窄列宽、更密间距 */
     compact?: boolean
+    /** 首次加载骨架屏 */
+    loading?: boolean
   }>(),
   {
     searchQuery: '',
@@ -37,6 +39,7 @@ const props = withDefaults(
     emptyHint: undefined,
     endHint: undefined,
     compact: false,
+    loading: false,
   },
 )
 
@@ -82,6 +85,30 @@ const filteredItems = computed(() => {
 })
 
 const hasPoolItems = computed(() => poolItems.value.length > 0)
+
+const endHintMain = computed(() => props.endHint?.trim().replace(/～+$/u, '') ?? '')
+const endHintHasWave = computed(() => /～+$/u.test(props.endHint?.trim() ?? ''))
+
+const SKELETON_IMAGE_RATIOS = ['1:1', '3:4', '1:1', '4:5', '1:1', '16:9', '1:1', '3:4', '1:1', '4:3']
+const SKELETON_VIDEO_RATIOS = ['16:9', '16:9', '9:16', '16:9', '16:9', '16:9', '16:9', '16:9']
+
+const skeletonItems = computed(() => {
+  const ratios =
+    props.mediaType === 'video' ? SKELETON_VIDEO_RATIOS : SKELETON_IMAGE_RATIOS
+  return ratios.map((ratio, index) => ({ id: `sk-${index}`, ratio, index }))
+})
+
+function mediaStyleForRatio(ratio: string): Record<string, string> {
+  const parts = ratio.split(':').map((n) => parseInt(n, 10))
+  const col = columnWidth.value
+  if (parts.length !== 2 || parts.some((n) => !n)) {
+    return { width: '100%', height: `${col}px` }
+  }
+  const [wR, hR] = parts
+  let height = Math.round((col * hR) / wR)
+  if (wR >= hR) height = Math.max(height, col)
+  return { width: '100%', height: `${height}px` }
+}
 
 watch(
   () => [props.source, props.ownerId, props.likedOnly] as const,
@@ -329,9 +356,36 @@ function onVideoHover(e: MouseEvent, play: boolean) {
 
 <template>
   <section class="works-section">
+    <Transition name="works-content-fade" mode="out-in">
+      <div
+        v-if="loading"
+        key="works-skeleton"
+        class="works-skeleton-grid"
+        :class="{ 'works-skeleton-grid--video': mediaType === 'video' && !compact }"
+        :style="{ columns: `${columnWidth}px`, columnGap: `${columnGap}px` }"
+        aria-busy="true"
+        aria-label="作品加载中"
+      >
+        <article
+          v-for="item in skeletonItems"
+          :key="item.id"
+          class="work-card work-card--skeleton"
+          :style="{ animationDelay: `${item.index * 55}ms` }"
+        >
+          <div class="work-skeleton-media" :style="mediaStyleForRatio(item.ratio)">
+            <div class="work-skeleton-shimmer" aria-hidden="true" />
+            <div class="work-skeleton-lines" aria-hidden="true">
+              <span class="sk-block sk-block--lg" />
+              <span class="sk-block sk-block--md" />
+            </div>
+          </div>
+        </article>
+      </div>
+
+      <div v-else key="works-content" class="works-content">
     <div
       v-if="showGallery"
-      class="works-grid"
+      class="works-grid works-grid--revealed"
       :class="{ 'works-grid--video': mediaType === 'video' && !compact, 'works-grid--compact': compact }"
       :style="{ columns: `${columnWidth}px`, columnGap: `${columnGap}px` }"
     >
@@ -448,7 +502,14 @@ function onVideoHover(e: MouseEvent, play: boolean) {
       </article>
     </div>
 
-    <p v-if="showGallery && endHint" class="works-end-hint">{{ endHint }}</p>
+    <div v-if="showGallery && endHint" class="works-end-hint" role="status">
+      <span class="works-end-hint-line" aria-hidden="true" />
+      <span class="works-end-hint-text">
+        <span class="works-end-hint-copy">{{ endHintMain }}</span>
+        <span v-if="endHintHasWave" class="works-end-hint-wave" aria-hidden="true">～</span>
+      </span>
+      <span class="works-end-hint-line" aria-hidden="true" />
+    </div>
 
     <div v-if="!showGallery && hasPoolItems && searchQuery.trim()" class="empty search-empty">
       <Search :size="28" />
@@ -460,6 +521,8 @@ function onVideoHover(e: MouseEvent, play: boolean) {
       <Image v-else :size="32" />
       <p>{{ emptyHint }}</p>
     </div>
+      </div>
+    </Transition>
   </section>
 
   <PublicGalleryDetail
@@ -490,6 +553,105 @@ function onVideoHover(e: MouseEvent, play: boolean) {
 
 .works-section {
   padding: 0;
+}
+
+.works-content-fade-enter-active,
+.works-content-fade-leave-active {
+  transition:
+    opacity 0.38s cubic-bezier(0.22, 1, 0.36, 1),
+    transform 0.38s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.works-content-fade-enter-from,
+.works-content-fade-leave-to {
+  opacity: 0;
+  transform: translateY(10px);
+}
+
+.works-skeleton-grid {
+  width: 100%;
+}
+
+.work-card--skeleton {
+  pointer-events: none;
+  animation: works-skeleton-card-in 0.42s cubic-bezier(0.22, 1, 0.36, 1) both;
+
+  &:hover {
+    transform: none;
+    box-shadow: none;
+  }
+}
+
+.work-skeleton-media {
+  position: relative;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--bg-input, $bg-input) 88%, transparent);
+}
+
+.work-skeleton-shimmer {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    105deg,
+    transparent 0%,
+    rgba($accent, 0.04) 42%,
+    rgba($accent, 0.12) 50%,
+    rgba($accent, 0.04) 58%,
+    transparent 100%
+  );
+  background-size: 220% 100%;
+  animation: shimmer 1.7s ease-in-out infinite;
+}
+
+.work-skeleton-lines {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding: 12px;
+  pointer-events: none;
+}
+
+.works-grid--revealed {
+  animation: works-grid-reveal 0.46s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes works-skeleton-card-in {
+  from {
+    opacity: 0;
+    transform: translateY(12px) scale(0.985);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes works-grid-reveal {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .works-content-fade-enter-active,
+  .works-content-fade-leave-active,
+  .work-card--skeleton,
+  .works-grid--revealed,
+  .work-skeleton-shimmer {
+    animation: none;
+    transition: none;
+  }
 }
 
 .works-grid {
@@ -887,10 +1049,133 @@ function onVideoHover(e: MouseEvent, play: boolean) {
 }
 
 .works-end-hint {
-  margin: 20px 0 8px;
-  text-align: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  margin: 28px 0 12px;
+  padding: 0 12px;
+  animation: works-end-hint-in 0.55s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.works-end-hint-line {
+  flex: 1;
+  max-width: 72px;
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    color-mix(in srgb, $accent 28%, $border-light),
+    transparent
+  );
+  transform-origin: center;
+  animation: works-end-hint-line 0.7s ease-out 0.12s both;
+
+  &:first-child {
+    background: linear-gradient(
+      90deg,
+      transparent,
+      color-mix(in srgb, $accent 28%, $border-light)
+    );
+  }
+
+  &:last-child {
+    background: linear-gradient(
+      90deg,
+      color-mix(in srgb, $accent 28%, $border-light),
+      transparent
+    );
+  }
+}
+
+.works-end-hint-text {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 1px;
   font-size: 13px;
-  color: $text-muted;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+
+.works-end-hint-copy {
+  background: linear-gradient(
+    120deg,
+    $text-muted 0%,
+    color-mix(in srgb, $accent 72%, $text-secondary) 45%,
+    $text-muted 90%
+  );
+  background-size: 200% auto;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: works-end-hint-shimmer 2.8s ease-in-out infinite;
+}
+
+.works-end-hint-wave {
+  display: inline-block;
+  color: color-mix(in srgb, $accent 78%, $text-muted);
+  transform-origin: 70% 100%;
+  animation: works-end-hint-wave 1.6s ease-in-out infinite;
+}
+
+@keyframes works-end-hint-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes works-end-hint-line {
+  from {
+    opacity: 0;
+    transform: scaleX(0.35);
+  }
+
+  to {
+    opacity: 1;
+    transform: scaleX(1);
+  }
+}
+
+@keyframes works-end-hint-shimmer {
+  0%,
+  100% {
+    background-position: 0% center;
+  }
+
+  50% {
+    background-position: 100% center;
+  }
+}
+
+@keyframes works-end-hint-wave {
+  0%,
+  100% {
+    transform: rotate(0deg) translateY(0);
+  }
+
+  25% {
+    transform: rotate(8deg) translateY(-1px);
+  }
+
+  75% {
+    transform: rotate(-4deg) translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .works-end-hint,
+  .works-end-hint-line,
+  .works-end-hint-copy,
+  .works-end-hint-wave {
+    animation: none;
+  }
 }
 
 .empty {

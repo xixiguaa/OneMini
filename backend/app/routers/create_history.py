@@ -23,6 +23,7 @@ class CreateHistoryItemIn(BaseModel):
     parentId: str | None = None
     aspectRatio: str | None = None
     editAction: str | None = None
+    referenceUrls: list[str] | None = None
 
     model_config = {"populate_by_name": True, "extra": "ignore"}
 
@@ -40,6 +41,7 @@ class PatchItemBody(BaseModel):
     parentId: str | None = None
     aspectRatio: str | None = None
     editAction: str | None = None
+    referenceUrls: list[str] | None = None
 
 
 class SyncBody(BaseModel):

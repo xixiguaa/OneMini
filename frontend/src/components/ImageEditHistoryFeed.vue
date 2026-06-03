@@ -14,7 +14,7 @@ import type { DigitalHumanMode } from '../config/digitalHumanModes'
 import type { CreateHistoryItem } from '../stores/createHistory'
 import { useHoverPopper } from '../composables/useHoverPopper'
 import { formatGenerationTime } from '../utils/formatGenerationTime'
-import { resolveCreateHistoryImageUrl } from '../utils/createHistoryMedia'
+import { resolveCreateHistoryImageUrl, resolveReferenceUrls } from '../utils/createHistoryMedia'
 import {
   buildDigitalHumanDetailRows,
   buildEditHistoryMeta,
@@ -41,6 +41,12 @@ const props = defineProps<{
 }>()
 
 const detailPopper = useHoverPopper({ placement: 'above', gap: 10 })
+const refPreviewPopper = useHoverPopper({
+  placement: 'below',
+  gap: 10,
+  horizontalAlign: 'start',
+  estimatedWidth: 240,
+})
 
 const emit = defineEmits<{
   select: [id: string]
@@ -83,6 +89,39 @@ function parentThumb(item: CreateHistoryItem) {
   if (!parent) return ''
   return mediaUrl(parent)
 }
+
+function generationRefs(item: CreateHistoryItem) {
+  return resolveReferenceUrls(item)
+}
+
+function hasGenerationRefs(item: CreateHistoryItem) {
+  return generationRefs(item).length > 0
+}
+
+function primaryGenerationRef(item: CreateHistoryItem) {
+  return generationRefs(item)[0] ?? ''
+}
+
+function extraGenerationRefCount(item: CreateHistoryItem) {
+  return Math.max(0, generationRefs(item).length - 1)
+}
+
+function onGenRefEnter(item: CreateHistoryItem, e: MouseEvent) {
+  if (!hasGenerationRefs(item)) return
+  refPreviewPopper.show(item.id, e.currentTarget as HTMLElement)
+}
+
+function onGenRefLeave() {
+  refPreviewPopper.hide()
+}
+
+const hoveredGenRefItem = computed(() =>
+  props.versions.find((v) => v.id === refPreviewPopper.activeKey.value),
+)
+
+const hoveredGenRefUrls = computed(() =>
+  hoveredGenRefItem.value ? generationRefs(hoveredGenRefItem.value) : [],
+)
 
 function tagThumb(item: CreateHistoryItem) {
   return resolveEditTagThumb(item, props.versions, mediaUrl)
@@ -238,7 +277,19 @@ onUnmounted(() => {
       @click="emit('select', item.id)"
     >
       <header class="edit-history-entry__head">
-        <div v-if="parentThumb(item)" class="edit-history-entry__ref">
+        <div
+          v-if="hasGenerationRefs(item)"
+          class="edit-history-entry__gen-ref"
+          @mouseenter="onGenRefEnter(item, $event)"
+          @mouseleave="onGenRefLeave"
+        >
+          <span class="edit-history-entry__gen-ref-label">智能参考</span>
+          <img :src="primaryGenerationRef(item)" alt="" />
+          <span v-if="extraGenerationRefCount(item) > 0" class="edit-history-entry__gen-ref-more">
+            +{{ extraGenerationRefCount(item) }}
+          </span>
+        </div>
+        <div v-else-if="parentThumb(item)" class="edit-history-entry__ref">
           <img :src="parentThumb(item)" alt="" />
           <span class="edit-history-entry__ref-quote" aria-hidden="true">“</span>
         </div>
@@ -385,6 +436,29 @@ onUnmounted(() => {
 
     <Teleport to="body">
       <div
+        v-if="hoveredGenRefItem && hoveredGenRefUrls.length"
+        class="edit-history-ref-preview"
+        :style="refPreviewPopper.panelStyle.value"
+        @mouseenter="refPreviewPopper.cancelHide()"
+        @mouseleave="refPreviewPopper.hide()"
+      >
+        <p class="edit-history-ref-preview__title">智能参考</p>
+        <div
+          class="edit-history-ref-preview__grid"
+          :class="{ 'edit-history-ref-preview__grid--multi': hoveredGenRefUrls.length > 1 }"
+        >
+          <img
+            v-for="(url, idx) in hoveredGenRefUrls"
+            :key="`${hoveredGenRefItem!.id}-ref-${idx}`"
+            :src="url"
+            alt=""
+          />
+        </div>
+      </div>
+    </Teleport>
+
+    <Teleport to="body">
+      <div
         v-if="hoveredDetailItem && isDigitalHumanEntry(hoveredDetailItem)"
         class="edit-history-detail-popper"
         :style="detailPopper.panelStyle.value"
@@ -516,6 +590,11 @@ onUnmounted(() => {
   &:has(.edit-history-entry__content-line--promptable) {
     align-items: center;
   }
+
+  &:has(.edit-history-entry__gen-ref) {
+    align-items: flex-end;
+    padding-top: 4px;
+  }
 }
 
 .edit-history-entry__ref {
@@ -536,6 +615,73 @@ onUnmounted(() => {
     height: 100%;
     object-fit: cover;
   }
+}
+
+.edit-history-entry__gen-ref {
+  position: relative;
+  z-index: 12;
+  flex-shrink: 0;
+  width: 34px;
+  height: 44px;
+  border-radius: 6px;
+  overflow: visible;
+  transform: rotate(-7deg);
+  cursor: pointer;
+  transition: transform 0.22s cubic-bezier(0.22, 1, 0.36, 1);
+
+  img {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    border-radius: 6px;
+    border: 2px solid #fff;
+    box-shadow:
+      0 4px 14px rgba(0, 0, 0, 0.18),
+      0 0 0 0.5px rgba(15, 23, 42, 0.08);
+  }
+
+  &:hover {
+    transform: rotate(-4deg) scale(1.06);
+    z-index: 14;
+  }
+}
+
+.edit-history-entry__gen-ref-label {
+  position: absolute;
+  top: -22px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 3px 8px;
+  border-radius: 6px;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1.2;
+  color: #fff;
+  white-space: nowrap;
+  background: rgba(28, 30, 36, 0.92);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+  pointer-events: none;
+}
+
+.edit-history-entry__gen-ref-more {
+  position: absolute;
+  right: -4px;
+  bottom: -4px;
+  z-index: 2;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 9px;
+  font-weight: 700;
+  color: #fff;
+  background: rgba(15, 23, 42, 0.78);
+  pointer-events: none;
 }
 
 .edit-history-entry__ref-quote {
@@ -561,6 +707,7 @@ onUnmounted(() => {
 $prompt-slot-height: calc(24px + max(28px, 2 * 13px * 1.55));
 $prompt-hover-bleed: 6px;
 $prompt-ref-width: 28px;
+$prompt-gen-ref-width: 34px;
 $prompt-ref-gap: 10px;
 
 .edit-history-entry__prompt-anchor {
@@ -611,6 +758,12 @@ $prompt-ref-gap: 10px;
   left: calc(-1 * (#{$prompt-ref-width} + #{$prompt-ref-gap} + #{$prompt-hover-bleed}));
   right: -$prompt-hover-bleed;
   padding-left: calc(#{$prompt-ref-width} + #{$prompt-ref-gap} + #{$prompt-hover-bleed});
+}
+
+.edit-history-entry__head:has(.edit-history-entry__gen-ref) .edit-history-entry__content-line--promptable {
+  left: calc(-1 * (#{$prompt-gen-ref-width} + #{$prompt-ref-gap} + #{$prompt-hover-bleed}));
+  right: -$prompt-hover-bleed;
+  padding-left: calc(#{$prompt-gen-ref-width} + #{$prompt-ref-gap} + #{$prompt-hover-bleed});
 }
 
 .edit-history-entry__content-line--promptable:hover,
@@ -981,6 +1134,60 @@ $prompt-ref-gap: 10px;
 html[data-theme='light'] {
   .edit-history-entry__ref {
     border-color: $border-light;
+  }
+
+  .edit-history-entry__gen-ref-label {
+    background: rgba(28, 30, 36, 0.88);
+  }
+}
+
+.edit-history-ref-preview {
+  @include cosmic.cosmic-glass-frost(12px);
+  padding: 10px 12px;
+  border: 1px solid $border-light;
+  background: var(--composer-menu-bg, var(--glass-fill-gradient));
+  box-shadow: var(--glass-float-shadow, $shadow-md);
+  pointer-events: auto;
+  animation: edit-history-ref-preview-in 0.16s ease;
+
+  &__title {
+    margin: 0 0 8px;
+    font-size: 11px;
+    font-weight: 600;
+    color: $text-muted;
+    letter-spacing: 0.04em;
+  }
+
+  &__grid {
+    display: flex;
+    gap: 8px;
+
+    img {
+      display: block;
+      width: 168px;
+      max-height: 220px;
+      object-fit: contain;
+      border-radius: 8px;
+      background: rgba(0, 0, 0, 0.04);
+      box-shadow: 0 2px 10px rgba(0, 0, 0, 0.12);
+    }
+
+    &--multi img {
+      width: 120px;
+      max-height: 160px;
+    }
+  }
+}
+
+@keyframes edit-history-ref-preview-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
   }
 }
 </style>

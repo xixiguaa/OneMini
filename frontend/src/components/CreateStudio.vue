@@ -2026,12 +2026,36 @@ html[data-sidebar-collapsed='true'] .floating-composer {
   border-radius: 999px;
   font-size: 13px;
   color: $text-secondary;
+  transition:
+    background 0.22s ease,
+    color 0.22s ease,
+    box-shadow 0.22s ease,
+    transform 0.22s cubic-bezier(0.22, 1, 0.36, 1);
+
+  :deep(svg) {
+    transition: transform 0.22s cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  &:hover:not(.active) {
+    color: $text-primary;
+    background: color-mix(in srgb, $accent 8%, transparent);
+    transform: translateY(-1px);
+
+    :deep(svg) {
+      transform: scale(1.1);
+    }
+  }
 
   &.active {
     background: var(--bg-card);
     color: $text-primary;
     font-weight: 600;
     box-shadow: $shadow-sm;
+  }
+
+  &.active:hover {
+    box-shadow: $shadow-sm, 0 4px 14px rgba($accent, 0.14);
+    transform: translateY(-1px);
   }
 }
 
@@ -2052,12 +2076,52 @@ html[data-sidebar-collapsed='true'] .floating-composer {
   border-radius: 999px;
   font-size: 12px;
   color: $text-muted;
+  transition:
+    background 0.22s ease,
+    color 0.22s ease,
+    box-shadow 0.22s ease,
+    transform 0.22s cubic-bezier(0.22, 1, 0.36, 1);
+
+  :deep(svg) {
+    transition: transform 0.22s cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  &:hover:not(.active) {
+    color: $text-primary;
+    background: color-mix(in srgb, $accent 10%, transparent);
+    transform: scale(1.03);
+
+    :deep(svg) {
+      transform: scale(1.12);
+    }
+  }
 
   &.active {
     background: var(--bg-card);
     color: $text-primary;
     font-weight: 600;
     box-shadow: $shadow-sm;
+  }
+
+  &.active:hover {
+    box-shadow: $shadow-sm, 0 3px 10px rgba($accent, 0.12);
+    transform: scale(1.02);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .gallery-tab,
+  .gallery-subtab {
+    transition: background 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
+
+    &:hover {
+      transform: none;
+    }
+
+    :deep(svg) {
+      transition: none;
+      transform: none !important;
+    }
   }
 }
 

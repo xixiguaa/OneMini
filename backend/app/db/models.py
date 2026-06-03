@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+
 from sqlalchemy import BigInteger, Index, String, Text
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
@@ -18,6 +20,19 @@ class UserRow(Base):
     phone: Mapped[str | None] = mapped_column(String(20), unique=True, nullable=True)
     password_hash: Mapped[str] = mapped_column(Text, nullable=False)
     created_at: Mapped[int] = mapped_column(BigInteger, nullable=False)
+
+
+class UserFollowRow(Base):
+    __tablename__ = "user_follows"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    follower_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
+    following_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
+    created_at: Mapped[int] = mapped_column(BigInteger, nullable=False)
+
+    __table_args__ = (
+        Index("ix_user_follows_pair", "follower_id", "following_id", unique=True),
+    )
 
 
 class CreateHistoryItemRow(Base):
@@ -39,8 +54,21 @@ class CreateHistoryItemRow(Base):
     aspect_ratio: Mapped[str | None] = mapped_column(String(32), nullable=True)
     edit_action: Mapped[str | None] = mapped_column(String(64), nullable=True)
     storage_key: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    reference_urls: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     __table_args__ = (Index("ix_create_history_user_created", "user_id", "created_at"),)
+
+    @property
+    def reference_urls_list(self) -> list[str]:
+        if not self.reference_urls:
+            return []
+        try:
+            parsed = json.loads(self.reference_urls)
+            if isinstance(parsed, list):
+                return [str(u) for u in parsed if u]
+        except (json.JSONDecodeError, TypeError):
+            pass
+        return []
 
 
 class PublicGalleryItemRow(Base):

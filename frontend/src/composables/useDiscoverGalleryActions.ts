@@ -1,7 +1,8 @@
-import { computed, inject, ref, toValue, type MaybeRefOrGetter } from 'vue'
+import { computed, inject, ref, toValue, watch, type MaybeRefOrGetter } from 'vue'
 import { createStudioOpenFloatingComposerKey } from './createStudioScroll'
 import type { GalleryItem } from './useWorksGallery'
 import { useGalleryLikes } from './useGalleryLikes'
+import { useUserFollow } from './useUserFollow'
 import { useAuthStore } from '../stores/auth'
 import {
   authorAvatarForItem,
@@ -46,10 +47,39 @@ export function useDiscoverGalleryActions(itemSource: MaybeRefOrGetter<GalleryIt
     return id ? likeCount(id) : 0
   })
 
+  const authorUserId = computed(() => item.value?.publishedBy ?? '')
+
+  const {
+    canFollow,
+    isFollowing,
+    toggling: followToggling,
+    loadStats: loadFollowStats,
+    toggleFollow,
+  } = useUserFollow(() => authorUserId.value || undefined)
+
+  watch(
+    authorUserId,
+    (id) => {
+      if (id) void loadFollowStats(true)
+    },
+    { immediate: true },
+  )
+
   const canUseReference = computed(() => {
     const it = item.value
     return !!it && it.type === 'image' && it.status === 'DONE' && !!it.url
   })
+
+  async function onToggleFollow() {
+    if (!canFollow.value || followToggling.value) return
+    try {
+      const wasFollowing = isFollowing.value
+      await toggleFollow()
+      toast.showSuccess(wasFollowing ? '已取消关注' : '关注成功')
+    } catch (err: unknown) {
+      toast.showError(formatUserError(err, '操作失败'))
+    }
+  }
 
   async function onMakeSameStyle() {
     const it = item.value
@@ -122,12 +152,17 @@ export function useDiscoverGalleryActions(itemSource: MaybeRefOrGetter<GalleryIt
     refLoading,
     authorName,
     authorAvatar,
+    authorUserId,
     liked,
     likes,
+    canFollow,
+    isFollowing,
+    followToggling,
     canUseReference,
     onMakeSameStyle,
     onUseReference,
     onToggleLike,
+    onToggleFollow,
     openAuthorProfile,
   }
 }

@@ -15,6 +15,7 @@ import {
   normalizeToGraph,
   resolveDefaultLeaf,
 } from '../services/conversationGraph'
+import { repairAssistantMessage } from '../utils/deepThinking'
 import { groupConversations } from '../utils/conversationTimeGroup'
 import { randomUUID } from '../utils/uuid'
 
@@ -167,7 +168,9 @@ export const useConversationsStore = defineStore('conversations', () => {
   }
 
   function ensureConversationGraphFields(conv: Conversation): Conversation {
-    const messages = normalizeToGraph(conv.messages ?? [])
+    const messages = normalizeToGraph(conv.messages ?? []).map((m) =>
+      m.role === 'assistant' ? repairAssistantMessage(m) : m,
+    )
     const leaf = conv.activeLeafId ?? resolveDefaultLeaf(messages)?.id ?? null
     return { ...conv, messages, activeLeafId: leaf }
   }

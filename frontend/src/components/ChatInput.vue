@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ArrowUp, ChevronDown, Loader2, Plus } from 'lucide-vue-next'
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { ACCEPT_CREATE_AGENT } from '../config/constants'
 import ChatAttachmentCard from './ChatAttachmentCard.vue'
 import ChatKnowledgeModeToggle from './ChatKnowledgeModeToggle.vue'
@@ -18,6 +18,7 @@ const agent = useAgentStore()
 const agentConfig = useAgentConfigStore()
 const settings = useSettingsStore()
 const fileInput = ref<HTMLInputElement | null>(null)
+const composerInput = ref<HTMLTextAreaElement | null>(null)
 const pickerRef = ref<HTMLElement | null>(null)
 const showModelMenu = ref(false)
 
@@ -50,6 +51,10 @@ const canSend = () =>
 
 const hasInput = () =>
   agent.inputText.trim().length > 0 || agent.pendingAttachments.length > 0
+
+const composerPlaceholder = computed(() =>
+  agent.editingUserMessageId ? '修改提问后发送，将创建新对话分支…' : '输入消息…',
+)
 
 function onKeydown(e: KeyboardEvent) {
   if (e.key === 'Enter' && !e.shiftKey) {
@@ -101,6 +106,16 @@ function ensureDefaultModel() {
 
 watch(chatModels, ensureDefaultModel, { immediate: true, deep: true })
 
+watch(
+  () => agent.inputFocusToken,
+  async () => {
+    if (!agent.inputFocusToken) return
+    await nextTick()
+    composerInput.value?.focus()
+    composerInput.value?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
+  },
+)
+
 onMounted(() => {
   document.addEventListener('click', onDocClick)
   ensureDefaultModel()
@@ -125,9 +140,10 @@ onUnmounted(() => {
         </div>
 
         <textarea
+          ref="composerInput"
           v-model="agent.inputText"
           class="composer-input"
-          placeholder="输入消息…"
+          :placeholder="composerPlaceholder"
           rows="1"
           :disabled="agent.isProcessing"
           @keydown="onKeydown"

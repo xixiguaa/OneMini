@@ -36,6 +36,8 @@ export interface CreateHistoryItem {
   aspectRatio?: string
   /** 编辑/生成操作类型，用于历史列表标签 */
   editAction?: string
+  /** 生成时上传的参考图 URL（持久化后多为 /create-history/media/{id}-ref-N） */
+  referenceUrls?: string[]
   /** 公共画廊发布者用户 ID */
   publishedBy?: string
   /** 发布标题 */
@@ -197,6 +199,7 @@ export const useCreateHistoryStore = defineStore('createHistory', () => {
       Object.assign(item, {
         url: url || rawUrl,
         previewUrl: url || rawUrl,
+        referenceUrls: saved.referenceUrls ?? item.referenceUrls,
       })
       saveCache(items.value)
     } catch (err) {

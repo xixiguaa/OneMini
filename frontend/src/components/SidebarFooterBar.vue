@@ -18,6 +18,7 @@ const settingsOpen = ref(false)
 const menuPopover = useAnchoredPopover({
   fitContent: true,
   placement: 'above',
+  align: 'right',
   minWidth: 168,
 })
 
@@ -43,9 +44,13 @@ function closeMenu() {
   menuPopover.close()
 }
 
+function openProfileDirect() {
+  agent.openUserProfile()
+}
+
 function openProfile() {
   closeMenu()
-  agent.openUserProfile()
+  openProfileDirect()
 }
 
 function openSettings() {
@@ -68,22 +73,28 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocClick))
 
 <template>
   <div class="footer-bar" :class="{ collapsed: props.collapsed }">
-    <button
-      :ref="setTriggerRef"
-      type="button"
-      class="user-bar"
-      :class="{ 'icon-only': props.collapsed }"
-      :title="maskedLabel"
-      :aria-expanded="menuOpen"
-      aria-haspopup="menu"
-      @click.stop="toggleMenu"
-    >
-      <span class="avatar">{{ avatarInitial }}</span>
-      <span v-if="!props.collapsed" class="user-label">{{ maskedLabel }}</span>
-      <span v-if="!props.collapsed" class="more-btn" aria-hidden="true">
-        <MoreHorizontal :size="16" />
-      </span>
-    </button>
+    <div class="user-bar" :class="{ 'icon-only': props.collapsed }">
+      <button
+        type="button"
+        class="user-main"
+        :title="maskedLabel"
+        @click="openProfileDirect"
+      >
+        <span class="avatar">{{ avatarInitial }}</span>
+        <span v-if="!props.collapsed" class="user-label">{{ maskedLabel }}</span>
+      </button>
+      <button
+        :ref="setTriggerRef"
+        type="button"
+        class="more-btn"
+        aria-label="账户菜单"
+        :aria-expanded="menuOpen"
+        aria-haspopup="menu"
+        @click.stop="toggleMenu"
+      >
+        <MoreHorizontal :size="props.collapsed ? 14 : 16" />
+      </button>
+    </div>
 
     <Teleport to="body">
       <div
@@ -143,13 +154,12 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocClick))
 .user-bar {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 4px;
   width: 100%;
   min-height: 44px;
-  padding: 8px 10px;
+  padding: 4px 4px 4px 6px;
   border-radius: 12px;
   color: $text-primary;
-  text-align: left;
   transition: background 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
   @include cosmic.cosmic-glass-surface;
 
@@ -162,8 +172,54 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocClick))
     height: 40px;
     min-height: 40px;
     padding: 0;
-    justify-content: center;
     margin: 0 auto;
+    position: relative;
+    justify-content: center;
+
+    .user-main {
+      width: 100%;
+      height: 100%;
+      justify-content: center;
+      padding: 0;
+    }
+
+    .more-btn {
+      position: absolute;
+      right: -2px;
+      bottom: -2px;
+      width: 18px;
+      height: 18px;
+      border-radius: 999px;
+      background: var(--bg-card, #fff);
+      border: 1px solid $glass-border;
+      box-shadow: $shadow-sm;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.15s ease;
+    }
+
+    &:hover .more-btn,
+    &:focus-within .more-btn {
+      opacity: 1;
+      pointer-events: auto;
+    }
+  }
+}
+
+.user-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 6px;
+  border-radius: 8px;
+  color: inherit;
+  text-align: left;
+  transition: background 0.15s ease;
+
+  &:hover {
+    background: color-mix(in srgb, var(--composer-option-hover, $accent-light) 55%, transparent);
   }
 }
 
@@ -197,7 +253,16 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocClick))
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
   color: var(--text-label, $text-secondary);
+  transition: background 0.15s ease, color 0.15s ease;
+
+  &:hover {
+    color: $text-primary;
+    background: color-mix(in srgb, var(--composer-option-hover, $accent-light) 72%, transparent);
+  }
 }
 
 .user-menu {
@@ -239,6 +304,6 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocClick))
 .menu-pop-enter-from,
 .menu-pop-leave-to {
   opacity: 0;
-  transform: translateY(6px);
+  transform: translateY(-6px);
 }
 </style>

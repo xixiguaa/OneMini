@@ -4,6 +4,7 @@ import {
   Download,
   FileText,
   Loader2,
+  Pencil,
   RotateCw,
   ThumbsDown,
   ThumbsUp,
@@ -14,6 +15,7 @@ import { useAgentStore } from '../stores/agent'
 import { usePlatformStore } from '../stores/platform'
 import { useToastStore } from '../stores/toast'
 import type { ChatMessage, MessageFeedback } from '../types/agent'
+import { normalizeAssistantDisplay, stripComposerStatusPrefixes } from '../utils/deepThinking'
 import ChatThinkingBlock from './ChatThinkingBlock.vue'
 import LoadingIndicator from './LoadingIndicator.vue'
 import MarkdownContent from './MarkdownContent.vue'
@@ -74,8 +76,24 @@ function shouldShowThinking(msg: ChatMessage): boolean {
   return isAwaitingReply(msg.content)
 }
 
+function assistantDisplayContent(msg: ChatMessage): string {
+  const raw = msg.content ?? ''
+  const existingThinking = msg.metadata?.thinking?.content?.trim()
+  const normalized = normalizeAssistantDisplay(raw, {
+    existingThinking,
+    forceHeuristic: Boolean(existingThinking),
+    thinkingDurationMs: msg.metadata?.thinking?.durationMs,
+  })
+  return normalized.displayContent?.trim() ?? stripComposerStatusPrefixes(raw)
+}
+
+function isMessageStreaming(msg: ChatMessage): boolean {
+  if (!isLastMessage(msg.id)) return false
+  return agent.isStreaming || agent.isChatProcessing
+}
+
 function hasAnswerContent(msg: ChatMessage): boolean {
-  return Boolean(msg.content?.trim())
+  return Boolean(assistantDisplayContent(msg).trim())
 }
 
 function canShowActions(msg: ChatMessage): boolean {
@@ -84,6 +102,19 @@ function canShowActions(msg: ChatMessage): boolean {
   if (!hasAnswerContent(msg)) return false
   if (isLastMessage(msg.id) && (agent.isChatProcessing || agent.isStreaming)) return false
   return true
+}
+
+function canShowUserActions(msg: ChatMessage): boolean {
+  if (msg.role !== 'user' || msg.type !== 'text') return false
+  const text = msg.content?.trim()
+  if (!text || text === '（含附件）') return false
+  if (agent.isChatProcessing) return false
+  return true
+}
+
+function editUserMessage(msg: ChatMessage) {
+  if (agent.isChatProcessing) return
+  agent.beginEditUserMessage(msg.id)
 }
 
 const showThinkingForUserTurn = computed(() => {
@@ -233,14 +264,41 @@ onMounted(() => {
         class="turn"
         :class="msg.role"
       >
-        <div v-if="msg.role === 'user'" class="user-bubble">
-          <p class="content">{{ msg.content }}</p>
-          <div v-if="msg.attachments?.uploadedFiles?.length" class="file-list">
-            <span v-for="f in msg.attachments.uploadedFiles" :key="f.id" class="file-chip">
-              <FileText v-if="f.kind !== 'image'" :size="12" />
-              <img v-else-if="f.previewUrl" :src="f.previewUrl" class="mini-thumb" alt="" />
-              {{ f.name }}
-            </span>
+        <div v-if="msg.role === 'user'" class="user-turn">
+          <div class="user-bubble">
+            <p class="content">{{ msg.content }}</p>
+            <div v-if="msg.attachments?.uploadedFiles?.length" class="file-list">
+              <span v-for="f in msg.attachments.uploadedFiles" :key="f.id" class="file-chip">
+                <FileText v-if="f.kind !== 'image'" :size="12" />
+                <img v-else-if="f.previewUrl" :src="f.previewUrl" class="mini-thumb" alt="" />
+                {{ f.name }}
+              </span>
+            </div>
+          </div>
+
+          <div
+            v-if="canShowUserActions(msg)"
+            class="msg-actions msg-actions--user"
+            role="toolbar"
+            aria-label="提问操作"
+          >
+            <button
+              type="button"
+              class="msg-action-btn"
+              :class="{ active: copiedId === msg.id }"
+              title="复制"
+              @click="copyMessage(msg)"
+            >
+              <Copy :size="15" stroke-width="1.75" />
+            </button>
+            <button
+              type="button"
+              class="msg-action-btn"
+              title="修改"
+              @click="editUserMessage(msg)"
+            >
+              <Pencil :size="15" stroke-width="1.75" />
+            </button>
           </div>
         </div>
 
@@ -269,10 +327,11 @@ onMounted(() => {
             :elapsed-sec="thinkingElapsedSec"
           />
             <MarkdownContent
-              v-if="msg.type === 'text' && hasAnswerContent(msg)"
+              v-if="msg.type === 'text' && hasAnswerContent(msg) && !shouldShowThinking(msg)"
               class="content"
               :class="{ 'content--after-thinking': hasThinkingTrace(msg) }"
-              :content="msg.content"
+              :content="assistantDisplayContent(msg)"
+              :streaming="isMessageStreaming(msg)"
             />
             <p
               v-else-if="msg.content && !hasThinkingTrace(msg)"
@@ -453,6 +512,20 @@ onMounted(() => {
   }
 }
 
+.user-turn {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  max-width: 100%;
+
+  &:hover .msg-actions,
+  &:focus-within .msg-actions {
+    opacity: 1;
+    transform: translateY(0);
+    pointer-events: auto;
+  }
+}
+
 .user-bubble {
   @include cosmic.cosmic-glass-frost(22px);
   max-width: 100%;
@@ -511,6 +584,12 @@ onMounted(() => {
   transform: translateY(4px);
   pointer-events: none;
   transition: opacity 0.22s ease, transform 0.22s ease;
+
+  &--user {
+    justify-content: flex-end;
+    padding-left: 0;
+    padding-right: 2px;
+  }
 }
 
 .msg-action-btn {
@@ -588,7 +667,8 @@ onMounted(() => {
 }
 
 @media (hover: none) {
-  .assistant-turn .msg-actions {
+  .assistant-turn .msg-actions,
+  .user-turn .msg-actions {
     opacity: 1;
     transform: none;
     pointer-events: auto;
