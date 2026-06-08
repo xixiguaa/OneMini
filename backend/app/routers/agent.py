@@ -19,6 +19,9 @@ from app.services.llm import (
     stream_chat_completion,
 )
 from app.services.secrets_store import resolve_model_api_key
+from app.services.mcp.agent_loop import run_agent_with_mcp_tools, stream_agent_with_mcp_tools
+from app.services.mcp.client_manager import get_mcp_manager
+from app.config import get_settings
 
 router = APIRouter(
     prefix="/agent",
@@ -64,6 +67,10 @@ class AgentChatRequest(BaseModel):
     # DeepSeek 思考模式：thinking.type=enabled/disabled，见官方「思考模式」文档
     thinking_enabled: bool | None = None
     reasoning_effort: str | None = None
+
+
+class AgentToolsChatRequest(AgentChatRequest):
+    max_tool_rounds: int | None = Field(default=None, ge=1, le=12)
 
 
 class ImageGenRequest(BaseModel):
@@ -164,6 +171,99 @@ async def agent_chat_stream(req: AgentChatRequest, user_id: str = Depends(get_cu
             yield "data: [DONE]\n\n"
         except Exception as exc:
             yield f"data: {json.dumps({'error': str(exc)}, ensure_ascii=False)}\n\n"
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream; charset=utf-8",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+def _ensure_mcp_ready() -> None:
+    settings = get_settings()
+    if not settings.mcp_enabled:
+        raise HTTPException(400, "MCP 未启用，请在 backend/.env 设置 MCP_ENABLED=true")
+    manager = get_mcp_manager()
+    if not manager.enabled:
+        raise HTTPException(
+            503,
+            "MCP 已启用但未连接任何 Server，请检查 MCP_SERVERS 配置与服务端日志",
+        )
+
+
+@router.post("/chat/tools")
+async def agent_chat_with_tools(req: AgentToolsChatRequest, user_id: str = Depends(get_current_user)):
+    if req.provider not in (None, "tencent") and req.provider not in OPENAI_COMPATIBLE_PROVIDERS:
+        raise HTTPException(400, f"不支持的服务商: {req.provider}")
+
+    _ensure_mcp_ready()
+
+    api_key = resolve_model_api_key(user_id, req.model_config_id)
+    if not api_key:
+        raise HTTPException(
+            400,
+            "未配置该模型的 API Key，请在模型配置中保存密钥（密钥仅存于服务端）",
+        )
+
+    messages = [{"role": m.role, "content": m.content} for m in req.messages]
+    base = _resolve_chat_url(req.provider, req.base_url)
+
+    try:
+        content, tool_calls = await run_agent_with_mcp_tools(
+            messages,
+            model=req.model,
+            provider=req.provider,
+            api_key=api_key,
+            base_url=base or None,
+            temperature=req.temperature,
+            thinking_enabled=req.thinking_enabled,
+            reasoning_effort=req.reasoning_effort,
+            max_tool_rounds=req.max_tool_rounds,
+        )
+        return {"content": content, "tool_calls": tool_calls}
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(500, str(exc)) from exc
+
+
+@router.post("/chat/tools/stream")
+async def agent_chat_with_tools_stream(
+    req: AgentToolsChatRequest,
+    user_id: str = Depends(get_current_user),
+):
+    if req.provider not in (None, "tencent") and req.provider not in OPENAI_COMPATIBLE_PROVIDERS:
+        raise HTTPException(400, f"不支持的服务商: {req.provider}")
+
+    _ensure_mcp_ready()
+
+    api_key = resolve_model_api_key(user_id, req.model_config_id)
+    if not api_key:
+        raise HTTPException(
+            400,
+            "未配置该模型的 API Key，请在模型配置中保存密钥（密钥仅存于服务端）",
+        )
+
+    messages = [{"role": m.role, "content": m.content} for m in req.messages]
+    base = _resolve_chat_url(req.provider, req.base_url)
+
+    async def event_stream():
+        try:
+            async for event in stream_agent_with_mcp_tools(
+                messages,
+                model=req.model,
+                provider=req.provider,
+                api_key=api_key,
+                base_url=base or None,
+                temperature=req.temperature,
+                thinking_enabled=req.thinking_enabled,
+                reasoning_effort=req.reasoning_effort,
+                max_tool_rounds=req.max_tool_rounds,
+            ):
+                yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
+            yield "data: [DONE]\n\n"
+        except Exception as exc:
+            yield f"data: {json.dumps({'type': 'error', 'message': str(exc)}, ensure_ascii=False)}\n\n"
 
     return StreamingResponse(
         event_stream(),

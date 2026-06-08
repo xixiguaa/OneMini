@@ -23,3 +23,5 @@ pymupdf>=1.24.0
 python-docx>=1.1.0
 openpyxl>=3.1.0
 xlrd>=2.0.1
+# MCP Client（Agent 工具调用）
+mcp>=1.0.0

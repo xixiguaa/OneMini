@@ -5,11 +5,12 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import get_settings
 from app.db.session import init_db, ping_postgres
-from app.routers import agent, auth, chat, conversations, create_history, follows, health, knowledge, secrets, wiki
+from app.routers import agent, auth, chat, conversations, create_history, follows, health, knowledge, mcp, secrets, wiki
 from app.services.chat_store import _get_chat_collection
 from app.services.legacy_data_import import run_legacy_import_if_needed
 from app.services.milvus_store import connect_milvus, disconnect_milvus, ping_milvus
 from app.services.minio_storage import ensure_bucket, ping_minio
+from app.services.mcp.client_manager import get_mcp_manager
 
 
 @asynccontextmanager
@@ -46,7 +47,17 @@ async def lifespan(_app: FastAPI):
             print(f"⚠ 对话集合初始化失败: {exc}")
     else:
         print(f"⚠ Milvus 未连接: {status.get('error')}")
+
+    try:
+        await get_mcp_manager().start(settings)
+    except Exception as exc:
+        print(f"⚠ MCP 初始化失败: {exc}")
+
     yield
+    try:
+        await get_mcp_manager().stop()
+    except Exception as exc:
+        print(f"⚠ MCP 关闭失败: {exc}")
     disconnect_milvus()
 
 
@@ -76,6 +87,7 @@ app.include_router(conversations.router, prefix=API_PREFIX)
 app.include_router(create_history.router, prefix=API_PREFIX)
 app.include_router(follows.router, prefix=API_PREFIX)
 app.include_router(wiki.router, prefix=API_PREFIX)
+app.include_router(mcp.router, prefix=API_PREFIX)
 
 
 @app.get("/")

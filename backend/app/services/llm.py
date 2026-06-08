@@ -202,6 +202,212 @@ async def chat_completion(
         return content or reasoning
 
 
+def _parse_assistant_message(msg: dict[str, Any]) -> dict[str, Any]:
+    assistant: dict[str, Any] = {"role": "assistant", "content": msg.get("content")}
+    tool_calls = msg.get("tool_calls")
+    if tool_calls:
+        assistant["tool_calls"] = tool_calls
+    return assistant
+
+
+async def chat_completion_round(
+    messages: list[dict[str, Any]],
+    *,
+    model: str | None = None,
+    provider: str | None = None,
+    api_key: str | None = None,
+    base_url: str | None = None,
+    temperature: float = 0.3,
+    thinking_enabled: bool | None = None,
+    reasoning_effort: str | None = None,
+    timeout: float = 120.0,
+    tools: list[dict[str, Any]] | None = None,
+    tool_choice: str | None = "auto",
+    settings: Settings | None = None,
+) -> dict[str, Any]:
+    """单次 LLM 回合，返回 assistant 消息（可含 tool_calls）。"""
+    settings = settings or get_settings()
+    resolved_base, key = resolve_llm_endpoint(
+        provider=provider,
+        base_url=base_url,
+        api_key=api_key,
+        settings=settings,
+    )
+    if not key:
+        last_user = next(
+            (m.get("content") for m in reversed(messages) if m.get("role") == "user"),
+            "",
+        )
+        return {
+            "role": "assistant",
+            "content": (
+                "【演示模式】未配置 API Key，无法调用大模型。\n\n"
+                f"已收到问题片段：「{str(last_user)[:200]}…」"
+            ),
+        }
+
+    url = resolved_base + "/chat/completions"
+    payload: dict[str, Any] = {
+        "model": model or settings.chat_model,
+        "messages": messages,
+        "temperature": temperature,
+    }
+    if tools:
+        payload["tools"] = tools
+        if tool_choice:
+            payload["tool_choice"] = tool_choice
+    apply_provider_thinking_options(
+        payload,
+        provider=provider,
+        model=model,
+        thinking_enabled=thinking_enabled,
+        reasoning_effort=reasoning_effort,
+    )
+
+    async with httpx.AsyncClient(timeout=timeout) as client:
+        resp = await client.post(
+            url,
+            headers={
+                "Authorization": f"Bearer {key}",
+                "Content-Type": "application/json",
+            },
+            json=payload,
+        )
+        data = resp.json()
+        if resp.status_code >= 400:
+            raise RuntimeError(data.get("error", {}).get("message", resp.text))
+        choice = data.get("choices") or []
+        if not choice:
+            raise RuntimeError("模型未返回 choices（可能被限流或请求超时）")
+        msg = choice[0].get("message") or {}
+        return _parse_assistant_message(msg)
+
+
+def _merge_stream_tool_calls(
+    acc: dict[int, dict[str, Any]],
+    delta_calls: list[dict[str, Any]] | None,
+) -> None:
+    if not delta_calls:
+        return
+    for item in delta_calls:
+        index = item.get("index", 0)
+        current = acc.setdefault(
+            index,
+            {"id": "", "type": "function", "function": {"name": "", "arguments": ""}},
+        )
+        if item.get("id"):
+            current["id"] = item["id"]
+        if item.get("type"):
+            current["type"] = item["type"]
+        fn = item.get("function") or {}
+        target_fn = current.setdefault("function", {"name": "", "arguments": ""})
+        if fn.get("name"):
+            target_fn["name"] = str(fn["name"])
+        if fn.get("arguments"):
+            target_fn["arguments"] = str(target_fn.get("arguments") or "") + str(fn["arguments"])
+
+
+async def stream_chat_completion_round(
+    messages: list[dict[str, Any]],
+    *,
+    model: str | None = None,
+    provider: str | None = None,
+    api_key: str | None = None,
+    base_url: str | None = None,
+    temperature: float = 0.3,
+    thinking_enabled: bool | None = None,
+    reasoning_effort: str | None = None,
+    tools: list[dict[str, Any]] | None = None,
+    tool_choice: str | None = "auto",
+    settings: Settings | None = None,
+) -> AsyncIterator[dict[str, str | dict[str, Any]]]:
+    """流式单轮 LLM；结束时产出 type=assistant 的完整消息。"""
+    settings = settings or get_settings()
+    resolved_base, key = resolve_llm_endpoint(
+        provider=provider,
+        base_url=base_url,
+        api_key=api_key,
+        settings=settings,
+    )
+
+    if not key:
+        text = (
+            "【演示模式】未配置 API Key，无法调用大模型。"
+        )
+        yield {"type": "content", "delta": text}
+        yield {"type": "assistant", "message": {"role": "assistant", "content": text}}
+        return
+
+    url = resolved_base + "/chat/completions"
+    payload: dict[str, Any] = {
+        "model": model or settings.chat_model,
+        "messages": messages,
+        "temperature": temperature,
+        "stream": True,
+    }
+    if tools:
+        payload["tools"] = tools
+        if tool_choice:
+            payload["tool_choice"] = tool_choice
+    apply_provider_thinking_options(
+        payload,
+        provider=provider,
+        model=model,
+        thinking_enabled=thinking_enabled,
+        reasoning_effort=reasoning_effort,
+    )
+
+    content_parts: list[str] = []
+    tool_calls_acc: dict[int, dict[str, Any]] = {}
+
+    async with httpx.AsyncClient(timeout=120.0) as client:
+        async with client.stream(
+            "POST",
+            url,
+            headers={
+                "Authorization": f"Bearer {key}",
+                "Content-Type": "application/json",
+            },
+            json=payload,
+        ) as resp:
+            if resp.status_code >= 400:
+                body = await resp.aread()
+                try:
+                    err = json.loads(body).get("error", {}).get("message", body.decode())
+                except Exception:
+                    err = body.decode()
+                raise RuntimeError(err)
+
+            async for line in resp.aiter_lines():
+                trimmed = line.strip()
+                if not trimmed.startswith("data:"):
+                    continue
+                payload_str = trimmed[5:].strip()
+                if payload_str == "[DONE]":
+                    break
+                try:
+                    chunk = json.loads(payload_str)
+                    delta_obj = chunk["choices"][0].get("delta") or {}
+                    reasoning = delta_obj.get("reasoning_content") or delta_obj.get("reasoning")
+                    content = delta_obj.get("content")
+                    if reasoning:
+                        yield {"type": "thinking", "delta": reasoning}
+                    if content:
+                        content_parts.append(content)
+                        yield {"type": "content", "delta": content}
+                    _merge_stream_tool_calls(tool_calls_acc, delta_obj.get("tool_calls"))
+                except (json.JSONDecodeError, KeyError, IndexError):
+                    continue
+
+    assistant: dict[str, Any] = {
+        "role": "assistant",
+        "content": "".join(content_parts) or None,
+    }
+    if tool_calls_acc:
+        assistant["tool_calls"] = [tool_calls_acc[i] for i in sorted(tool_calls_acc)]
+    yield {"type": "assistant", "message": assistant}
+
+
 async def stream_chat_completion(
     messages: list[dict[str, str]],
     *,

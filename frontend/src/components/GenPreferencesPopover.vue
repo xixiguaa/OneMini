@@ -1059,3 +1059,4 @@ function ratioPreviewStyle(ratioId: string) {
   box-shadow: var(--glass-float-shadow, $shadow-md);
 }
 </style>
+

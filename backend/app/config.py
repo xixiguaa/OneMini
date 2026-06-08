@@ -75,6 +75,12 @@ class Settings(BaseSettings):
     # ingest 冲突：ask=记入 .ingest-conflicts.json 待用户选；overwrite=自动覆盖
     wiki_ingest_conflict_policy: str = "ask"
 
+    # MCP Client（Agent 可调用的外部 MCP Server，JSON 数组，见 .env.example）
+    mcp_enabled: bool = False
+    mcp_servers: str = "[]"
+    mcp_max_tool_rounds: int = 6
+    mcp_tool_call_timeout_sec: float = 60.0
+
 
 @lru_cache
 def get_settings() -> Settings:
