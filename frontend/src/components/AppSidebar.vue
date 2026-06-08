@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import {
   Box,
+  Brain,
   Database,
-  GitBranch,
   EyeOff,
   Globe,
   MessageSquare,
@@ -10,7 +10,7 @@ import {
   PanelLeftOpen,
   Palette,
   Plus,
-  Sparkles,
+  Wrench,
 } from 'lucide-vue-next'
 import { computed } from 'vue'
 import { useLocale } from '../composables/useLocale'
@@ -32,9 +32,9 @@ const navItems = computed(() => [
   { id: 'create' as ViewId, label: t('nav.create'), icon: Palette },
   { id: 'world' as ViewId, label: t('nav.world'), icon: Globe },
   { id: 'models' as ViewId, label: t('nav.models'), icon: Box },
-  { id: 'skills' as ViewId, label: t('nav.skills'), icon: Sparkles },
+  { id: 'skills' as ViewId, label: t('nav.skills'), icon: Wrench },
   { id: 'knowledge' as ViewId, label: t('nav.knowledge'), icon: Database },
-  { id: 'wikiGraph' as ViewId, label: t('nav.wikiGraph'), icon: GitBranch },
+  { id: 'wikiGraph' as ViewId, label: t('nav.wikiGraph'), icon: Brain },
 ])
 
 function selectView(id: ViewId) {

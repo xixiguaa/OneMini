@@ -214,26 +214,9 @@ onUnmounted(() => document.removeEventListener('click', onDocClick))
 }
 
 .picker-trigger {
-  display: flex;
-  align-items: center;
+  @include cosmic.cosmic-glass-select-trigger(8px);
   gap: 10px;
-  width: 100%;
-  padding: 10px 12px;
-  border: 1px solid $border-light;
-  border-radius: 8px;
-  font-size: 13px;
-  color: $text-primary;
-  background: $bg-input;
-  text-align: left;
-
-  &:hover:not(:disabled) {
-    border-color: $accent;
-  }
-
-  &.open {
-    border-color: $accent;
-    box-shadow: $shadow-focus;
-  }
+  padding: 10px 34px 10px 12px;
 
   &.placeholder .trigger-text {
     color: $text-muted;
@@ -274,7 +257,6 @@ onUnmounted(() => document.removeEventListener('click', onDocClick))
 }
 
 .picker-panel {
-  @include cosmic.cosmic-glass-frost(var(--glass-radius-md, 20px));
   position: absolute;
   z-index: 50;
   top: calc(100% + 6px);
@@ -283,7 +265,12 @@ onUnmounted(() => document.removeEventListener('click', onDocClick))
   max-height: min(420px, 60vh);
   display: flex;
   flex-direction: column;
-  background: var(--composer-menu-bg, $glass-bg);
+  border-radius: var(--glass-radius-md, 20px);
+  background: var(--select-menu-bg, var(--composer-menu-bg));
+  backdrop-filter: blur(16px) saturate(1.25);
+  -webkit-backdrop-filter: blur(16px) saturate(1.25);
+  border: 1px solid $border-light;
+  box-shadow: var(--glass-float-shadow-hover, $shadow-md);
   overflow: hidden;
 }
 
@@ -403,27 +390,10 @@ onUnmounted(() => document.removeEventListener('click', onDocClick))
 }
 
 .model-row {
-  display: flex;
+  @include cosmic.cosmic-glass-dropdown-option;
   align-items: flex-start;
   gap: 10px;
-  width: 100%;
   padding: 10px 12px;
-  border-radius: 10px;
-  border: 1px solid $border-light;
-  background: $bg-input;
-  text-align: left;
-  transition: border-color 0.15s ease, background 0.15s ease;
-
-  &:hover {
-    border-color: $accent;
-    background: var(--composer-option-hover, $accent-light);
-  }
-
-  &.active {
-    border-color: $accent;
-    background: $accent-light;
-    box-shadow: $shadow-focus;
-  }
 }
 
 .row-logo {

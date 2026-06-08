@@ -541,7 +541,8 @@ onUnmounted(() => {
               min="0.5"
               max="2"
               step="0.1"
-              class="voice-detail-panel__slider"
+              class="glass-range voice-detail-panel__slider"
+              :style="{ '--range-fill': `${((detailSpeed - 0.5) / 1.5) * 100}%` }"
             />
             <span class="voice-detail-panel__speed-val">{{ formatSpeed(detailSpeed) }}</span>
           </div>
@@ -1179,29 +1180,6 @@ onUnmounted(() => {
 
 .voice-detail-panel__slider {
   flex: 1;
-  height: 4px;
-  appearance: none;
-  background: color-mix(in srgb, var(--composer-menu-text) 12%, transparent);
-  border-radius: 999px;
-  cursor: pointer;
-
-  &::-webkit-slider-thumb {
-    appearance: none;
-    width: 4px;
-    height: 16px;
-    border-radius: 2px;
-    background: var(--composer-menu-text);
-    border: none;
-    box-shadow: none;
-  }
-
-  &::-moz-range-thumb {
-    width: 4px;
-    height: 16px;
-    border-radius: 2px;
-    background: var(--composer-menu-text);
-    border: none;
-  }
 }
 
 .voice-detail-panel__speed-val {

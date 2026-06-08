@@ -13,6 +13,7 @@ import {
   type ProviderModelOption,
 } from '../config/providerModels'
 import { pickerOptionToProviderOption } from '../api/models'
+import GlassSelect from './GlassSelect.vue'
 import ModelPickerPopover from './ModelPickerPopover.vue'
 import ProviderSelect from './ProviderSelect.vue'
 import type { PickerModelOption } from '../types/modelCatalog'
@@ -204,15 +205,12 @@ async function onConfigurePending(payload: { apiKey?: string; enable: boolean })
 
       <label v-if="isVisionGroup">
         <span>输出类型 <em>*</em></span>
-        <select v-model="form.capability">
-          <option
-            v-for="opt in VISION_MEDIA_TYPES"
-            :key="opt.value"
-            :value="opt.value"
-          >
-            {{ opt.label }}
-          </option>
-        </select>
+        <GlassSelect
+          :model-value="form.capability"
+          :options="VISION_MEDIA_TYPES.map((opt) => ({ value: opt.value, label: opt.label }))"
+          aria-label="输出类型"
+          @update:model-value="form.capability = $event as ModelCapability"
+        />
         <p class="field-hint">同一视觉模型可按输出媒体分别配置图片或视频接入。</p>
       </label>
 
@@ -392,8 +390,7 @@ label {
     }
   }
 
-  input,
-  select {
+  input {
     width: 100%;
     padding: 10px 12px;
     border: 1px solid $border-light;
@@ -405,10 +402,6 @@ label {
       border-color: $accent;
       box-shadow: $shadow-focus;
     }
-  }
-
-  select {
-    padding-right: 34px;
   }
 }
 

@@ -24,7 +24,6 @@ import {
   resolveEditAction,
   resolveEditActionLabel,
   resolveEditTagThumb,
-  resolveParentVersion,
   type ImageEditAction,
 } from '../utils/imageEditHistory'
 import { cssAspectRatio } from '../utils/aspectRatioStyle'
@@ -82,12 +81,6 @@ function bindEntry(id: string, el: unknown) {
 
 function mediaUrl(item: CreateHistoryItem) {
   return resolveCreateHistoryImageUrl(item) || item.previewUrl || item.url || ''
-}
-
-function parentThumb(item: CreateHistoryItem) {
-  const parent = resolveParentVersion(item, props.versions)
-  if (!parent) return ''
-  return mediaUrl(parent)
 }
 
 function generationRefs(item: CreateHistoryItem) {
@@ -289,10 +282,6 @@ onUnmounted(() => {
             +{{ extraGenerationRefCount(item) }}
           </span>
         </div>
-        <div v-else-if="parentThumb(item)" class="edit-history-entry__ref">
-          <img :src="parentThumb(item)" alt="" />
-          <span class="edit-history-entry__ref-quote" aria-hidden="true">“</span>
-        </div>
 
         <div class="edit-history-entry__meta-row">
           <div
@@ -305,7 +294,7 @@ onUnmounted(() => {
             >
               <span class="edit-history-entry__tag">
                 <img
-                  v-if="tagThumb(item) && !parentThumb(item)"
+                  v-if="tagThumb(item) && !hasGenerationRefs(item)"
                   :src="tagThumb(item)"
                   alt=""
                   class="edit-history-entry__tag-thumb"

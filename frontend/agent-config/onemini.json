@@ -23,7 +23,15 @@
       "poster",
       "brand",
       "cinematic"
-    ]
+    ],
+    "invokeDescriptions": {},
+    "params": {
+      "web-search": {
+        "maxResults": 5,
+        "domainBlacklist": ""
+      }
+    },
+    "permissions": {}
   },
   "multiAgent": {
     "enabled": false,

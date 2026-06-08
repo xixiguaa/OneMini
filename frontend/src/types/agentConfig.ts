@@ -1,4 +1,5 @@
 import type { SkillId } from './agent'
+import type { AgentPersonaForm } from './agentPersona'
 
 /** 工作区 Markdown（对标 OpenClaw workspace bootstrap files） */
 export interface AgentWorkspace {
@@ -36,6 +37,14 @@ export interface OneMiniSkeleton {
   }
   skills: {
     plugins: string[]
+    /** 各技能调用条件描述（对应 LLM tool description） */
+    invokeDescriptions?: Record<string, string>
+    /** 技能参数，如联网搜索条数、域名黑名单 */
+    params?: Record<string, Record<string, unknown>>
+    /** 技能子权限开关 */
+    permissions?: Record<string, Record<string, boolean>>
+    /** 在技能管理页隐藏的技能 ID */
+    hiddenSkillIds?: string[]
   }
   multiAgent: MultiAgentConfig
 }
@@ -67,6 +76,8 @@ export interface AgentConfigBundle {
   /** @deprecated 读取时从 layers 迁移 */
   layers?: AgentWorkspace
   skeleton: OneMiniSkeleton
+  /** 表单式人设；变更时同步写入 workspace Markdown */
+  persona?: AgentPersonaForm
 }
 
 export interface OrchestrationStep {
@@ -87,25 +98,9 @@ export interface OrchestrationResult {
 
 export type AgentConfigSection = 'workspace' | 'runtime' | 'skills' | 'crew'
 
-export const CONFIG_SECTIONS: { id: AgentConfigSection; label: string; desc: string }[] = [
-  {
-    id: 'workspace',
-    label: '工作区',
-    desc: 'AGENTS / SOUL / USER … 注入系统提示',
-  },
-  {
-    id: 'runtime',
-    label: '运行时',
-    desc: 'onemini.json · 模型 / 会话 / 沙箱',
-  },
-  {
-    id: 'skills',
-    label: '技能',
-    desc: '能力与创作插件 · 绑定模型',
-  },
-  {
-    id: 'crew',
-    label: '协作团队',
-    desc: '多 Agent 编排（Crew）',
-  },
+export const CONFIG_SECTIONS: { id: AgentConfigSection; label: string }[] = [
+  { id: 'workspace', label: 'Agent 配置' },
+  { id: 'runtime', label: '运行参数' },
+  { id: 'skills', label: '技能' },
+  { id: 'crew', label: '多 Agent 协作' },
 ]

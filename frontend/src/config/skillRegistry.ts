@@ -2,7 +2,7 @@ import { CREATIVE_SKILLS, type CreativeSkill } from './creativeSkills'
 import { DEFAULT_SKILLS } from './defaults'
 import type { SkillConfig, SkillId } from '../types/agent'
 
-/** 可插拔技能模块（核心能力 + 创作插件） */
+/** 技能注册表：多模态技能 + 创作模板（模板非技能，见 skillTaxonomy） */
 export interface SkillModule {
   id: string
   kind: 'core' | 'plugin'

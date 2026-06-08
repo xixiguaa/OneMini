@@ -1,10 +1,10 @@
 <script setup lang="ts">
-import { FileText, RotateCcw, Settings, Users, Wand2 } from 'lucide-vue-next'
+import { FileText, Settings, Users, Wand2 } from 'lucide-vue-next'
 import { ref } from 'vue'
-import AgentCrewPanel from './AgentCrewPanel.vue'
+import AgentPersonaPanel from './AgentPersonaPanel.vue'
 import AgentRuntimePanel from './AgentRuntimePanel.vue'
 import AgentSkillsPanel from './AgentSkillsPanel.vue'
-import AgentWorkspacePanel from './AgentWorkspacePanel.vue'
+import AgentCrewPanel from './AgentCrewPanel.vue'
 import { useAgentConfigStore } from '../stores/agentConfig'
 import { CONFIG_SECTIONS, type AgentConfigSection } from '../types/agentConfig'
 
@@ -20,36 +20,29 @@ const sectionIcon = {
 </script>
 
 <template>
-  <div class="models-page">
+  <div class="config-center">
     <div class="split-layout">
-      <aside class="model-list card">
-        <p class="group-label">配置分区</p>
-        <button
-          v-for="s in CONFIG_SECTIONS"
-          :key="s.id"
-          type="button"
-          class="model-item"
-          :class="{ active: section === s.id }"
-          @click="section = s.id"
-        >
-          <component :is="sectionIcon[s.id]" :size="20" class="section-icon" />
-          <div class="item-text">
-            <span class="name">
+      <aside class="config-nav" aria-label="配置模块">
+        <nav class="config-nav__list">
+          <button
+            v-for="s in CONFIG_SECTIONS"
+            :key="s.id"
+            type="button"
+            class="config-nav__item"
+            :class="{ active: section === s.id }"
+            @click="section = s.id"
+          >
+            <component :is="sectionIcon[s.id]" :size="16" class="config-nav__icon" aria-hidden="true" />
+            <span class="config-nav__label">
               {{ s.label }}
               <span v-if="s.id === 'crew' && agentConfig.multiAgentEnabled" class="badge-on">ON</span>
             </span>
-            <span class="state">{{ s.desc }}</span>
-          </div>
-        </button>
-
-        <button type="button" class="add-trigger" @click="agentConfig.resetAll()">
-          <RotateCcw :size="16" />
-          恢复出厂配置
-        </button>
+          </button>
+        </nav>
       </aside>
 
-      <section class="right-panel card">
-        <AgentWorkspacePanel v-show="section === 'workspace'" />
+      <section class="config-content card">
+        <AgentPersonaPanel v-show="section === 'workspace'" />
         <AgentRuntimePanel v-show="section === 'runtime'" />
         <AgentSkillsPanel v-show="section === 'skills'" />
         <AgentCrewPanel v-show="section === 'crew'" />
@@ -61,95 +54,76 @@ const sectionIcon = {
 <style scoped lang="scss">
 @use '../styles/variables.scss' as *;
 
-.models-page {
+.config-center {
   flex: 1;
   display: flex;
   flex-direction: column;
   min-height: 0;
-  padding: 24px 28px;
+  padding: 20px 24px;
 }
 
 .split-layout {
   flex: 1;
   display: grid;
-  grid-template-columns: 280px 1fr;
-  gap: 16px;
+  grid-template-columns: 200px 1fr;
+  gap: 12px;
   min-height: 0;
 }
 
-.card {
-  min-height: 0;
-  overflow: hidden;
-}
-
-.model-list {
+.config-nav {
   display: flex;
   flex-direction: column;
-  padding: 12px;
-  overflow-y: auto;
+  min-height: 0;
+  padding: 4px 0;
 }
 
-.group-label {
-  font-size: 11px;
-  font-weight: 600;
-  color: $text-muted;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  padding: 8px 8px 6px;
+.config-nav__list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
 }
 
-.model-item {
+.config-nav__item {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   width: 100%;
-  padding: 10px;
-  border-radius: 10px;
+  padding: 8px 10px;
+  border-radius: 8px;
   text-align: left;
-  margin-bottom: 4px;
-  border: 1px solid transparent;
-  color: $text-primary;
+  color: $text-secondary;
+  font-size: 13px;
+  font-weight: 500;
+  border: none;
+  background: transparent;
 
   &:hover {
-    background: $accent-light;
+    color: $text-primary;
+    background: color-mix(in srgb, $accent 6%, transparent);
   }
 
   &.active {
+    color: $accent-emphasis;
     background: $accent-light;
-    border-color: $accent;
-    box-shadow: inset $active-indicator 0 0 $accent;
+    font-weight: 600;
 
-    .name {
-      color: $text-primary;
-      font-weight: 600;
+    .config-nav__icon {
+      opacity: 1;
     }
   }
 }
 
-.section-icon {
+.config-nav__icon {
   flex-shrink: 0;
   color: $accent;
-  opacity: 0.85;
+  opacity: 0.7;
 }
 
-.item-text {
+.config-nav__label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   min-width: 0;
-
-  .name {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    font-size: 13px;
-    font-weight: 500;
-  }
-
-  .state {
-    display: block;
-    font-size: 11px;
-    color: $text-secondary;
-    margin-top: 2px;
-    line-height: 1.35;
-  }
 }
 
 .badge-on {
@@ -161,34 +135,32 @@ const sectionIcon = {
   font-weight: 600;
 }
 
-.add-trigger {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  margin-top: auto;
-  padding: 12px;
-  border: 1px dashed $border-light;
-  border-radius: 10px;
-  font-size: 13px;
-  color: $text-secondary;
-
-  &:hover {
-    border-color: $color-danger;
-    color: $color-danger;
-    background: $color-danger-soft;
-  }
-}
-
-.right-panel {
+.config-content {
   display: flex;
   flex-direction: column;
   min-height: 400px;
+  min-width: 0;
+  overflow: hidden;
 }
 
 @media (max-width: 768px) {
   .split-layout {
     grid-template-columns: 1fr;
+  }
+
+  .config-nav {
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid $border-light;
+  }
+
+  .config-nav__list {
+    flex-direction: row;
+    flex-wrap: wrap;
+    flex: 1;
   }
 }
 </style>

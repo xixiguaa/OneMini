@@ -1740,22 +1740,11 @@ watch(selectedNodeId, (id) => expandSectionForNode(id))
 }
 
 .ingest-model-btn {
-  display: flex;
-  align-items: center;
+  @include cosmic.cosmic-glass-select-trigger(8px);
   gap: 8px;
   width: 100%;
-  padding: 8px 10px;
-  border: 1px solid $border-light;
-  border-radius: 8px;
-  background: $bg-card;
-  font-size: 13px;
-  color: $text-primary;
-  text-align: left;
-
-  &:hover:not(:disabled) {
-    border-color: $accent;
-    background: $accent-light;
-  }
+  min-height: 38px;
+  padding: 8px 34px 8px 10px;
 
   &:disabled {
     opacity: 0.65;
@@ -1782,40 +1771,15 @@ watch(selectedNodeId, (id) => expandSectionForNode(id))
 }
 
 .ingest-model-menu {
-  position: absolute;
-  z-index: 20;
+  @include cosmic.cosmic-glass-dropdown-menu(8px);
   top: calc(100% + 4px);
   left: 0;
   right: 0;
   max-height: 220px;
-  overflow-y: auto;
-  padding: 4px;
-  border: 1px solid $glass-border;
-  border-radius: 8px;
-  background: $bg-card;
-  box-shadow: $shadow-md;
 }
 
 .ingest-model-option {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  width: 100%;
-  padding: 8px 10px;
-  border-radius: 6px;
-  font-size: 13px;
-  color: $text-primary;
-  text-align: left;
-
-  &:hover {
-    background: $accent-light;
-  }
-
-  &.active {
-    background: $accent-light;
-    color: $accent;
-    font-weight: 500;
-  }
+  @include cosmic.cosmic-glass-dropdown-option;
 }
 
 .ingest-model-hint {

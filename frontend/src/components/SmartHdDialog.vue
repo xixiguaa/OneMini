@@ -161,7 +161,8 @@ onUnmounted(() => {
                       min="0"
                       max="100"
                       step="1"
-                      class="smart-hd-detail-slider"
+                      class="glass-range smart-hd-detail-slider"
+                      :style="{ '--range-fill': `${detailLevel}%` }"
                     />
                   </div>
                 </div>
@@ -386,7 +387,6 @@ onUnmounted(() => {
 
 .smart-hd-detail-slider {
   width: 100%;
-  accent-color: $accent;
 }
 
 .smart-hd-res-menu {

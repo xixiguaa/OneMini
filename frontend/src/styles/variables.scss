@@ -111,6 +111,11 @@ html[data-theme='light'] {
   --user-menu-bg: rgba(255, 255, 255, 0.94);
   --user-menu-shadow: 0 16px 48px rgba(74, 58, 232, 0.14), 0 4px 16px rgba(90, 60, 160, 0.1);
   --select-chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%238055a0' stroke-width='2.25' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  --select-trigger-bg: rgba(255, 255, 255, 0.82);
+  --select-trigger-hover-bg: rgba(255, 255, 255, 0.92);
+  --select-menu-bg: rgba(255, 255, 255, 0.97);
+  --select-option-hover-bg: rgba(124, 95, 232, 0.1);
+  --select-option-active-bg: rgba(124, 95, 232, 0.14);
 }
 
 /* Cosmic Glassmorphism — Dark Space */
@@ -224,6 +229,11 @@ html[data-theme='dark'] {
   --user-menu-bg: rgba(14, 10, 34, 0.96);
   --user-menu-shadow: 0 16px 48px rgba(0, 0, 0, 0.45), 0 4px 16px rgba(60, 40, 120, 0.28);
   --select-chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23ffffff59' stroke-width='2.25' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  --select-trigger-bg: rgba(22, 18, 42, 0.9);
+  --select-trigger-hover-bg: rgba(28, 24, 52, 0.96);
+  --select-menu-bg: rgba(14, 10, 34, 0.98);
+  --select-option-hover-bg: rgba(124, 95, 232, 0.18);
+  --select-option-active-bg: rgba(124, 95, 232, 0.24);
 }
 
 $bg-page: var(--bg-page);

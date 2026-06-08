@@ -160,7 +160,7 @@ const currentMode = computed(() => modes.find((m) => m.id === agent.createMode))
 const inputPlaceholder = computed(() => {
   if (props.placeholder?.trim()) return props.placeholder
   if (agent.createMode === 'agent') {
-    return '输入想法、脚本或上传参考，支持「/」使用技能，和 Agent 一起创作'
+    return '输入想法、脚本或上传参考，支持「/」使用创作模板，和 Agent 一起创作'
   }
   if (agent.createMode === 'video') {
     return '描述你想生成的视频画面、镜头与时长，例如：小猫咪玩球，5 秒'

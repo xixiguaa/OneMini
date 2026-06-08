@@ -99,7 +99,7 @@ async function onImagePick(e: Event) {
 async function generate() {
   const model = boundWorldModel.value
   if (!model?.enabled) {
-    alert('请先在「模型配置」添加并启用 3D 世界生成模型，并在「Agent 配置 → 技能」绑定')
+    alert('请先在「模型配置」添加并启用 3D 世界生成模型，并在「配置中心 → 技能」绑定')
     agent.setCurrentView('models')
     return
   }

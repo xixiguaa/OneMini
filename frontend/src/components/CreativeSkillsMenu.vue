@@ -94,7 +94,7 @@ function pick(id: string) {
       @click="toggleMenu"
     >
       <Wand2 :size="14" />
-      <span>使用技能</span>
+      <span>创作模板</span>
       <span v-if="selectedSkill" class="skill-dot" :title="selectedSkill.name" />
     </button>
 
@@ -107,7 +107,7 @@ function pick(id: string) {
         @click.stop
       >
         <div class="popover-head">
-          <span>选择技能</span>
+          <span>选择创作模板</span>
           <button type="button" class="popover-close" title="关闭" @click.stop="dismiss">
             <X :size="16" />
           </button>
@@ -127,7 +127,7 @@ function pick(id: string) {
           </div>
           <Check v-if="agent.selectedCreativeSkillId === s.id" :size="16" class="check" />
         </button>
-        <p v-if="!filtered.length" class="skills-empty">当前模式暂无可用技能</p>
+        <p v-if="!filtered.length" class="skills-empty">当前模式暂无可用模板</p>
       </div>
     </Teleport>
   </div>

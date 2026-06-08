@@ -2,6 +2,7 @@
 import { Users } from 'lucide-vue-next'
 import { useAgentConfigStore } from '../stores/agentConfig'
 
+// 关闭时走单 Agent：Agent 设定 + 主模型流式回复
 const agentConfig = useAgentConfigStore()
 const ma = () => agentConfig.skeleton.multiAgent
 </script>
@@ -10,8 +11,7 @@ const ma = () => agentConfig.skeleton.multiAgent
   <div class="detail crew-detail">
     <div class="crew-toggle">
       <div>
-        <strong>启用协作团队</strong>
-        <p>复杂任务由总指挥拆解后分派专员</p>
+        <strong>启用多 Agent 协作</strong>
       </div>
       <label class="toggle">
         <input
@@ -86,8 +86,6 @@ const ma = () => agentConfig.skeleton.multiAgent
         </div>
       </section>
     </template>
-
-    <p v-else class="off-hint">关闭时对话仅使用工作区 + 单模型流式回复。</p>
   </div>
 </template>
 
@@ -108,12 +106,6 @@ const ma = () => agentConfig.skeleton.multiAgent
   padding-bottom: 16px;
   margin-bottom: 16px;
   border-bottom: 1px solid $border-light;
-
-  p {
-    font-size: 12px;
-    color: $text-secondary;
-    margin-top: 4px;
-  }
 }
 
 .block {
@@ -190,11 +182,6 @@ const ma = () => agentConfig.skeleton.multiAgent
   color: $text-muted;
   display: block;
   margin-top: 4px;
-}
-
-.off-hint {
-  font-size: 13px;
-  color: $text-muted;
 }
 
 .toggle {

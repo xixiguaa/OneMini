@@ -28,6 +28,7 @@ import { APP_VERSION } from '../types/agent'
 import { maskAccountLabel } from '../utils/maskAccount'
 import { BRAND_NAME } from '../utils/modelLogo'
 import ConfirmDialog from './ConfirmDialog.vue'
+import GlassSelect from './GlassSelect.vue'
 
 const props = defineProps<{ open: boolean }>()
 const emit = defineEmits<{ 'update:open': [value: boolean] }>()
@@ -284,14 +285,17 @@ async function confirmDeleteAll() {
                     <div>
                       <h3>{{ t('settings.language') }}</h3>
                     </div>
-                    <select
+                    <GlassSelect
                       class="settings-select"
-                      :value="ui.locale"
-                      @change="ui.setLocale(($event.target as HTMLSelectElement).value as 'zh' | 'en')"
-                    >
-                      <option value="zh">{{ t('footer.langZh') }}</option>
-                      <option value="en">{{ t('footer.langEn') }}</option>
-                    </select>
+                      :model-value="ui.locale"
+                      :options="[
+                        { value: 'zh', label: t('footer.langZh') },
+                        { value: 'en', label: t('footer.langEn') },
+                      ]"
+                      :aria-label="t('settings.language')"
+                      menu-align="right"
+                      @update:model-value="ui.setLocale($event as 'zh' | 'en')"
+                    />
                   </div>
                 </section>
               </template>
@@ -698,12 +702,7 @@ async function confirmDeleteAll() {
 
 .settings-select {
   min-width: 140px;
-  padding: 8px 12px;
-  border-radius: 8px;
-  border: 1px solid $glass-border;
-  background: $bg-input;
-  color: $text-primary;
-  font-size: 13px;
+  width: auto;
 }
 
 .row-action {

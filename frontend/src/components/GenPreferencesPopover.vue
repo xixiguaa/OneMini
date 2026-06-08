@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Check, Clock, Gem, Link2, Ratio, SlidersHorizontal, Unlink2, X } from 'lucide-vue-next'
+import { Check, Clock, Link2, Ratio, SlidersHorizontal, Sparkles, Unlink2, X } from 'lucide-vue-next'
 import { computed, inject, onUnmounted, watch, type Ref, type VNodeRef } from 'vue'
 import {
   ASPECT_RATIOS,
@@ -81,9 +81,7 @@ const imagePanelStyle = computed(() => imagePopover.panelStyle.value)
 const videoRatioPanelStyle = computed(() => videoRatioPopover.panelStyle.value)
 const videoDurationPanelStyle = computed(() => videoDurationPopover.panelStyle.value)
 const isVideo = computed(() => agent.createMode === 'video')
-const showMediaTypeTabs = computed(
-  () => agent.createMode === 'image' || agent.createMode === 'video',
-)
+const showMediaTypeTabs = computed(() => agent.createMode === 'video')
 const videoSplitControls = computed(() => isVideo.value && !isAutoMode.value)
 
 const imageTriggerLabel = computed(() => {
@@ -443,7 +441,7 @@ function ratioPreviewStyle(ratioId: string) {
                   @click="pickImageResolution(res.id)"
                 >
                   <span>{{ res.label }}</span>
-                  <Gem v-if="res.id === '4k'" :size="12" class="tier-star" />
+                  <Sparkles v-if="res.id === '4k'" :size="11" class="tier-pro" />
                 </button>
               </div>
 
@@ -655,11 +653,11 @@ function ratioPreviewStyle(ratioId: string) {
   }
 
   &.active {
-    background: color-mix(in srgb, var(--composer-menu-text) 12%, transparent);
-    color: var(--composer-menu-text);
+    background: $accent-light;
+    color: $accent;
 
     .ratio-preview-shape {
-      border-color: var(--composer-menu-text);
+      border-color: $accent;
     }
   }
 }
@@ -708,9 +706,9 @@ function ratioPreviewStyle(ratioId: string) {
   }
 
   &.active {
-    background: color-mix(in srgb, var(--composer-menu-text) 12%, transparent);
-    border-color: color-mix(in srgb, var(--composer-menu-text) 25%, transparent);
-    color: var(--composer-menu-text);
+    background: $accent-light;
+    border-color: color-mix(in srgb, $accent 45%, transparent);
+    color: $accent;
     font-weight: 600;
   }
 }
@@ -788,7 +786,7 @@ function ratioPreviewStyle(ratioId: string) {
   }
 
   input:checked + .slider {
-    background: $accent-cyan;
+    background: $accent;
 
     &::after {
       transform: translateX(16px);
@@ -880,8 +878,8 @@ function ratioPreviewStyle(ratioId: string) {
   }
 
   &.active {
-    background: rgba($accent, 0.1);
-    border-color: rgba($accent, 0.45);
+    background: $accent-light;
+    border-color: color-mix(in srgb, $accent 45%, transparent);
     color: $accent;
     font-weight: 600;
   }
@@ -920,14 +918,21 @@ function ratioPreviewStyle(ratioId: string) {
   }
 
   &.active {
-    background: color-mix(in srgb, var(--composer-menu-text) 12%, transparent);
-    border-color: color-mix(in srgb, var(--composer-menu-text) 25%, transparent);
+    background: $accent-light;
+    border-color: color-mix(in srgb, $accent 45%, transparent);
+    color: $accent;
     font-weight: 600;
+
+    .tier-pro {
+      opacity: 1;
+    }
   }
 }
 
-.tier-star {
-  color: $accent-cyan;
+.tier-pro {
+  color: $accent;
+  opacity: 0.72;
+  flex-shrink: 0;
 }
 
 .size-row {

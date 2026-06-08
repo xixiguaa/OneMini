@@ -1,260 +1,628 @@
 <script setup lang="ts">
-import { Wand2 } from 'lucide-vue-next'
-import ModelLogo from './ModelLogo.vue'
-import { listCoreSkills, listPluginSkills } from '../config/skillRegistry'
+import { Loader2, Plus, Search } from 'lucide-vue-next'
+import { computed, onMounted, ref } from 'vue'
+import AgentSkillDetailSheet from './AgentSkillDetailSheet.vue'
+import { fetchMcpStatus, fetchMcpTools, type McpToolPayload } from '../api/mcp'
+import {
+  AGENT_SKILL_CATALOG,
+  catalogItemForMcpTool,
+  getCatalogItem,
+  type AgentSkillCatalogItem,
+} from '../config/agentSkillCatalog'
 import { useAgentConfigStore } from '../stores/agentConfig'
-import { useSettingsStore } from '../stores/settings'
-import type { SkillId } from '../types/agent'
+import { usePlatformStore } from '../stores/platform'
 
-const settings = useSettingsStore()
+// 技能页：卡片展示 description 与 source 路径，参考 marketplace 卡片布局
 const agentConfig = useAgentConfigStore()
-const coreModules = listCoreSkills()
-const plugins = listPluginSkills()
+const platform = usePlatformStore()
 
-function boundModel(skillId: SkillId) {
-  const skill = settings.getSkill(skillId)
-  return skill?.defaultModelId ? settings.getModel(skill.defaultModelId) : null
+const search = ref('')
+const selectedId = ref<string | null>(null)
+const addMenuOpen = ref(false)
+const mcpLoading = ref(false)
+const mcpConnected = ref(false)
+const mcpTools = ref<McpToolPayload[]>([])
+
+const mcpCatalogItems = computed(() =>
+  mcpTools.value.map((t) => catalogItemForMcpTool(t)),
+)
+
+const allSkills = computed(() => {
+  const hidden = new Set(agentConfig.skeleton.skills.hiddenSkillIds ?? [])
+  return [...AGENT_SKILL_CATALOG, ...mcpCatalogItems.value].filter((s) => !hidden.has(s.id))
+})
+
+const filteredSkills = computed(() => {
+  const q = search.value.trim().toLowerCase()
+  if (!q) return allSkills.value
+  return allSkills.value.filter(
+    (s) =>
+      s.name.toLowerCase().includes(q) ||
+      s.description.toLowerCase().includes(q) ||
+      s.id.toLowerCase().includes(q),
+  )
+})
+
+const enabledSkills = computed(() =>
+  filteredSkills.value.filter((s) => isSkillEnabled(s) && s.availability !== 'planned'),
+)
+const disabledSkills = computed(() =>
+  filteredSkills.value.filter((s) => !isSkillEnabled(s) || s.availability === 'planned'),
+)
+
+const skillSections = computed(() =>
+  [
+    { key: 'on', label: '已启用', items: enabledSkills.value, dim: false },
+    { key: 'off', label: '未启用', items: disabledSkills.value, dim: true },
+  ].filter((s) => s.items.length > 0),
+)
+
+const selectedSkill = computed(() =>
+  selectedId.value ? getCatalogItem(selectedId.value, mcpCatalogItems.value) : null,
+)
+
+const selectedMcpName = computed(() => {
+  if (!selectedId.value?.startsWith('mcp:')) return undefined
+  return selectedId.value.slice(4)
+})
+
+function isSkillEnabled(item: AgentSkillCatalogItem) {
+  if (item.availability === 'planned') return false
+  switch (item.id) {
+    case 'web-search':
+      return platform.webSearchEnabled
+    case 'knowledge-rag':
+      return platform.knowledgeChatMode === 'rag'
+    case 'knowledge-wiki':
+      return platform.knowledgeChatMode === 'wiki'
+    case 'code-exec':
+      return false
+    default:
+      break
+  }
+  if (item.kind === 'mcp') return mcpConnected.value
+  return false
 }
 
-function modelOptions(skillId: SkillId) {
-  switch (skillId) {
-    case 'chat':
-      return settings.chatModels
-    case 'image':
-      return settings.imageModels
-    case 'video':
-      return settings.videoModels
-    case 'world':
-      return settings.worldModels
-    default:
-      return []
+function canToggle(item: AgentSkillCatalogItem) {
+  if (item.availability === 'planned') return false
+  if (item.kind === 'mcp') return false
+  return true
+}
+
+function statusLabel(item: AgentSkillCatalogItem) {
+  if (item.availability === 'planned') return '规划中'
+  if (item.kind === 'mcp' && !mcpConnected.value) return '需配置'
+  return isSkillEnabled(item) ? '已启用' : '未启用'
+}
+
+function statusKind(item: AgentSkillCatalogItem) {
+  const label = statusLabel(item)
+  if (label === '已启用') return 'on'
+  if (label === '需配置') return 'auth'
+  if (label === '规划中') return 'planned'
+  return 'off'
+}
+
+function skillSource(item: AgentSkillCatalogItem): string {
+  if (item.kind === 'mcp') {
+    return item.id.startsWith('mcp:') ? item.id.slice(4) : item.id
+  }
+  const map: Record<string, string> = {
+    'web-search': 'onemini/web-search',
+    'knowledge-rag': 'onemini/milvus-rag',
+    'knowledge-wiki': 'onemini/llm-wiki',
+    'code-exec': 'onemini/sandbox',
+  }
+  return map[item.id] ?? `onemini/${item.id}`
+}
+
+function selectSkill(id: string) {
+  selectedId.value = selectedId.value === id ? null : id
+}
+
+function toggleSkill(item: AgentSkillCatalogItem, on: boolean) {
+  switch (item.id) {
+    case 'web-search':
+      platform.setWebSearchEnabled(on)
+      return
+    case 'knowledge-rag':
+      platform.setKnowledgeChatMode(on ? 'rag' : 'off')
+      return
+    case 'knowledge-wiki':
+      platform.setKnowledgeChatMode(on ? 'wiki' : 'off')
+      return
   }
 }
 
-function coreSkillConfig(id: SkillId) {
-  return settings.getSkill(id)
+function onCardToggle(item: AgentSkillCatalogItem, e: Event) {
+  e.stopPropagation()
+  if (!canToggle(item)) return
+  toggleSkill(item, (e.target as HTMLInputElement).checked)
 }
+
+async function refreshMcp() {
+  mcpLoading.value = true
+  try {
+    const [status, toolsRes] = await Promise.all([fetchMcpStatus(), fetchMcpTools()])
+    mcpConnected.value = status.enabled && status.connected
+    mcpTools.value = toolsRes.tools
+  } catch {
+    mcpConnected.value = false
+    mcpTools.value = []
+  } finally {
+    mcpLoading.value = false
+  }
+}
+
+function onRemoveSelected() {
+  if (!selectedId.value) return
+  agentConfig.hideSkillId(selectedId.value)
+  selectedId.value = null
+}
+
+function closeSheet() {
+  selectedId.value = null
+}
+
+onMounted(() => {
+  void refreshMcp()
+})
 </script>
 
 <template>
-  <div class="detail skills-detail">
-    <section class="block">
-      <h4 class="block-title">内置能力</h4>
-      <div v-for="mod in coreModules" :key="mod.id" class="skill-row">
-        <template v-if="coreSkillConfig(mod.id as SkillId)">
-          <div class="skill-head">
-            <label class="toggle">
-              <input
-                type="checkbox"
-                :checked="coreSkillConfig(mod.id as SkillId)!.enabled"
-                @change="
-                  settings.updateSkill(mod.id as SkillId, {
-                    enabled: ($event.target as HTMLInputElement).checked,
-                  })
-                "
-              />
-              <span class="slider" />
-            </label>
-            <div>
-              <span class="name">{{ mod.name }}</span>
-              <span class="meta">core · {{ mod.id }}</span>
-            </div>
-          </div>
-          <p class="desc">{{ mod.description }}</p>
-          <label class="field">
-            <span>绑定模型</span>
-            <div v-if="boundModel(mod.id as SkillId)" class="bound">
-              <ModelLogo :model="boundModel(mod.id as SkillId)!" :size="22" />
-              <span>{{ boundModel(mod.id as SkillId)!.name }}</span>
-            </div>
-            <select
-              class="input"
-              :value="coreSkillConfig(mod.id as SkillId)!.defaultModelId"
-              @change="
-                settings.updateSkill(mod.id as SkillId, {
-                  defaultModelId: ($event.target as HTMLSelectElement).value,
-                })
-              "
-            >
-              <option value="">— 自动 / primary —</option>
-              <option v-for="m in modelOptions(mod.id as SkillId)" :key="m.id" :value="m.id">
-                {{ m.name }}
-              </option>
-            </select>
-          </label>
-          <label class="field">
-            <span>技能补充 Prompt</span>
-            <textarea
-              class="input prompt"
-              :value="coreSkillConfig(mod.id as SkillId)!.systemPrompt"
-              rows="2"
-              @input="
-                settings.updateSkill(mod.id as SkillId, {
-                  systemPrompt: ($event.target as HTMLTextAreaElement).value,
-                })
-              "
-            />
-          </label>
-        </template>
-      </div>
-      <button type="button" class="text-btn" @click="settings.resetSkillsToDefaults()">
-        恢复内置技能默认
-      </button>
-    </section>
-
-    <section class="block">
-      <h4 class="block-title">创作插件</h4>
-      <div v-for="p in plugins" :key="p.id" class="plugin-row">
-        <label class="toggle">
-          <input
-            type="checkbox"
-            :checked="agentConfig.isPluginEnabled(p.id)"
-            @change="agentConfig.togglePlugin(p.id, ($event.target as HTMLInputElement).checked)"
-          />
-          <span class="slider" />
+  <div class="skill-mgmt" :class="{ 'skill-mgmt--detail-open': !!selectedSkill }">
+    <header class="skill-toolbar">
+      <div class="skill-toolbar__actions">
+        <label class="skill-search embedded-field">
+          <Search :size="14" aria-hidden="true" />
+          <input v-model="search" type="search" />
+          <Loader2 v-if="mcpLoading" :size="14" class="skill-search__spinner om-loading-spinner" />
         </label>
-        <div>
-          <span class="name"><Wand2 :size="14" /> {{ p.name }}</span>
-          <span class="meta">{{ p.id }} · {{ p.modes?.join('/') }}</span>
-          <p class="desc">{{ p.description }}</p>
+        <div class="add-wrap">
+          <button type="button" class="btn-add" @click="addMenuOpen = !addMenuOpen">
+            <Plus :size="14" />
+            添加技能
+          </button>
+          <div v-if="addMenuOpen" class="add-menu">
+            <button type="button" @click="addMenuOpen = false; refreshMcp()">
+              刷新 MCP 工具
+            </button>
+            <button type="button" disabled>从模板库添加…</button>
+          </div>
         </div>
       </div>
-    </section>
+    </header>
+
+    <div class="skill-mgmt__body">
+      <div class="skill-mgmt__list">
+        <section v-for="section in skillSections" :key="section.key" class="skill-section">
+          <h3 class="skill-section__label">{{ section.label }}</h3>
+          <div class="skill-grid">
+            <article
+              v-for="item in section.items"
+              :key="item.id"
+              class="skill-card"
+              :class="{ active: selectedId === item.id, 'skill-card--dim': section.dim }"
+              @click="selectSkill(item.id)"
+            >
+              <header class="skill-card__head">
+                <h4 class="skill-card__title">{{ item.name }}</h4>
+                <span class="skill-card__status" :class="`skill-card__status--${statusKind(item)}`">
+                  {{ statusLabel(item) }}
+                </span>
+              </header>
+
+              <div class="skill-card__divider" />
+
+              <div class="skill-card__source">
+                <span class="skill-card__avatar" :class="`skill-card__avatar--${item.iconTone}`">
+                  <component :is="item.icon" :size="13" stroke-width="2" />
+                </span>
+                <span class="skill-card__source-text">{{ skillSource(item) }}</span>
+              </div>
+
+              <p class="skill-card__desc">{{ item.description }}</p>
+
+              <footer class="skill-card__foot">
+                <span class="skill-card__meta">{{ item.id }}</span>
+                <label class="skill-card__toggle" @click.stop>
+                  <input
+                    type="checkbox"
+                    :checked="isSkillEnabled(item)"
+                    :disabled="!canToggle(item)"
+                    @change="onCardToggle(item, $event)"
+                  />
+                  <span class="switch" />
+                </label>
+              </footer>
+            </article>
+          </div>
+        </section>
+
+        <p v-if="!filteredSkills.length" class="skill-empty">没有匹配的技能</p>
+      </div>
+
+      <aside v-if="selectedSkill" class="skill-mgmt__detail" aria-label="技能详情">
+        <AgentSkillDetailSheet
+          :skill="selectedSkill"
+          :mcp-qualified-name="selectedMcpName"
+          @close="closeSheet"
+          @save="closeSheet"
+          @remove="onRemoveSelected"
+        />
+      </aside>
+    </div>
   </div>
 </template>
 
 <style scoped lang="scss">
 @use '../styles/variables.scss' as *;
+@use '../styles/cosmic-glass.scss' as cosmic;
 
-.skills-detail {
-  padding: 16px 20px 24px;
+.skill-mgmt {
+  display: flex;
+  flex-direction: column;
   flex: 1;
+  min-height: 0;
+  position: relative;
+}
+
+.skill-mgmt__body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  gap: 0;
+  overflow: hidden;
+}
+
+.skill-mgmt__list {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
   overflow-y: auto;
+  padding: 16px 20px 20px;
 }
 
-.block {
-  margin-bottom: 24px;
+.skill-mgmt--detail-open .skill-mgmt__list {
+  flex: 1 1 62%;
+  padding-right: 16px;
 }
 
-.block-title {
-  font-size: 12px;
-  font-weight: 600;
-  color: $accent;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  margin-bottom: 12px;
+.skill-mgmt__detail {
+  flex: 0 0 min(360px, 38%);
+  min-width: 280px;
+  max-width: 420px;
+  min-height: 0;
+  display: flex;
+  align-self: stretch;
+  margin: 0;
 }
 
-.skill-row {
-  padding: 14px 0;
-  border-bottom: 1px solid $border-light;
-
-  &:last-child {
-    border-bottom: none;
+.skill-mgmt--detail-open .skill-mgmt__detail {
+  :deep(.skill-detail) {
+    width: 100%;
+    border-radius: 0;
+    border-right: none;
   }
 }
 
-.skill-head,
-.plugin-row {
+.skill-toolbar {
   display: flex;
-  gap: 12px;
-}
-
-.plugin-row {
-  padding: 12px 0;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 12px 20px;
+  flex-shrink: 0;
   border-bottom: 1px solid $border-light;
 }
 
-.name {
-  font-weight: 600;
-  font-size: 14px;
-  display: inline-flex;
+.skill-toolbar__actions {
+  display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 10px;
+  min-width: 0;
 }
 
-.meta {
-  display: block;
-  font-size: 11px;
-  color: $text-muted;
-  font-family: ui-monospace, monospace;
-  margin-top: 2px;
-}
-
-.desc {
-  font-size: 13px;
-  color: $text-secondary;
-  margin: 8px 0 10px;
-  padding-left: 50px;
-}
-
-.plugin-row .desc {
-  padding-left: 0;
-  margin-top: 4px;
-}
-
-.bound {
+.skill-search {
   display: flex;
   align-items: center;
   gap: 8px;
-  margin-bottom: 8px;
-  font-size: 12px;
-}
-
-.field {
-  display: block;
-  margin-bottom: 12px;
-  padding-left: 50px;
-
-  > span {
-    display: block;
-    font-size: 12px;
-    color: $text-secondary;
-    margin-bottom: 6px;
-  }
-}
-
-.input {
-  width: 100%;
-  padding: 10px 12px;
-  background: $bg-input;
+  width: min(240px, 100%);
+  min-width: 140px;
+  padding: 8px 14px;
+  border-radius: 999px;
   border: 1px solid $border-light;
-  border-radius: 8px;
-  font-size: 13px;
+  background: var(--bg-card);
+  color: $text-muted;
+  transition: border-color 0.15s, box-shadow 0.15s;
 
-  &.prompt {
-    resize: vertical;
-    line-height: 1.5;
-  }
-
-  &:focus {
-    border-color: $accent;
+  &:focus-within {
+    border-color: color-mix(in srgb, $accent 40%, $border-light);
     box-shadow: $shadow-focus;
   }
-}
 
-.text-btn {
-  font-size: 12px;
-  color: $text-muted;
-  margin-top: 8px;
+  input {
+    flex: 1;
+    min-width: 0;
+    border: none;
+    background: transparent;
+    font-size: 13px;
+    color: $text-primary;
+    outline: none;
+  }
 
-  &:hover {
-    color: $color-danger;
+  &__spinner {
+    flex-shrink: 0;
+    color: $text-muted;
   }
 }
 
-.toggle {
+.add-wrap {
+  position: relative;
   flex-shrink: 0;
+}
+
+.btn-add {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--btn-primary-text);
+  background: var(--btn-primary-gradient, $accent);
+  box-shadow: var(--btn-primary-shadow);
+  border: none;
+  white-space: nowrap;
+
+  &:hover {
+    filter: brightness(1.04);
+  }
+}
+
+.add-menu {
+  @include cosmic.cosmic-glass-dropdown-menu(12px);
+  top: calc(100% + 6px);
+  right: 0;
+  left: auto;
+  min-width: 160px;
+  z-index: 5;
+
+  button {
+    @include cosmic.cosmic-glass-dropdown-option;
+    font-size: 12px;
+  }
+}
+
+.skill-section {
+  margin-bottom: 20px;
+}
+
+.skill-section__label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: $text-muted;
+  margin-bottom: 10px;
+}
+
+.skill-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.skill-card {
+  display: flex;
+  flex-direction: column;
+  min-height: 168px;
+  padding: 16px 16px 14px;
+  cursor: pointer;
+  @include cosmic.cosmic-glass-frost(var(--glass-radius-sm, 14px));
+  background: var(--glass-fill-gradient);
+  transition:
+    transform 0.18s ease,
+    box-shadow 0.18s ease,
+    background 0.18s ease,
+    backdrop-filter 0.18s ease;
+
+  &:hover {
+    @include cosmic.cosmic-glass-hover;
+    transform: translateY(-1px);
+  }
+
+  &.active {
+    @include cosmic.cosmic-glass-active;
+    box-shadow:
+      0 0 0 1px color-mix(in srgb, $accent 32%, transparent),
+      var(--glass-float-shadow-hover, var(--glass-float-shadow, $shadow-md));
+  }
+
+  &--dim {
+    opacity: 0.78;
+  }
+}
+
+.skill-card__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.skill-card__title {
+  flex: 1;
+  min-width: 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: $text-primary;
+  line-height: 1.35;
+}
+
+.skill-card__divider {
+  height: 1px;
+  margin: 12px 0 10px;
+  background: color-mix(in srgb, $border-light 65%, transparent);
+}
+
+.skill-card__source {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+  min-width: 0;
+}
+
+.skill-card__avatar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: color-mix(in srgb, $accent 12%, transparent);
+  color: $accent;
+
+  &--blue {
+    background: color-mix(in srgb, #3b82f6 12%, transparent);
+    color: #4f7fe8;
+  }
+  &--green {
+    background: color-mix(in srgb, $color-success 12%, transparent);
+    color: $color-success;
+  }
+  &--purple {
+    background: color-mix(in srgb, $accent 12%, transparent);
+    color: $accent;
+  }
+  &--pink {
+    background: color-mix(in srgb, #ec4899 12%, transparent);
+    color: #e05a9a;
+  }
+  &--orange {
+    background: color-mix(in srgb, $accent-gold 14%, transparent);
+    color: color-mix(in srgb, $accent-gold 85%, #000);
+  }
+  &--cyan {
+    background: color-mix(in srgb, $accent-cyan 12%, transparent);
+    color: $accent-cyan;
+  }
+  &--slate {
+    background: color-mix(in srgb, $text-muted 12%, transparent);
+    color: $text-secondary;
+  }
+}
+
+.skill-card__source-text {
+  font-size: 12px;
+  color: $text-muted;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.skill-card__desc {
+  flex: 1;
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.55;
+  color: $text-secondary;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  overflow: hidden;
+}
+
+.skill-card__foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid color-mix(in srgb, $border-light 55%, transparent);
+}
+
+.skill-card__meta {
+  font-size: 11px;
+  font-family: ui-monospace, monospace;
+  color: $text-muted;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+@keyframes skill-status-on-breathe {
+  0%,
+  100% {
+    transform: scale(1);
+    box-shadow:
+      0 0 0 0 color-mix(in srgb, $color-success 0%, transparent),
+      0 0 6px color-mix(in srgb, $color-success 22%, transparent);
+  }
+
+  50% {
+    transform: scale(1.05);
+    box-shadow:
+      0 0 0 4px color-mix(in srgb, $color-success 16%, transparent),
+      0 0 14px color-mix(in srgb, $color-success 45%, transparent);
+  }
+}
+
+.skill-card__status {
+  flex-shrink: 0;
+  font-size: 10px;
+  font-weight: 600;
+  padding: 3px 8px;
+  border-radius: 999px;
+
+  &--on {
+    background: color-mix(in srgb, $color-success 18%, transparent);
+    color: color-mix(in srgb, $color-success 92%, #000);
+    border: 1px solid color-mix(in srgb, $color-success 38%, transparent);
+    animation: skill-status-on-breathe 2.6s ease-in-out infinite;
+
+    @media (prefers-reduced-motion: reduce) {
+      animation: none;
+      box-shadow: 0 0 10px color-mix(in srgb, $color-success 32%, transparent);
+    }
+  }
+  &--off {
+    background: color-mix(in srgb, $text-muted 10%, transparent);
+    color: $text-muted;
+  }
+  &--auth {
+    background: color-mix(in srgb, $accent-gold 14%, transparent);
+    color: color-mix(in srgb, $accent-gold 90%, #000);
+  }
+  &--planned {
+    background: color-mix(in srgb, $text-muted 10%, transparent);
+    color: $text-muted;
+  }
+}
+
+.skill-card__toggle {
+  flex-shrink: 0;
+  cursor: pointer;
+
   input {
     display: none;
   }
-  .slider {
+
+  .switch {
     display: block;
     width: 38px;
     height: 22px;
-    background: $accent-light;
+    background: color-mix(in srgb, $text-muted 22%, transparent);
     border-radius: 11px;
     position: relative;
+    transition: background 0.2s;
+
     &::after {
       content: '';
       position: absolute;
@@ -262,16 +630,96 @@ function coreSkillConfig(id: SkillId) {
       left: 2px;
       width: 18px;
       height: 18px;
-      background: var(--glass-inner-highlight, rgba(255, 255, 255, 0.92));
+      background: #fff;
       border-radius: 50%;
+      box-shadow: 0 1px 4px rgba(74, 58, 232, 0.18);
       transition: transform 0.2s;
     }
   }
-  input:checked + .slider {
+
+  input:checked + .switch {
     background: $accent;
     &::after {
       transform: translateX(16px);
     }
+  }
+
+  input:disabled + .switch {
+    opacity: 0.38;
+    cursor: not-allowed;
+  }
+}
+
+.skill-empty {
+  padding: 48px 16px;
+  text-align: center;
+  font-size: 13px;
+  color: $text-muted;
+}
+
+.skill-mgmt--detail-open .skill-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+@media (max-width: 1200px) {
+  .skill-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .skill-mgmt--detail-open .skill-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 900px) {
+  .skill-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 900px) {
+  .skill-mgmt__body {
+    flex-direction: column;
+    overflow-y: auto;
+  }
+
+  .skill-mgmt--detail-open .skill-mgmt__list {
+    flex: none;
+  }
+
+  .skill-mgmt__list {
+    overflow: visible;
+  }
+
+  .skill-mgmt__detail {
+    flex: none;
+    min-width: 0;
+    max-width: none;
+    border-top: 1px solid $border-light;
+  }
+}
+
+@media (max-width: 640px) {
+  .skill-toolbar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .skill-toolbar__actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .skill-search {
+    width: 100%;
+  }
+
+  .btn-add {
+    justify-content: center;
+  }
+
+  .skill-grid {
+    grid-template-columns: 1fr;
   }
 }
 </style>

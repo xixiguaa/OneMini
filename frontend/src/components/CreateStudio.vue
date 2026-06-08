@@ -181,9 +181,7 @@ const galleryEffectiveMediaType = computed(() => {
 })
 
 const gallerySearchPlaceholder = computed(() => {
-  if (galleryMainTab.value === 'mine') {
-    return galleryMediaTab.value === 'video' ? '搜索我的短片…' : '搜索我的图片…'
-  }
+  if (galleryMainTab.value === 'mine') return '搜索作品…'
   if (galleryMainTab.value === 'discover') return '搜索发现图片…'
   return '搜索创意视频…'
 })
@@ -229,7 +227,7 @@ const selectedModel = computed(() => {
 
 const inputPlaceholder = computed(() => {
   if (agent.createMode === 'agent') {
-    return '输入想法、脚本或上传参考，支持「/」使用技能，和 Agent 一起创作'
+    return '输入想法、脚本或上传参考，支持「/」使用创作模板，和 Agent 一起创作'
   }
   if (agent.createMode === 'video') {
     return '描述你想生成的视频画面、镜头与时长，例如：小猫咪玩球，5 秒'

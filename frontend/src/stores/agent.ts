@@ -6,7 +6,7 @@ import { sendWikiChatStream } from '../api/wiki'
 import { queryJob, submitJob } from '../api/hunyuan'
 import { listPluginSkills } from '../config/skillRegistry'
 import { DETAIL_REPAIR_PROMPT } from '../config/imageEditTools'
-import type { ImageEditAction } from '../utils/imageEditHistory'
+import { displayEditPrompt, type ImageEditAction } from '../utils/imageEditHistory'
 import type { DigitalHumanMode } from '../config/digitalHumanModes'
 import {
   runMultiAgentPipeline,
@@ -871,7 +871,7 @@ export const useAgentStore = defineStore('agent', () => {
   async function handleImageGen(content: string) {
     const model = requireModelForSkill('image')
     if (!model) {
-      throw new Error('请在「模型配置」添加图片生成模型并填写 API Key，或在技能配置中绑定')
+      throw new Error('请在「模型配置」添加图片生成模型并填写 API Key，或在 配置中心 → 技能 中绑定')
     }
     const prompt = buildUserContent(content)
     const imageAtt = pendingAttachments.value.find((a) => a.kind === 'image')
@@ -958,7 +958,7 @@ export const useAgentStore = defineStore('agent', () => {
     const worldModel = requireModelForSkill('world')
     if (!worldModel) {
       throw new Error(
-        '请在「模型配置」右侧添加并启用 3D 世界生成模型，并在「技能配置」中绑定到世界生成。',
+        '请在「模型配置」右侧添加并启用 3D 世界生成模型，并在 配置中心 → 技能 中绑定到世界生成。',
       )
     }
     const imageAtt = pendingAttachments.value.find((a) => a.base64)
@@ -1058,7 +1058,7 @@ export const useAgentStore = defineStore('agent', () => {
         addMessage({
           role: 'assistant',
           type: 'error',
-          content: `沙箱已禁止技能「${skill}」，请在 Agent 配置 → 骨架 中调整 allowedSkills`,
+          content: `沙箱已禁止技能「${skill}」，请在 配置中心 → 运行参数 中调整允许的技能`,
           skillId: skill,
         })
         return
@@ -1158,7 +1158,7 @@ export const useAgentStore = defineStore('agent', () => {
           {
             role: 'assistant',
             type: 'error',
-            content: '沙箱已禁止技能「chat」，请在 Agent 配置 → 骨架 中调整 allowedSkills',
+            content: '沙箱已禁止技能「chat」，请在 配置中心 → 运行参数 中调整允许的技能',
             skillId: 'chat',
           },
           { parentId: userMsg.id },
@@ -1300,7 +1300,7 @@ export const useAgentStore = defineStore('agent', () => {
       if (!model) {
         throw new Error(
           skill === 'image'
-            ? '请在「模型配置」添加图片生成模型并填写 API Key，或在技能配置中绑定'
+            ? '请在「模型配置」添加图片生成模型并填写 API Key，或在 配置中心 → 技能 中绑定'
             : '请配置视频生成模型 API Key',
         )
       }
@@ -1666,8 +1666,7 @@ export const useAgentStore = defineStore('agent', () => {
     imageEditComposeMode.value = 'edit'
     const version = imageEditVersions.value.find((v) => v.id === versionId)
     if (!version) return
-    inputText.value =
-      version.prompt.trim() === DETAIL_REPAIR_PROMPT ? '' : version.prompt
+    inputText.value = displayEditPrompt(version, imageEditVersions.value)
   }
 
   async function regenerateImageEditVersion(versionId: string): Promise<boolean> {

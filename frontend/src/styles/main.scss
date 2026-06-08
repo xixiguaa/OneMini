@@ -166,18 +166,18 @@ select {
 select {
   appearance: none;
   -webkit-appearance: none;
-  padding-right: 34px;
-  background-color: $bg-input;
-  background-image: var(--select-chevron);
-  background-repeat: no-repeat;
-  background-position: right 12px center;
-  background-size: 14px;
+  padding: 9px 34px 9px 12px;
   cursor: pointer;
+  @include cosmic.cosmic-glass-select-trigger(var(--glass-radius-sm, 10px));
 
   &:focus {
-    border-color: $accent;
-    box-shadow: $shadow-focus;
+    outline: none;
   }
+}
+
+input[type='range'],
+.glass-range {
+  @include cosmic.cosmic-glass-range;
 }
 
 /* 内嵌于外层容器的无边框输入：聚焦时不出现内层描边 */

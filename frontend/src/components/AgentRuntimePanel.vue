@@ -1,12 +1,17 @@
 <script setup lang="ts">
+import GlassSelect, { type GlassSelectOption } from './GlassSelect.vue'
+import ModelLogo from './ModelLogo.vue'
+import { listCoreSkills } from '../config/skillRegistry'
 import { useAgentConfigStore } from '../stores/agentConfig'
 import { useSettingsStore } from '../stores/settings'
 import { CAPABILITY_LABELS } from '../config/defaults'
 import type { SkillId } from '../types/agent'
 
+// 多模态能力（chat/image/video/world）为产品路由，非工具类技能；模型绑定在此配置
 const agentConfig = useAgentConfigStore()
 const settings = useSettingsStore()
 const skillIds = ['chat', 'image', 'video', 'world'] as SkillId[]
+const coreModules = listCoreSkills()
 const chatModels = () => settings.modelsForChat()
 
 function patchModels(patch: Partial<typeof agentConfig.skeleton.models>) {
@@ -14,6 +19,43 @@ function patchModels(patch: Partial<typeof agentConfig.skeleton.models>) {
     models: { ...agentConfig.skeleton.models, ...patch },
   })
 }
+
+function modelOptions(skillId: SkillId) {
+  switch (skillId) {
+    case 'chat':
+      return settings.chatModels
+    case 'image':
+      return settings.imageModels
+    case 'video':
+      return settings.videoModels
+    case 'world':
+      return settings.worldModels
+    default:
+      return []
+  }
+}
+
+function coreSkillConfig(id: SkillId) {
+  return settings.getSkill(id)
+}
+
+const primaryModelOptions = (): GlassSelectOption[] => [
+  { value: '', label: '— 未指定 —' },
+  ...chatModels().map((m) => ({ value: m.id, label: m.name })),
+]
+
+function capModelOptions(skillId: SkillId): GlassSelectOption[] {
+  return [
+    { value: '', label: '— 自动 —' },
+    ...modelOptions(skillId).map((m) => ({ value: m.id, label: m.name })),
+  ]
+}
+
+const sandboxModeOptions: GlassSelectOption[] = [
+  { value: 'off', label: 'off' },
+  { value: 'warn', label: 'warn' },
+  { value: 'strict', label: 'strict' },
+]
 </script>
 
 <template>
@@ -21,28 +63,30 @@ function patchModels(patch: Partial<typeof agentConfig.skeleton.models>) {
     <section class="block">
       <h4 class="block-title">模型 models</h4>
       <label class="field">
-        <span>primary 主模型</span>
-        <select
-          class="input"
-          :value="agentConfig.skeleton.models.primary"
-          @change="patchModels({ primary: ($event.target as HTMLSelectElement).value })"
-        >
-          <option value="">— 未指定 —</option>
-          <option v-for="m in chatModels()" :key="m.id" :value="m.id">{{ m.name }}</option>
-        </select>
+        <span>primary</span>
+        <GlassSelect
+          :model-value="agentConfig.skeleton.models.primary"
+          :options="primaryModelOptions()"
+          aria-label="主模型"
+          @update:model-value="patchModels({ primary: $event })"
+        />
       </label>
       <label class="field">
-        <span>temperature（建议 0～0.3）</span>
+        <span>temperature</span>
         <div class="range-row">
           <input
             type="range"
+            class="glass-range"
             min="0"
             max="1"
-            step="0.05"
+            step="0.01"
             :value="agentConfig.skeleton.models.temperature"
+            :style="{
+              '--range-fill': `${(agentConfig.skeleton.models.temperature / 1) * 100}%`,
+            }"
             @input="patchModels({ temperature: Number(($event.target as HTMLInputElement).value) })"
           />
-          <em>{{ agentConfig.skeleton.models.temperature }}</em>
+          <em>{{ agentConfig.skeleton.models.temperature.toFixed(2) }}</em>
         </div>
       </label>
       <label class="field">
@@ -92,7 +136,7 @@ function patchModels(patch: Partial<typeof agentConfig.skeleton.models>) {
             })
           "
         />
-        dailyReset 每日重置会话
+        dailyReset
       </label>
     </section>
 
@@ -117,27 +161,71 @@ function patchModels(patch: Partial<typeof agentConfig.skeleton.models>) {
     </section>
 
     <section class="block">
+      <h4 class="block-title">多模态能力</h4>
+      <div v-for="mod in coreModules" :key="mod.id" class="cap-row">
+        <template v-if="coreSkillConfig(mod.id as SkillId)">
+          <label class="check cap-check">
+            <input
+              type="checkbox"
+              :checked="coreSkillConfig(mod.id as SkillId)!.enabled"
+              @change="
+                settings.updateSkill(mod.id as SkillId, {
+                  enabled: ($event.target as HTMLInputElement).checked,
+                })
+              "
+            />
+            <span class="cap-name">{{ mod.name }}</span>
+          </label>
+          <GlassSelect
+            class="cap-select"
+            :model-value="coreSkillConfig(mod.id as SkillId)!.defaultModelId"
+            :options="capModelOptions(mod.id as SkillId)"
+            :aria-label="`${mod.name} 默认模型`"
+            @update:model-value="
+              settings.updateSkill(mod.id as SkillId, { defaultModelId: $event })
+            "
+          >
+            <template #trigger-prefix>
+              <ModelLogo
+                v-if="
+                  coreSkillConfig(mod.id as SkillId)!.defaultModelId &&
+                  settings.getModel(coreSkillConfig(mod.id as SkillId)!.defaultModelId)
+                "
+                :model="settings.getModel(coreSkillConfig(mod.id as SkillId)!.defaultModelId)!"
+                :size="18"
+              />
+            </template>
+            <template #option="{ option }">
+              <ModelLogo
+                v-if="option.value && settings.getModel(option.value)"
+                :model="settings.getModel(option.value)!"
+                :size="18"
+              />
+              <span class="glass-select__option-label">{{ option.label }}</span>
+            </template>
+          </GlassSelect>
+        </template>
+      </div>
+    </section>
+
+    <section class="block">
       <h4 class="block-title">沙箱 sandbox</h4>
       <label class="field">
         <span>mode</span>
-        <select
-          class="input"
-          :value="agentConfig.skeleton.sandbox.mode"
-          @change="
+        <GlassSelect
+          :model-value="agentConfig.skeleton.sandbox.mode"
+          :options="sandboxModeOptions"
+          aria-label="沙箱模式"
+          @update:model-value="
             agentConfig.updateSkeleton({
               sandbox: {
                 ...agentConfig.skeleton.sandbox,
-                mode: ($event.target as HTMLSelectElement).value as 'off' | 'warn' | 'strict',
+                mode: $event as 'off' | 'warn' | 'strict',
               },
             })
           "
-        >
-          <option value="off">off</option>
-          <option value="warn">warn</option>
-          <option value="strict">strict</option>
-        </select>
+        />
       </label>
-      <p class="field-label">allowedSkills</p>
       <div class="checks">
         <label v-for="id in skillIds" :key="id" class="check">
           <input
@@ -225,22 +313,40 @@ function patchModels(patch: Partial<typeof agentConfig.skeleton.models>) {
   align-items: center;
   gap: 12px;
 
-  input[type='range'] {
+  .glass-range {
     flex: 1;
   }
 
   em {
     font-style: normal;
     font-weight: 600;
-    color: $accent;
+    font-variant-numeric: tabular-nums;
+    color: $accent-emphasis;
     min-width: 32px;
+    text-align: right;
   }
 }
 
-.field-label {
-  font-size: 12px;
-  color: $text-secondary;
-  margin-bottom: 8px;
+.cap-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+  flex-wrap: wrap;
+}
+
+.cap-check {
+  min-width: 108px;
+  flex-shrink: 0;
+}
+
+.cap-name {
+  font-weight: 500;
+}
+
+.cap-select {
+  flex: 1;
+  min-width: 160px;
 }
 
 .checks {
@@ -254,6 +360,13 @@ function patchModels(patch: Partial<typeof agentConfig.skeleton.models>) {
   align-items: center;
   gap: 8px;
   font-size: 13px;
+
+  input[type='checkbox'] {
+    accent-color: $accent;
+    width: 16px;
+    height: 16px;
+    flex-shrink: 0;
+  }
 }
 
 .text-btn {
