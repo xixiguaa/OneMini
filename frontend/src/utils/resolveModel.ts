@@ -56,7 +56,7 @@ export function resolveChatModel(
 
   return {
     ok: false,
-    error: '请在「模型配置」填写对话模型 API Key，或在「配置中心 → 运行参数」设置主模型',
+    error: '请在「模型配置」添加对话模型并填写 API Key',
   }
 }
 

@@ -124,6 +124,8 @@ export interface Conversation {
   messages: ChatMessage[]
   createdAt: number
   updatedAt: number
+  /** 关联的用户智能体 */
+  agentId?: string
   /** 是否已在服务端创建（本地占位会话为 false） */
   serverSynced?: boolean
   /** 分支时间线当前激活叶节点 */

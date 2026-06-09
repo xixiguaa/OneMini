@@ -75,27 +75,26 @@ function removeRestriction(tag: string) {
 
 <template>
   <div class="persona-panel">
-    <header class="persona-head">
+    <div class="template-row">
+      <div class="template-main">
+        <span class="template-label">场景模板</span>
+        <div class="template-chips">
+          <button
+            v-for="t in agentConfig.personaTemplates"
+            :key="t.id"
+            type="button"
+            class="template-chip"
+            :class="{ active: form.templateId === t.id }"
+            @click="pickTemplate(t.id)"
+          >
+            {{ t.name }}
+          </button>
+        </div>
+      </div>
       <button type="button" class="reset-btn" @click="agentConfig.resetWorkspace()">
         <RotateCcw :size="14" />
         恢复默认
       </button>
-    </header>
-
-    <div class="template-row">
-      <span class="template-label">场景模板</span>
-      <div class="template-chips">
-        <button
-          v-for="t in agentConfig.personaTemplates"
-          :key="t.id"
-          type="button"
-          class="template-chip"
-          :class="{ active: form.templateId === t.id }"
-          @click="pickTemplate(t.id)"
-        >
-          {{ t.name }}
-        </button>
-      </div>
     </div>
 
     <div class="persona-split">
@@ -349,10 +348,30 @@ function removeRestriction(tag: string) {
   padding: 18px 20px 24px;
 }
 
-.persona-head {
+.template-row {
   display: flex;
-  justify-content: flex-end;
-  margin-bottom: 12px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 18px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid $border-light;
+}
+
+.template-main {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  flex: 1;
+  min-width: 0;
+}
+
+.template-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: $text-muted;
+  flex-shrink: 0;
 }
 
 .reset-btn {
@@ -365,28 +384,13 @@ function removeRestriction(tag: string) {
   color: $text-muted;
   border: 1px solid $border-light;
   flex-shrink: 0;
+  align-self: center;
 
   &:hover {
     color: $color-danger;
     border-color: color-mix(in srgb, $color-danger 35%, $border-light);
     background: $color-danger-soft;
   }
-}
-
-.template-row {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  flex-wrap: wrap;
-  margin-bottom: 18px;
-  padding-bottom: 16px;
-  border-bottom: 1px solid $border-light;
-}
-
-.template-label {
-  font-size: 12px;
-  font-weight: 600;
-  color: $text-muted;
 }
 
 .template-chips {

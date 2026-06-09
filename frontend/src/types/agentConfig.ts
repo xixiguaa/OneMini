@@ -96,11 +96,9 @@ export interface OrchestrationResult {
   finalAnswer: string
 }
 
-export type AgentConfigSection = 'workspace' | 'runtime' | 'skills' | 'crew'
+export type AgentConfigSection = 'config' | 'store'
 
 export const CONFIG_SECTIONS: { id: AgentConfigSection; label: string }[] = [
-  { id: 'workspace', label: 'Agent 配置' },
-  { id: 'runtime', label: '运行参数' },
-  { id: 'skills', label: '技能' },
-  { id: 'crew', label: '多 Agent 协作' },
+  { id: 'config', label: '配置' },
+  { id: 'store', label: '技能商店' },
 ]

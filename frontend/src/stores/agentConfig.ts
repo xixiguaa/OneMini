@@ -12,7 +12,6 @@ import {
 } from '../config/agentPersonaTemplates'
 import type {
   AgentConfigBundle,
-  AgentWorkspace,
   OneMiniSkeleton,
   WorkspaceFileKey,
 } from '../types/agentConfig'
@@ -21,8 +20,7 @@ import {
   composeWorkspaceFromPersona,
   parsePersonaFromWorkspace,
 } from '../utils/agentPersonaCompose'
-
-const STORAGE_KEY = 'onemini-agent-config-v1'
+import { useUserAgentsStore, cloneAgentConfigBundle } from './userAgents'
 
 function mergeSkeleton(saved?: Partial<OneMiniSkeleton>): OneMiniSkeleton {
   const base = structuredClone(DEFAULT_SKELETON)
@@ -61,41 +59,10 @@ function mergeSkeleton(saved?: Partial<OneMiniSkeleton>): OneMiniSkeleton {
   }
 }
 
-function mergeWorkspace(saved?: Partial<AgentWorkspace>): AgentWorkspace {
-  return {
-    agents: saved?.agents ?? DEFAULT_WORKSPACE.agents,
-    soul: saved?.soul ?? DEFAULT_WORKSPACE.soul,
-    identity: saved?.identity ?? DEFAULT_WORKSPACE.identity,
-    user: saved?.user ?? DEFAULT_WORKSPACE.user,
-    tools: saved?.tools ?? DEFAULT_WORKSPACE.tools,
-  }
-}
-
-function resolvePersona(
-  saved: Partial<AgentConfigBundle> & { layers?: AgentWorkspace },
-  workspace: AgentWorkspace,
-): AgentPersonaForm {
-  if (saved.persona) return { ...saved.persona }
-  return parsePersonaFromWorkspace(workspace, buildDefaultPersonaForm())
-}
-
-function loadBundle(): AgentConfigBundle {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY)
-    if (raw) {
-      const parsed = JSON.parse(raw) as Partial<AgentConfigBundle> & {
-        layers?: AgentWorkspace
-      }
-      const workspace = mergeWorkspace(parsed.workspace ?? parsed.layers)
-      const persona = resolvePersona(parsed, workspace)
-      return {
-        workspace,
-        skeleton: mergeSkeleton(parsed.skeleton),
-        persona,
-      }
-    }
-  } catch {
-    /* ignore */
+function loadBundleFrom(userAgents: ReturnType<typeof useUserAgentsStore>): AgentConfigBundle {
+  const active = userAgents.activeAgent
+  if (active?.bundle) {
+    return cloneAgentConfigBundle(active.bundle)
   }
   const defaults = buildDefaultAgentConfig()
   return {
@@ -111,12 +78,27 @@ function syncWorkspaceFromPersona(bundle: AgentConfigBundle) {
 }
 
 export const useAgentConfigStore = defineStore('agentConfig', () => {
-  const bundle = ref<AgentConfigBundle>(loadBundle())
+  const userAgents = useUserAgentsStore()
+  const bundle = ref<AgentConfigBundle>(loadBundleFrom(userAgents))
+  let syncingFromAgents = false
+
+  watch(
+    () => userAgents.activeAgentId,
+    () => {
+      syncingFromAgents = true
+      bundle.value = loadBundleFrom(userAgents)
+      syncingFromAgents = false
+    },
+    { flush: 'sync' },
+  )
 
   watch(
     bundle,
-    (val) => localStorage.setItem(STORAGE_KEY, JSON.stringify(val)),
-    { deep: true },
+    (val) => {
+      if (syncingFromAgents) return
+      userAgents.replaceActiveBundle(val)
+    },
+    { deep: true, flush: 'sync' },
   )
 
   const skeleton = computed(() => bundle.value.skeleton)

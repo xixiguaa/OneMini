@@ -17,7 +17,15 @@ import {
 } from '../services/conversationGraph'
 import { repairAssistantMessage } from '../utils/deepThinking'
 import { groupConversations } from '../utils/conversationTimeGroup'
+import {
+  applyConversationAgentIds,
+  bindConversationAgent,
+  resolveConversationAgentId,
+  unbindConversationAgent,
+} from '../utils/conversationAgentMap'
+import { DEFAULT_USER_AGENT_ID } from '../types/userAgent'
 import { randomUUID } from '../utils/uuid'
+import { useUserAgentsStore } from './userAgents'
 
 const LEGACY_STORAGE_KEY = 'aji-conversations'
 const PERSIST_DEBOUNCE_MS = 600
@@ -149,7 +157,9 @@ export const useConversationsStore = defineStore('conversations', () => {
         // 服务端已有数据时仅丢弃旧 localStorage，避免刷新后重复导入
         clearLegacyStorage()
       }
-      list.value = conversations.map((c) => ensureConversationGraphFields({ ...c, serverSynced: true }))
+      list.value = applyConversationAgentIds(
+        conversations.map((c) => ensureConversationGraphFields({ ...c, serverSynced: true })),
+      )
       activeId.value = conversations[0]?.id ?? null
       hydrated.value = true
     } catch (e) {
@@ -197,11 +207,11 @@ export const useConversationsStore = defineStore('conversations', () => {
     incognitoMessages.value = messages
   }
 
-  /** 同步占位会话，保证发消息时可立即写入 UI */
   function ensureLocalSession(): void {
     if (incognitoActive.value) return
     if (activeId.value && list.value.some((c) => c.id === activeId.value)) return
-    createConversationLocal()
+    const userAgents = useUserAgentsStore()
+    createConversationLocal(userAgents.activeAgentId || DEFAULT_USER_AGENT_ID)
   }
 
   async function ensureConversationOnServer(conversationId: string): Promise<void> {
@@ -368,6 +378,7 @@ export const useConversationsStore = defineStore('conversations', () => {
       }
     }
     list.value = list.value.filter((c) => c.id !== id)
+    unbindConversationAgent(id)
     if (activeId.value === id) {
       activeId.value = list.value[0]?.id ?? null
     }
@@ -388,8 +399,20 @@ export const useConversationsStore = defineStore('conversations', () => {
     return activeId.value
   }
 
+  function chatListForAgent(agentId: string) {
+    return chatList.value.filter((c) => resolveConversationAgentId(c) === agentId)
+  }
+
+  function groupedListForAgent(agentId: string) {
+    return groupConversations(chatListForAgent(agentId))
+  }
+
+  function conversationCountForAgent(agentId: string) {
+    return chatListForAgent(agentId).length
+  }
+
   /** 同步创建占位会话（hydrate 失败时的降级） */
-  function createConversationLocal(): Conversation {
+  function createConversationLocal(agentId = DEFAULT_USER_AGENT_ID): Conversation {
     exitIncognito()
     const conv: Conversation = {
       id: randomUUID(),
@@ -397,8 +420,10 @@ export const useConversationsStore = defineStore('conversations', () => {
       messages: [],
       createdAt: Date.now(),
       updatedAt: Date.now(),
+      agentId,
       serverSynced: false,
     }
+    bindConversationAgent(conv.id, agentId)
     list.value.unshift(conv)
     activeId.value = conv.id
     return conv
@@ -411,6 +436,9 @@ export const useConversationsStore = defineStore('conversations', () => {
     sortedList,
     chatList,
     groupedList,
+    chatListForAgent,
+    groupedListForAgent,
+    conversationCountForAgent,
     loading,
     hydrated,
     persistError,

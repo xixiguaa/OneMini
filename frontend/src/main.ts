@@ -4,6 +4,7 @@ import App from './App.vue'
 import { useAgentStore } from './stores/agent'
 import { useAuthStore } from './stores/auth'
 import { useSettingsStore } from './stores/settings'
+import { useUserAgentsStore } from './stores/userAgents'
 import { initUiPrefsFromStorage } from './stores/uiPrefs'
 import './styles/main.scss'
 
@@ -12,6 +13,7 @@ initUiPrefsFromStorage()
 const app = createApp(App)
 const pinia = createPinia()
 app.use(pinia)
+useUserAgentsStore()
 
 app.mount('#app')
 

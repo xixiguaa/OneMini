@@ -75,8 +75,10 @@ import { withCreateHistoryMediaToken } from '../utils/createHistoryMedia'
 import { randomUUID } from '../utils/uuid'
 import { resolveVideoDimensions } from '../utils/videoSize'
 import { formatUserError } from '../utils/formatUserError'
+import { resolveConversationAgentId } from '../utils/conversationAgentMap'
 import { useAgentConfigStore } from './agentConfig'
 import { useConversationsStore } from './conversations'
+import { useUserAgentsStore } from './userAgents'
 import { useCreateHistoryStore } from './createHistory'
 import type { CreateHistoryItem } from './createHistory'
 import { useSettingsStore } from './settings'
@@ -1058,7 +1060,7 @@ export const useAgentStore = defineStore('agent', () => {
         addMessage({
           role: 'assistant',
           type: 'error',
-          content: `沙箱已禁止技能「${skill}」，请在 配置中心 → 运行参数 中调整允许的技能`,
+          content: `沙箱已禁止技能「${skill}」`,
           skillId: skill,
         })
         return
@@ -1158,7 +1160,7 @@ export const useAgentStore = defineStore('agent', () => {
           {
             role: 'assistant',
             type: 'error',
-            content: '沙箱已禁止技能「chat」，请在 配置中心 → 运行参数 中调整允许的技能',
+            content: '沙箱已禁止技能「chat」',
             skillId: 'chat',
           },
           { parentId: userMsg.id },
@@ -1787,6 +1789,13 @@ export const useAgentStore = defineStore('agent', () => {
     resetChatSurface()
   }
 
+  function startChatWithAgent(agentId: string) {
+    const userAgents = useUserAgentsStore()
+    userAgents.selectAgent(agentId)
+    conversations.startDraftSession()
+    resetChatSurface()
+  }
+
   function newIncognitoSession() {
     conversations.startIncognito()
     resetChatSurface()
@@ -1800,6 +1809,11 @@ export const useAgentStore = defineStore('agent', () => {
   }
 
   function selectConversation(id: string) {
+    const conv = conversations.list.find((c) => c.id === id)
+    if (conv) {
+      const userAgents = useUserAgentsStore()
+      userAgents.selectAgent(resolveConversationAgentId(conv))
+    }
     conversations.selectConversation(id)
     resetChatSurface()
   }
@@ -1950,6 +1964,7 @@ export const useAgentStore = defineStore('agent', () => {
     generateFromStudio,
     isIncognito,
     newSession,
+    startChatWithAgent,
     newIncognitoSession,
     exitIncognito,
     selectConversation,

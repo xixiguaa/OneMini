@@ -1,20 +1,30 @@
 <script setup lang="ts">
-import { EyeOff, Trash2 } from 'lucide-vue-next'
-import { ref } from 'vue'
+import { EyeOff, MessageSquare, Trash2 } from 'lucide-vue-next'
+import { computed, ref } from 'vue'
 import LoadingIndicator from './LoadingIndicator.vue'
 import ConfirmDialog from './ConfirmDialog.vue'
 import { useConfirmDialog } from '../composables/useConfirmDialog'
 import { useLocale } from '../composables/useLocale'
 import { useAgentStore } from '../stores/agent'
 import { useConversationsStore } from '../stores/conversations'
+import { useUserAgentsStore } from '../stores/userAgents'
 import type { ConversationTimeGroup } from '../types/agent'
 
 const agent = useAgentStore()
 const conversations = useConversationsStore()
+const userAgents = useUserAgentsStore()
 const { t } = useLocale()
 
 const deleteTargetId = ref<string | null>(null)
 const deleting = ref(false)
+
+const groupedList = computed(() =>
+  conversations.groupedListForAgent(userAgents.activeAgentId),
+)
+
+const activeAgentConversations = computed(() =>
+  conversations.chatListForAgent(userAgents.activeAgentId),
+)
 
 const {
   open: confirmOpen,
@@ -71,60 +81,99 @@ function onDeleteCancel() {
   deleteTargetId.value = null
   onConfirmCancel()
 }
+
+function selectAgent(agentId: string) {
+  agent.startChatWithAgent(agentId)
+}
+
+function conversationCount(agentId: string) {
+  return conversations.conversationCountForAgent(agentId)
+}
+
+function isConversationActive(convId: string) {
+  return !conversations.isIncognito && conversations.activeId === convId
+}
 </script>
 
 <template>
   <div class="history">
-    <div class="history-label">{{ t('history.label') }}</div>
-    <div
-      v-if="conversations.isIncognito"
-      class="incognito-pill"
-      role="status"
-    >
-      <EyeOff :size="12" />
-      <span>{{ t('history.incognitoActive') }}</span>
-    </div>
-    <div class="history-list" :class="{ dimmed: conversations.isIncognito }">
-      <template v-if="conversations.groupedList.length">
-        <section
-          v-for="group in conversations.groupedList"
-          :key="group.key"
-          class="history-group"
+    <section class="agents-section">
+      <div class="section-label">{{ t('history.agentsLabel') }}</div>
+      <div class="agent-list">
+        <button
+          v-for="item in userAgents.sortedAgents"
+          :key="item.id"
+          type="button"
+          class="agent-row"
+          :class="{ active: userAgents.activeAgentId === item.id && !conversations.isIncognito }"
+          @click="selectAgent(item.id)"
         >
-          <div class="group-label">{{ groupLabel(group.key) }}</div>
-          <div
-            v-for="conv in group.conversations"
-            :key="conv.id"
-            class="history-item"
-            :class="{ active: !conversations.isIncognito && conversations.activeId === conv.id }"
-            role="button"
-            tabindex="0"
-            @click="agent.selectConversation(conv.id)"
-            @keydown.enter="agent.selectConversation(conv.id)"
-            @keydown.space.prevent="agent.selectConversation(conv.id)"
-          >
-            <div class="item-body">
-              <span class="item-title">{{ conv.title }}</span>
-            </div>
-            <button
-              class="delete-btn"
-              :title="t('history.delete')"
-              @click.stop="requestDeleteConversation(conv.id)"
-            >
-              <Trash2 :size="12" />
-            </button>
-          </div>
-        </section>
-      </template>
+          <span class="agent-row__avatar">{{ item.avatar }}</span>
+          <span class="agent-row__body">
+            <span class="agent-row__name">{{ item.name }}</span>
+            <span class="agent-row__meta">
+              {{ conversationCount(item.id) }} {{ t('history.conversations') }}
+            </span>
+          </span>
+        </button>
+      </div>
+    </section>
 
-      <LoadingIndicator
-        v-if="conversations.loading"
-        label="加载对话…"
-        variant="block"
-        class="empty"
-      />
-      <p v-else-if="!conversations.chatList.length" class="empty">{{ t('history.empty') }}</p>
-    </div>
+    <section class="conversations-section">
+      <div class="section-label">{{ t('history.label') }}</div>
+      <div
+        v-if="conversations.isIncognito"
+        class="incognito-pill"
+        role="status"
+      >
+        <EyeOff :size="12" />
+        <span>{{ t('history.incognitoActive') }}</span>
+      </div>
+      <div class="history-list" :class="{ dimmed: conversations.isIncognito }">
+        <template v-if="groupedList.length">
+          <section
+            v-for="group in groupedList"
+            :key="group.key"
+            class="history-group"
+          >
+            <div class="group-label">{{ groupLabel(group.key) }}</div>
+            <div
+              v-for="conv in group.conversations"
+              :key="conv.id"
+              class="history-item"
+              :class="{ active: isConversationActive(conv.id) }"
+              role="button"
+              tabindex="0"
+              @click="agent.selectConversation(conv.id)"
+              @keydown.enter="agent.selectConversation(conv.id)"
+              @keydown.space.prevent="agent.selectConversation(conv.id)"
+            >
+              <div class="item-body">
+                <span class="item-title">{{ conv.title }}</span>
+              </div>
+              <button
+                class="delete-btn"
+                :title="t('history.delete')"
+                @click.stop="requestDeleteConversation(conv.id)"
+              >
+                <Trash2 :size="12" />
+              </button>
+            </div>
+          </section>
+        </template>
+
+        <LoadingIndicator
+          v-if="conversations.loading"
+          label="加载对话…"
+          variant="block"
+          class="empty"
+        />
+        <p v-else-if="!activeAgentConversations.length" class="empty">
+          <MessageSquare :size="14" class="empty-icon" />
+          {{ t('history.emptyForAgent') }}
+        </p>
+      </div>
+    </section>
 
     <ConfirmDialog
       :open="confirmOpen"
@@ -150,16 +199,87 @@ function onDeleteCancel() {
   min-height: 0;
   display: flex;
   flex-direction: column;
+  gap: 12px;
   margin-bottom: 12px;
 }
 
-.history-label {
+.section-label {
   font-size: 11px;
   font-weight: 600;
   color: var(--text-label, $text-secondary);
   text-transform: uppercase;
   letter-spacing: 0.06em;
   padding: 0 8px 8px;
+}
+
+.agents-section {
+  flex-shrink: 0;
+}
+
+.agent-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.agent-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 10px;
+  border-radius: $radius-sm;
+  text-align: left;
+  cursor: pointer;
+  @include cosmic.cosmic-interactive-item;
+
+  &.active {
+    @include cosmic.cosmic-interactive-item-active;
+
+    .agent-row__name {
+      color: $accent-emphasis;
+      font-weight: 600;
+    }
+  }
+}
+
+.agent-row__avatar {
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  border-radius: 8px;
+  background: color-mix(in srgb, $accent 10%, transparent);
+  font-size: 14px;
+  flex-shrink: 0;
+}
+
+.agent-row__body {
+  flex: 1;
+  min-width: 0;
+}
+
+.agent-row__name {
+  display: block;
+  font-size: 13px;
+  color: $text-primary;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.agent-row__meta {
+  display: block;
+  margin-top: 1px;
+  font-size: 11px;
+  color: $text-muted;
+}
+
+.conversations-section {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
 }
 
 .incognito-pill {
@@ -256,9 +376,17 @@ function onDeleteCancel() {
 }
 
 .empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
   font-size: 12px;
   color: $text-muted;
   text-align: center;
   padding: 16px 8px;
+}
+
+.empty-icon {
+  opacity: 0.45;
 }
 </style>
