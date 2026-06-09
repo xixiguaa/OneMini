@@ -143,6 +143,7 @@ export function composeSystemPromptSegments(form: AgentPersonaForm): SystemPromp
 }
 
 export function composeSystemPromptPreview(form: AgentPersonaForm) {
+  if (form.promptOverride?.trim()) return form.promptOverride.trim()
   return composeSystemPromptSegments(form)
     .map((s) => s.content)
     .join('\n\n---\n\n')

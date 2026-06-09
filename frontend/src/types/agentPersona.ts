@@ -4,6 +4,8 @@ export type AgentPersonaTone = 'professional' | 'friendly' | 'concise' | 'creati
 
 export interface AgentPersonaForm {
   templateId: string
+  /** 非空时优先作为完整 System Prompt（沙盒与预览） */
+  promptOverride?: string
   name: string
   tagline: string
   tone: AgentPersonaTone

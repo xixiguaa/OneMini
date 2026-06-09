@@ -16,6 +16,15 @@ export type WorkspaceFileKey = keyof AgentWorkspace
 export type AgentLayerKey = WorkspaceFileKey
 export type AgentLayers = AgentWorkspace
 
+/** 智能体绑定的知识库文档及检索参数 */
+export interface KnowledgeBinding {
+  docId: string
+  /** 检索权重 0–100 */
+  weight: number
+  /** Top-K 召回条数 */
+  topK: number
+}
+
 /** 运行时配置（对标 openclaw.json，勿重复 AGENTS 里的策略条文） */
 export interface OneMiniSkeleton {
   version: string
@@ -45,6 +54,10 @@ export interface OneMiniSkeleton {
     permissions?: Record<string, Record<string, boolean>>
     /** 在技能管理页隐藏的技能 ID */
     hiddenSkillIds?: string[]
+  }
+  /** 绑定的 Milvus 知识库文档 */
+  knowledge?: {
+    bindings: KnowledgeBinding[]
   }
   multiAgent: MultiAgentConfig
 }

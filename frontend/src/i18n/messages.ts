@@ -21,6 +21,7 @@ export const messages = {
     },
     history: {
       label: '对话历史',
+      recents: '最近',
       agentsLabel: '我的智能体',
       conversations: '个对话',
       empty: '暂无历史，开始新对话吧',
@@ -42,6 +43,11 @@ export const messages = {
       exit: '结束隐身',
       emptyTitle: '隐身对话',
       emptySub: '对话不留痕，关闭后内容将被清除',
+      overlayTitle: '隐身对话',
+      overlayEmptyTitle: '你正处于隐身模式',
+      overlayDisclaimer: '隐身对话不会保存到历史记录，也不会用于模型训练。',
+      openHint: '打开隐身对话',
+      close: '关闭',
     },
     footer: {
       about: '关于',
@@ -116,6 +122,7 @@ export const messages = {
     },
     history: {
       label: 'History',
+      recents: 'Recents',
       agentsLabel: 'My agents',
       conversations: 'chats',
       empty: 'No history yet — start a new chat',
@@ -138,6 +145,12 @@ export const messages = {
       exit: 'End incognito',
       emptyTitle: 'Incognito chat',
       emptySub: 'Nothing is kept — content is cleared when you leave',
+      overlayTitle: 'Incognito chat',
+      overlayEmptyTitle: "You're incognito",
+      overlayDisclaimer:
+        'Incognito chats are not saved to history or used to train models.',
+      openHint: 'Open incognito chat',
+      close: 'Close',
     },
     footer: {
       about: 'About',

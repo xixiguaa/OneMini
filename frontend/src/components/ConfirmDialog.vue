@@ -28,7 +28,7 @@ const props = withDefaults(
     confirmHref: '',
     showConfirm: true,
     showCancel: true,
-    maxWidth: '400px',
+    maxWidth: '520px',
   },
 )
 
@@ -141,8 +141,10 @@ onUnmounted(() => {
 }
 
 .confirm-dialog {
-  @include cosmic-modal-panel(420px);
-  padding: 22px 22px 18px;
+  @include cosmic-modal-panel(520px);
+  width: min(520px, calc(100vw - 48px));
+  min-width: min(320px, calc(100vw - 48px));
+  padding: 22px 24px 18px;
 }
 
 .confirm-title {

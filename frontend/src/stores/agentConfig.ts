@@ -12,6 +12,7 @@ import {
 } from '../config/agentPersonaTemplates'
 import type {
   AgentConfigBundle,
+  KnowledgeBinding,
   OneMiniSkeleton,
   WorkspaceFileKey,
 } from '../types/agentConfig'
@@ -47,6 +48,9 @@ function mergeSkeleton(saved?: Partial<OneMiniSkeleton>): OneMiniSkeleton {
         ...(saved.skills?.permissions ?? {}),
       },
       hiddenSkillIds: saved.skills?.hiddenSkillIds ?? base.skills.hiddenSkillIds ?? [],
+    },
+    knowledge: {
+      bindings: saved.knowledge?.bindings ?? base.knowledge?.bindings ?? [],
     },
     multiAgent: {
       ...base.multiAgent,
@@ -225,6 +229,51 @@ export const useAgentConfigStore = defineStore('agentConfig', () => {
     return (skeleton.value.skills.hiddenSkillIds ?? []).includes(skillId)
   }
 
+  const knowledgeBindings = computed(() => skeleton.value.knowledge?.bindings ?? [])
+
+  function setKnowledgeBindings(bindings: KnowledgeBinding[]) {
+    bundle.value.skeleton = {
+      ...skeleton.value,
+      knowledge: { bindings: [...bindings] },
+    }
+  }
+
+  function bindKnowledge(docId: string) {
+    if (knowledgeBindings.value.some((b) => b.docId === docId)) return
+    setKnowledgeBindings([
+      ...knowledgeBindings.value,
+      { docId, weight: 80, topK: 5 },
+    ])
+  }
+
+  function unbindKnowledge(docId: string) {
+    setKnowledgeBindings(knowledgeBindings.value.filter((b) => b.docId !== docId))
+  }
+
+  function updateKnowledgeBinding(docId: string, patch: Partial<Omit<KnowledgeBinding, 'docId'>>) {
+    setKnowledgeBindings(
+      knowledgeBindings.value.map((b) => (b.docId === docId ? { ...b, ...patch } : b)),
+    )
+  }
+
+  function applyModelPreset(preset: { temperature: number; maxTokens?: number }) {
+    bundle.value.skeleton = mergeSkeleton({
+      ...skeleton.value,
+      models: {
+        ...skeleton.value.models,
+        temperature: preset.temperature,
+        ...(preset.maxTokens != null ? { maxTokens: preset.maxTokens } : {}),
+      },
+    })
+  }
+
+  function setPrimaryModel(modelId: string) {
+    bundle.value.skeleton = mergeSkeleton({
+      ...skeleton.value,
+      models: { ...skeleton.value.models, primary: modelId },
+    })
+  }
+
   return {
     bundle,
     skeleton,
@@ -257,5 +306,11 @@ export const useAgentConfigStore = defineStore('agentConfig', () => {
     setSkillPermission,
     hideSkillId,
     isSkillHidden,
+    knowledgeBindings,
+    bindKnowledge,
+    unbindKnowledge,
+    updateKnowledgeBinding,
+    applyModelPreset,
+    setPrimaryModel,
   }
 })

@@ -3,7 +3,6 @@ import {
   Box,
   Brain,
   Database,
-  EyeOff,
   Globe,
   MessageSquare,
   PanelLeftClose,
@@ -28,7 +27,6 @@ const { t } = useLocale()
 const collapsed = computed(() => ui.sidebarCollapsed)
 
 const navItems = computed(() => [
-  { id: 'chat' as ViewId, label: t('nav.chat'), icon: MessageSquare },
   { id: 'create' as ViewId, label: t('nav.create'), icon: Palette },
   { id: 'world' as ViewId, label: t('nav.world'), icon: Globe },
   { id: 'models' as ViewId, label: t('nav.models'), icon: Box },
@@ -37,8 +35,18 @@ const navItems = computed(() => [
   { id: 'wikiGraph' as ViewId, label: t('nav.wikiGraph'), icon: Brain },
 ])
 
+const chatNavItem = computed(() => ({
+  id: 'chat' as ViewId,
+  label: t('nav.chat'),
+  icon: MessageSquare,
+}))
+
 function selectView(id: ViewId) {
   agent.setCurrentView(id)
+}
+
+function onNewChat() {
+  agent.newSession()
 }
 </script>
 
@@ -62,50 +70,55 @@ function selectView(id: ViewId) {
       </button>
     </div>
 
-    <div class="chat-actions">
+    <nav class="nav" :aria-label="t('sidebar.navAria')">
       <button
-        class="new-chat-btn"
-        :class="{ inactive: agent.isIncognito, 'icon-only': collapsed }"
+        type="button"
+        class="nav-item"
+        :class="{ 'icon-only': collapsed }"
         :title="collapsed ? t('sidebar.newChat') : undefined"
-        @click="agent.newSession()"
+        :aria-label="t('sidebar.newChat')"
+        @click="onNewChat"
       >
-        <Plus :size="16" />
+        <Plus :size="18" class="nav-icon" />
         <span v-show="!collapsed" class="sidebar-text">{{ t('sidebar.newChat') }}</span>
       </button>
+
       <button
-        class="incognito-btn"
-        :class="{ active: agent.isIncognito, 'icon-only': collapsed }"
-        :title="collapsed ? t('sidebar.incognitoHint') : undefined"
-        @click="agent.newIncognitoSession()"
+        type="button"
+        class="nav-item"
+        :class="{ active: agent.currentView === chatNavItem.id, 'icon-only': collapsed }"
+        :title="collapsed ? chatNavItem.label : undefined"
+        :aria-label="chatNavItem.label"
+        @click="selectView(chatNavItem.id)"
       >
-        <EyeOff :size="16" />
-        <span v-show="!collapsed" class="sidebar-text">{{ t('sidebar.incognito') }}</span>
+        <component :is="chatNavItem.icon" :size="18" class="nav-icon" />
+        <span v-show="!collapsed" class="sidebar-text">{{ chatNavItem.label }}</span>
       </button>
+
+      <div v-if="collapsed" class="nav-divider" aria-hidden="true" />
+
+      <button
+        v-for="item in navItems"
+        :key="item.id"
+        type="button"
+        class="nav-item"
+        :class="{ active: agent.currentView === item.id, 'icon-only': collapsed }"
+        :title="collapsed ? item.label : undefined"
+        :aria-label="item.label"
+        @click="selectView(item.id)"
+      >
+        <component :is="item.icon" :size="18" class="nav-icon" />
+        <span v-show="!collapsed" class="sidebar-text">{{ item.label }}</span>
+      </button>
+    </nav>
+
+    <div v-show="!collapsed" class="sidebar-recents">
+      <ChatHistory />
     </div>
 
-    <div class="sidebar-scroll">
-      <ChatHistory v-show="!collapsed" />
-    </div>
+    <div v-show="collapsed" class="sidebar-spacer" />
 
-    <div class="sidebar-bottom">
-      <nav class="nav" :aria-label="t('sidebar.navAria')">
-        <button
-          v-for="item in navItems"
-          :key="item.id"
-          type="button"
-          class="nav-item"
-          :class="{ active: agent.currentView === item.id, 'icon-only': collapsed }"
-          :title="collapsed ? item.label : undefined"
-          :aria-label="item.label"
-          @click="selectView(item.id)"
-        >
-          <component :is="item.icon" :size="18" class="nav-icon" />
-          <span v-show="!collapsed" class="sidebar-text">{{ item.label }}</span>
-        </button>
-      </nav>
-
-      <SidebarFooterBar :collapsed="collapsed" />
-    </div>
+    <SidebarFooterBar :collapsed="collapsed" />
   </aside>
 </template>
 
@@ -135,7 +148,7 @@ $sidebar-collapsed: 56px;
 
   &.collapsed {
     --sidebar-width: #{$sidebar-collapsed};
-    padding: 12px 6px;
+    padding: 10px 8px;
   }
 }
 
@@ -145,13 +158,14 @@ $sidebar-collapsed: 56px;
   justify-content: space-between;
   gap: 8px;
   flex-shrink: 0;
-  margin-bottom: 8px;
+  margin-bottom: 12px;
   min-height: 32px;
   padding: 0 2px;
 
   .collapsed & {
     justify-content: center;
-    margin-bottom: 10px;
+    margin-bottom: 8px;
+    min-height: 36px;
   }
 }
 
@@ -180,8 +194,8 @@ $sidebar-collapsed: 56px;
   }
 
   .collapsed & {
-    width: 40px;
-    height: 40px;
+    width: 36px;
+    height: 36px;
   }
 }
 
@@ -191,78 +205,18 @@ $sidebar-collapsed: 56px;
   text-overflow: ellipsis;
 }
 
-.sidebar-scroll {
+.sidebar-recents {
   flex: 1;
   min-height: 0;
+  display: flex;
+  flex-direction: column;
+  margin-top: 16px;
   overflow: hidden;
-  display: flex;
-  flex-direction: column;
 }
 
-.sidebar-bottom {
-  flex-shrink: 0;
-  display: flex;
-  flex-direction: column;
-}
-
-.chat-actions {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  margin-bottom: 10px;
-  flex-shrink: 0;
-
-  .collapsed & {
-    align-items: center;
-    gap: 8px;
-  }
-}
-
-.new-chat-btn,
-.incognito-btn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  width: 100%;
-  border-radius: $radius-sm;
-  font-size: 13px;
-  font-weight: 500;
-
-  &.icon-only {
-    width: 40px;
-    height: 40px;
-    padding: 0;
-  }
-}
-
-.new-chat-btn {
-  padding: 11px;
-  background: var(--btn-primary-gradient, $accent);
-  color: $btn-primary-text;
-
-  &:hover {
-    filter: brightness(1.08);
-    box-shadow: $shadow-glow;
-  }
-
-  &.inactive {
-    background: $btn-primary-disabled-bg;
-    color: $btn-primary-disabled-text;
-  }
-}
-
-.incognito-btn {
-  padding: 9px 11px;
-  color: $accent-emphasis;
-  @include cosmic.cosmic-interactive-item;
-
-  &.active {
-    color: #fff;
-    background: var(--btn-primary-gradient, $accent);
-    border-color: transparent;
-    box-shadow: $shadow-glow;
-  }
+.sidebar-spacer {
+  flex: 1;
+  min-height: 0;
 }
 
 .nav {
@@ -270,16 +224,19 @@ $sidebar-collapsed: 56px;
   flex-direction: column;
   gap: 2px;
   flex-shrink: 0;
-  padding-top: 8px;
-  padding-bottom: 8px;
-  border-top: 1px solid var(--sidebar-divider, $border-light);
 
   .collapsed & {
     align-items: center;
-    gap: 4px;
-    padding-top: 10px;
-    padding-bottom: 10px;
+    gap: 2px;
   }
+}
+
+.nav-divider {
+  width: 20px;
+  height: 1px;
+  margin: 6px 0;
+  background: var(--sidebar-divider, $border-light);
+  flex-shrink: 0;
 }
 
 .nav-item {
@@ -287,23 +244,27 @@ $sidebar-collapsed: 56px;
   align-items: center;
   gap: 10px;
   width: 100%;
-  padding: 9px 12px;
-  border-radius: $radius-sm;
+  padding: 8px 10px;
+  border-radius: 8px;
   font-size: 13px;
   font-weight: 500;
   color: $text-primary;
   text-align: left;
-  @include cosmic.cosmic-interactive-item;
+  transition: background 0.15s ease, color 0.15s ease;
+
+  &:hover {
+    background: color-mix(in srgb, var(--composer-option-hover, $accent-light) 55%, transparent);
+  }
 
   &.icon-only {
-    width: 40px;
-    height: 40px;
+    width: 36px;
+    height: 36px;
     padding: 0;
     justify-content: center;
   }
 
   &.active {
-    @include cosmic.cosmic-interactive-item-active;
+    background: color-mix(in srgb, var(--composer-option-hover, $accent-light) 78%, transparent);
     color: $accent-emphasis;
     font-weight: 600;
   }
@@ -311,5 +272,10 @@ $sidebar-collapsed: 56px;
 
 .nav-icon {
   flex-shrink: 0;
+  color: var(--text-label, $text-secondary);
+
+  .nav-item.active & {
+    color: $accent-emphasis;
+  }
 }
 </style>

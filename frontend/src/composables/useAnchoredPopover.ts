@@ -1,7 +1,7 @@
 import { nextTick, onMounted, onUnmounted, ref } from 'vue'
 
 export type PopoverAlign = 'left' | 'right'
-export type PopoverPlacement = 'auto' | 'above' | 'below'
+export type PopoverPlacement = 'auto' | 'above' | 'below' | 'left' | 'right'
 
 export function useAnchoredPopover(opts?: {
   align?: PopoverAlign
@@ -11,7 +11,7 @@ export function useAnchoredPopover(opts?: {
   /** 按内容自然高度展示，不限制 maxHeight */
   fitContent?: boolean
   /** auto：触发器在视口上半区 → 下方展开，下半区 → 上方展开；默认 above */
-  placement?: PopoverPlacement
+  placement?: PopoverPlacement | (() => PopoverPlacement)
   /** 全屏透明层，点击即可关闭（用于 Teleport 面板） */
   backdrop?: boolean
 }) {
@@ -19,14 +19,16 @@ export function useAnchoredPopover(opts?: {
   const minWidth = opts?.minWidth ?? 200
   const maxPanelHeight = opts?.maxPanelHeight ?? 0
   const fitContent = opts?.fitContent ?? false
-  const placementPref = opts?.placement ?? 'above'
+  const placementOption = opts?.placement ?? 'above'
+  const getPlacementPref = (): PopoverPlacement =>
+    typeof placementOption === 'function' ? placementOption() : placementOption
   const backdrop = opts?.backdrop ?? false
 
   const triggerRef = ref<HTMLElement | null>(null)
   const panelRef = ref<HTMLElement | null>(null)
   const open = ref(false)
   const panelStyle = ref<Record<string, string>>({})
-  const resolvedPlacement = ref<'above' | 'below'>('above')
+  const resolvedPlacement = ref<PopoverPlacement>('above')
 
   function resolveAutoPlacement(r: DOMRect): 'above' | 'below' {
     const triggerMid = r.top + r.height / 2
@@ -41,6 +43,33 @@ export function useAnchoredPopover(opts?: {
     const r = el.getBoundingClientRect()
     const gap = 8
     const width = Math.max(r.width, minWidth)
+    const placementPref = getPlacementPref()
+
+    if (placementPref === 'left' || placementPref === 'right') {
+      resolvedPlacement.value = placementPref
+
+      const panelHeight = panel?.offsetHeight ?? 0
+      const panelWidth = panel?.offsetWidth ?? width
+      let top = r.top + r.height / 2 - panelHeight / 2
+      top = Math.max(8, Math.min(top, window.innerHeight - panelHeight - 8))
+
+      const base: Record<string, string> = {
+        position: 'fixed',
+        zIndex: '10005',
+        minWidth: `${width}px`,
+        maxWidth: `${Math.min(Math.max(width, minWidth), window.innerWidth - 16)}px`,
+        top: `${top}px`,
+      }
+
+      if (placementPref === 'right') {
+        base.left = `${r.right + gap}px`
+      } else {
+        base.left = `${Math.max(8, r.left - panelWidth - gap)}px`
+      }
+
+      panelStyle.value = base
+      return
+    }
 
     let placement: 'above' | 'below' =
       placementPref === 'auto' ? resolveAutoPlacement(r) : placementPref

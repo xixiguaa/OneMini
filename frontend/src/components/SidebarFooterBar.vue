@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { LogOut, MoreHorizontal, Settings, UserRound } from 'lucide-vue-next'
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, toRef } from 'vue'
 import { useAnchoredPopover } from '../composables/useAnchoredPopover'
 import { useAgentStore } from '../stores/agent'
 import { useAuthStore } from '../stores/auth'
@@ -15,15 +15,18 @@ const auth = useAuthStore()
 const agent = useAgentStore()
 const settingsOpen = ref(false)
 
+const collapsed = toRef(props, 'collapsed')
+
 const menuPopover = useAnchoredPopover({
   fitContent: true,
-  placement: 'above',
+  placement: () => (collapsed.value ? 'right' : 'above'),
   align: 'right',
   minWidth: 168,
 })
 
 const menuOpen = menuPopover.open
 const menuPanelStyle = computed(() => menuPopover.panelStyle.value)
+const menuTransitionName = computed(() => (collapsed.value ? 'menu-pop-right' : 'menu-pop'))
 
 const avatarInitial = computed(() => accountAvatarInitial(auth.user))
 const maskedLabel = computed(() => maskAccountLabel(auth.user))
@@ -73,7 +76,21 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocClick))
 
 <template>
   <div class="footer-bar" :class="{ collapsed: props.collapsed }">
-    <div class="user-bar" :class="{ 'icon-only': props.collapsed }">
+    <button
+      v-if="props.collapsed"
+      :ref="setTriggerRef"
+      type="button"
+      class="avatar-collapsed"
+      :title="maskedLabel"
+      aria-label="账户菜单"
+      :aria-expanded="menuOpen"
+      aria-haspopup="menu"
+      @click.stop="toggleMenu"
+    >
+      <span class="avatar">{{ avatarInitial }}</span>
+    </button>
+
+    <div v-else class="user-bar">
       <button
         type="button"
         class="user-main"
@@ -81,7 +98,7 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocClick))
         @click="openProfileDirect"
       >
         <span class="avatar">{{ avatarInitial }}</span>
-        <span v-if="!props.collapsed" class="user-label">{{ maskedLabel }}</span>
+        <span class="user-label">{{ maskedLabel }}</span>
       </button>
       <button
         :ref="setTriggerRef"
@@ -92,7 +109,7 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocClick))
         aria-haspopup="menu"
         @click.stop="toggleMenu"
       >
-        <MoreHorizontal :size="props.collapsed ? 14 : 16" />
+        <MoreHorizontal :size="16" />
       </button>
     </div>
 
@@ -103,7 +120,7 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocClick))
         aria-hidden="true"
         @click="closeMenu"
       />
-      <Transition name="menu-pop">
+      <Transition :name="menuTransitionName">
         <div
           v-if="menuOpen"
           :ref="setPanelRef"
@@ -144,10 +161,29 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocClick))
   border-top: 1px solid var(--sidebar-divider, $border-light);
 
   &.collapsed {
-    margin-left: -6px;
-    margin-right: -6px;
-    margin-bottom: 0;
-    padding: 10px 4px 8px;
+    margin: 0 -8px 0;
+    padding: 10px 0 0;
+    display: flex;
+    justify-content: center;
+  }
+}
+
+.avatar-collapsed {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  transition: background 0.15s ease;
+
+  &:hover {
+    background: color-mix(in srgb, var(--composer-option-hover, $accent-light) 55%, transparent);
+  }
+
+  .avatar {
+    width: 28px;
+    height: 28px;
   }
 }
 
@@ -165,44 +201,6 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocClick))
 
   &:hover {
     @include cosmic.cosmic-glass-hover;
-  }
-
-  &.icon-only {
-    width: 40px;
-    height: 40px;
-    min-height: 40px;
-    padding: 0;
-    margin: 0 auto;
-    position: relative;
-    justify-content: center;
-
-    .user-main {
-      width: 100%;
-      height: 100%;
-      justify-content: center;
-      padding: 0;
-    }
-
-    .more-btn {
-      position: absolute;
-      right: -2px;
-      bottom: -2px;
-      width: 18px;
-      height: 18px;
-      border-radius: 999px;
-      background: var(--bg-card, #fff);
-      border: 1px solid $glass-border;
-      box-shadow: $shadow-sm;
-      opacity: 0;
-      pointer-events: none;
-      transition: opacity 0.15s ease;
-    }
-
-    &:hover .more-btn,
-    &:focus-within .more-btn {
-      opacity: 1;
-      pointer-events: auto;
-    }
   }
 }
 
@@ -305,5 +303,16 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocClick))
 .menu-pop-leave-to {
   opacity: 0;
   transform: translateY(-6px);
+}
+
+.menu-pop-right-enter-active,
+.menu-pop-right-leave-active {
+  transition: opacity 0.15s ease, transform 0.15s ease;
+}
+
+.menu-pop-right-enter-from,
+.menu-pop-right-leave-to {
+  opacity: 0;
+  transform: translateX(-6px);
 }
 </style>

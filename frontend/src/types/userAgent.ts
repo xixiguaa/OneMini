@@ -6,7 +6,7 @@ export interface UserAgent {
   id: string
   name: string
   description: string
-  /** 侧栏与列表展示用，通常为 emoji 或首字 */
+  /** 侧栏与列表展示用，对应 agentAvatars 中的图片 id */
   avatar: string
   bundle: AgentConfigBundle
   createdAt: number

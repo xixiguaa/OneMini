@@ -1476,7 +1476,7 @@ watch(selectedNodeId, (id) => expandSectionForNode(id))
       cancel-label="关闭"
       confirm-label="下载 Obsidian"
       :confirm-href="OBSIDIAN_DOWNLOAD_URL"
-      max-width="440px"
+      max-width="520px"
       @confirm="obsidianDialogOpen = false"
     >
       <div v-if="wikiRoot" class="dialog-path">

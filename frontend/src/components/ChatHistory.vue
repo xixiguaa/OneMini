@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { EyeOff, MessageSquare, Trash2 } from 'lucide-vue-next'
+import { ChevronDown, Trash2 } from 'lucide-vue-next'
 import { computed, ref } from 'vue'
 import LoadingIndicator from './LoadingIndicator.vue'
 import ConfirmDialog from './ConfirmDialog.vue'
@@ -8,7 +8,6 @@ import { useLocale } from '../composables/useLocale'
 import { useAgentStore } from '../stores/agent'
 import { useConversationsStore } from '../stores/conversations'
 import { useUserAgentsStore } from '../stores/userAgents'
-import type { ConversationTimeGroup } from '../types/agent'
 
 const agent = useAgentStore()
 const conversations = useConversationsStore()
@@ -18,11 +17,7 @@ const { t } = useLocale()
 const deleteTargetId = ref<string | null>(null)
 const deleting = ref(false)
 
-const groupedList = computed(() =>
-  conversations.groupedListForAgent(userAgents.activeAgentId),
-)
-
-const activeAgentConversations = computed(() =>
+const recentConversations = computed(() =>
   conversations.chatListForAgent(userAgents.activeAgentId),
 )
 
@@ -39,10 +34,6 @@ const {
   onCancel: onConfirmCancel,
   onOpenUpdate: onConfirmOpenUpdate,
 } = useConfirmDialog()
-
-function groupLabel(key: ConversationTimeGroup): string {
-  return t(`history.groups.${key}`)
-}
 
 function deleteTargetTitle() {
   const id = deleteTargetId.value
@@ -86,94 +77,73 @@ function selectAgent(agentId: string) {
   agent.startChatWithAgent(agentId)
 }
 
-function conversationCount(agentId: string) {
-  return conversations.conversationCountForAgent(agentId)
+function isConversationActive(convId: string) {
+  return conversations.activeId === convId
 }
 
-function isConversationActive(convId: string) {
-  return !conversations.isIncognito && conversations.activeId === convId
+function onAgentSwitch(e: Event) {
+  const id = (e.target as HTMLSelectElement).value
+  if (id && id !== userAgents.activeAgentId) {
+    selectAgent(id)
+  }
+}
+
+function selectConversation(id: string) {
+  agent.selectConversation(id)
 }
 </script>
 
 <template>
-  <div class="history">
-    <section class="agents-section">
-      <div class="section-label">{{ t('history.agentsLabel') }}</div>
-      <div class="agent-list">
-        <button
-          v-for="item in userAgents.sortedAgents"
-          :key="item.id"
-          type="button"
-          class="agent-row"
-          :class="{ active: userAgents.activeAgentId === item.id && !conversations.isIncognito }"
-          @click="selectAgent(item.id)"
+  <section class="recents" aria-label="最近对话">
+    <div class="recents-head">
+      <span class="recents-title">{{ t('history.recents') }}</span>
+      <div v-if="userAgents.agents.length > 1" class="agent-picker">
+        <select
+          class="agent-picker__select"
+          :value="userAgents.activeAgentId"
+          @change="onAgentSwitch"
         >
-          <span class="agent-row__avatar">{{ item.avatar }}</span>
-          <span class="agent-row__body">
-            <span class="agent-row__name">{{ item.name }}</span>
-            <span class="agent-row__meta">
-              {{ conversationCount(item.id) }} {{ t('history.conversations') }}
-            </span>
-          </span>
-        </button>
+          <option v-for="item in userAgents.sortedAgents" :key="item.id" :value="item.id">
+            {{ item.name }}
+          </option>
+        </select>
+        <ChevronDown :size="14" class="agent-picker__icon" aria-hidden="true" />
       </div>
-    </section>
+    </div>
 
-    <section class="conversations-section">
-      <div class="section-label">{{ t('history.label') }}</div>
-      <div
-        v-if="conversations.isIncognito"
-        class="incognito-pill"
-        role="status"
-      >
-        <EyeOff :size="12" />
-        <span>{{ t('history.incognitoActive') }}</span>
-      </div>
-      <div class="history-list" :class="{ dimmed: conversations.isIncognito }">
-        <template v-if="groupedList.length">
-          <section
-            v-for="group in groupedList"
-            :key="group.key"
-            class="history-group"
+    <div class="recents-list">
+      <template v-if="recentConversations.length">
+        <div
+          v-for="conv in recentConversations"
+          :key="conv.id"
+          class="recents-item"
+          :class="{ active: isConversationActive(conv.id) }"
+          role="button"
+          tabindex="0"
+          @click="selectConversation(conv.id)"
+          @keydown.enter="selectConversation(conv.id)"
+          @keydown.space.prevent="selectConversation(conv.id)"
+        >
+          <span class="recents-item__title">{{ conv.title }}</span>
+          <button
+            class="recents-item__delete"
+            :title="t('history.delete')"
+            :aria-label="t('history.delete')"
+            @click.stop="requestDeleteConversation(conv.id)"
           >
-            <div class="group-label">{{ groupLabel(group.key) }}</div>
-            <div
-              v-for="conv in group.conversations"
-              :key="conv.id"
-              class="history-item"
-              :class="{ active: isConversationActive(conv.id) }"
-              role="button"
-              tabindex="0"
-              @click="agent.selectConversation(conv.id)"
-              @keydown.enter="agent.selectConversation(conv.id)"
-              @keydown.space.prevent="agent.selectConversation(conv.id)"
-            >
-              <div class="item-body">
-                <span class="item-title">{{ conv.title }}</span>
-              </div>
-              <button
-                class="delete-btn"
-                :title="t('history.delete')"
-                @click.stop="requestDeleteConversation(conv.id)"
-              >
-                <Trash2 :size="12" />
-              </button>
-            </div>
-          </section>
-        </template>
+            <Trash2 :size="13" />
+          </button>
+        </div>
+      </template>
 
-        <LoadingIndicator
-          v-if="conversations.loading"
-          label="加载对话…"
-          variant="block"
-          class="empty"
-        />
-        <p v-else-if="!activeAgentConversations.length" class="empty">
-          <MessageSquare :size="14" class="empty-icon" />
-          {{ t('history.emptyForAgent') }}
-        </p>
-      </div>
-    </section>
+      <LoadingIndicator
+        v-else-if="conversations.loading"
+        label="加载对话…"
+        variant="block"
+        class="recents-empty"
+      />
+      <p v-else class="recents-empty">{{ t('history.emptyForAgent') }}</p>
+    </div>
 
     <ConfirmDialog
       :open="confirmOpen"
@@ -187,206 +157,141 @@ function isConversationActive(convId: string) {
       @confirm="onDeleteConfirm"
       @cancel="onDeleteCancel"
     />
-  </div>
+  </section>
 </template>
 
 <style scoped lang="scss">
 @use '../styles/variables.scss' as *;
-@use '../styles/cosmic-glass.scss' as cosmic;
 
-.history {
+.recents {
   flex: 1;
   min-height: 0;
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  margin-bottom: 12px;
-}
-
-.section-label {
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--text-label, $text-secondary);
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  padding: 0 8px 8px;
-}
-
-.agents-section {
-  flex-shrink: 0;
-}
-
-.agent-list {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.agent-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  width: 100%;
-  padding: 8px 10px;
-  border-radius: $radius-sm;
-  text-align: left;
-  cursor: pointer;
-  @include cosmic.cosmic-interactive-item;
-
-  &.active {
-    @include cosmic.cosmic-interactive-item-active;
-
-    .agent-row__name {
-      color: $accent-emphasis;
-      font-weight: 600;
-    }
-  }
-}
-
-.agent-row__avatar {
-  width: 28px;
-  height: 28px;
-  display: grid;
-  place-items: center;
-  border-radius: 8px;
-  background: color-mix(in srgb, $accent 10%, transparent);
-  font-size: 14px;
-  flex-shrink: 0;
-}
-
-.agent-row__body {
-  flex: 1;
-  min-width: 0;
-}
-
-.agent-row__name {
-  display: block;
-  font-size: 13px;
-  color: $text-primary;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
-.agent-row__meta {
-  display: block;
-  margin-top: 1px;
-  font-size: 11px;
-  color: $text-muted;
-}
-
-.conversations-section {
-  flex: 1;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-}
-
-.incognito-pill {
+.recents-head {
+  flex-shrink: 0;
   display: flex;
   align-items: center;
-  justify-content: center;
-  gap: 6px;
-  margin: 0 4px 8px;
-  padding: 8px 10px;
-  border-radius: 8px;
-  font-size: 11px;
-  font-weight: 600;
-  line-height: 1.2;
-  color: $accent-emphasis;
-  background: $accent-light;
-  border: var(--glass-border-width, 0.5px) solid $border-light;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 0 10px 12px;
+}
 
-  svg {
-    flex-shrink: 0;
+.recents-title {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-label, $text-secondary);
+}
+
+.agent-picker {
+  position: relative;
+  flex-shrink: 1;
+  min-width: 0;
+  max-width: 52%;
+}
+
+.agent-picker__select {
+  width: 100%;
+  padding: 2px 22px 2px 0;
+  border: none;
+  background: transparent;
+  color: var(--text-label, $text-secondary);
+  font-size: 12px;
+  font-weight: 500;
+  text-align: right;
+  cursor: pointer;
+  appearance: none;
+
+  &:hover {
+    color: $text-primary;
   }
 }
 
-.history-list {
+.agent-picker__icon {
+  position: absolute;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--text-label, $text-secondary);
+  pointer-events: none;
+}
+
+.recents-list {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
-  gap: 8px;
-
-  &.dimmed {
-    opacity: 0.55;
-  }
+  gap: 6px;
+  padding: 0 6px;
 }
 
-.history-group {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.group-label {
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--text-label, $text-secondary);
-  padding: 4px 10px 2px;
-}
-
-.history-item {
+.recents-item {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 8px 10px;
-  border-radius: $radius-sm;
-  text-align: left;
   width: 100%;
+  padding: 9px 10px;
+  border-radius: 8px;
+  text-align: left;
   cursor: pointer;
-  @include cosmic.cosmic-interactive-item;
+  transition: background 0.15s ease, color 0.15s ease;
+
+  &:hover {
+    background: color-mix(in srgb, var(--composer-option-hover, $accent-light) 50%, transparent);
+
+    .recents-item__delete {
+      opacity: 1;
+    }
+  }
 
   &.active {
-    @include cosmic.cosmic-interactive-item-active;
+    background: color-mix(in srgb, var(--composer-option-hover, $accent-light) 72%, transparent);
 
-    .item-title {
-      color: $accent-emphasis;
-      font-weight: 600;
+    .recents-item__title {
+      color: $text-primary;
+      font-weight: 500;
     }
   }
 }
 
-.item-body {
+.recents-item__title {
   flex: 1;
   min-width: 0;
-}
-
-.item-title {
-  display: block;
   font-size: 13px;
-  color: $text-primary;
+  line-height: 1.35;
+  color: var(--text-label, $text-secondary);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.delete-btn {
-  @include cosmic.cosmic-secondary-action;
-  padding: 4px;
-  color: $text-muted;
-  border-radius: 4px;
+.recents-item__delete {
   flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  color: $text-muted;
+  opacity: 0;
+  transition: opacity 0.15s ease, color 0.15s ease, background 0.15s ease;
 
   &:hover {
     color: $color-danger;
-    background: rgba(200, 68, 68, 0.1);
+    background: color-mix(in srgb, $color-danger 10%, transparent);
   }
 }
 
-.empty {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 6px;
+.recents-empty {
+  padding: 12px 10px;
   font-size: 12px;
+  line-height: 1.5;
   color: $text-muted;
-  text-align: center;
-  padding: 16px 8px;
-}
-
-.empty-icon {
-  opacity: 0.45;
+  text-align: left;
 }
 </style>

@@ -12,18 +12,11 @@ import {
   type UserAgent,
   type UserAgentsState,
 } from '../types/userAgent'
+import { normalizeAgentAvatarId, pickDefaultAvatarId } from '../config/agentAvatars'
 import { randomUUID } from '../utils/uuid'
 
 const STORAGE_KEY = 'onemini-user-agents-v1'
 const LEGACY_CONFIG_KEY = 'onemini-agent-config-v1'
-
-const AGENT_AVATARS = ['🤖', '✨', '🎯', '💡', '🦊', '🐱', '🎨', '📚', '🛠️', '🌟']
-
-function pickAvatar(name: string, index: number): string {
-  const trimmed = name.trim()
-  if (trimmed && /\p{Extended_Pictographic}/u.test(trimmed[0]!)) return trimmed[0]!
-  return AGENT_AVATARS[index % AGENT_AVATARS.length]!
-}
 
 function normalizeBundle(bundle?: Partial<AgentConfigBundle>): AgentConfigBundle {
   const src = bundle ? (toRaw(bundle) as Partial<AgentConfigBundle>) : undefined
@@ -48,6 +41,9 @@ function normalizeBundle(bundle?: Partial<AgentConfigBundle>): AgentConfigBundle
       skills: {
         ...defaults.skeleton.skills,
         ...(src?.skeleton?.skills ?? {}),
+      },
+      knowledge: {
+        bindings: src?.skeleton?.knowledge?.bindings ?? [],
       },
       multiAgent: {
         ...defaults.skeleton.multiAgent,
@@ -77,7 +73,7 @@ function buildDefaultAgent(name: string, bundle?: AgentConfigBundle, index = 0):
     id: DEFAULT_USER_AGENT_ID,
     name,
     description: base.persona?.tagline?.slice(0, 80) ?? '',
-    avatar: pickAvatar(name, index),
+    avatar: pickDefaultAvatarId(index),
     bundle: cloneBundle(base),
     createdAt: now,
     updatedAt: now,
@@ -99,21 +95,45 @@ function loadLegacyBundle(): AgentConfigBundle | null {
   }
 }
 
+function isValidUserAgent(raw: unknown): raw is UserAgent {
+  if (!raw || typeof raw !== 'object') return false
+  const a = raw as UserAgent
+  return (
+    typeof a.id === 'string' &&
+    typeof a.name === 'string' &&
+    typeof a.createdAt === 'number' &&
+    typeof a.updatedAt === 'number' &&
+    a.bundle != null &&
+    typeof a.bundle === 'object' &&
+    a.bundle.skeleton != null &&
+    a.bundle.workspace != null
+  )
+}
+
 function loadState(): UserAgentsState {
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
     if (raw) {
       const parsed = JSON.parse(raw) as UserAgentsState
-      if (parsed.agents?.length) {
-        return {
-          agents: parsed.agents.map((a, index) => ({
+      const validAgents = (parsed.agents ?? []).filter(isValidUserAgent)
+      if (validAgents.length) {
+        const seen = new Set<string>()
+        const agents = validAgents
+          .filter((a) => {
+            if (seen.has(a.id)) return false
+            seen.add(a.id)
+            return true
+          })
+          .map((a, index) => ({
             ...a,
             name: a.name?.trim() || '未命名智能体',
-            avatar: a.avatar || pickAvatar(a.name || '智能体', index),
+            avatar: normalizeAgentAvatarId(a.avatar, index),
             bundle: cloneBundle(a.bundle),
-          })),
-          activeAgentId: parsed.activeAgentId || parsed.agents[0]!.id,
-        }
+          }))
+        const activeAgentId = agents.some((a) => a.id === parsed.activeAgentId)
+          ? parsed.activeAgentId
+          : agents[0]!.id
+        return { agents, activeAgentId }
       }
     }
   } catch {
@@ -192,7 +212,7 @@ export const useUserAgentsStore = defineStore('userAgents', () => {
       id,
       name,
       description: bundle.persona?.tagline?.slice(0, 120) ?? '',
-      avatar: pickAvatar(name, agents.value.length),
+      avatar: pickDefaultAvatarId(agents.value.length),
       bundle: cloneBundle(bundle),
       createdAt: now,
       updatedAt: now,
@@ -210,7 +230,7 @@ export const useUserAgentsStore = defineStore('userAgents', () => {
       id: newId,
       name: `${source.name} 副本`,
       description: source.description,
-      avatar: pickAvatar(source.name, agents.value.length),
+      avatar: normalizeAgentAvatarId(source.avatar, agents.value.length),
       bundle: cloneBundle(source.bundle),
       createdAt: now,
       updatedAt: now,
@@ -224,6 +244,13 @@ export const useUserAgentsStore = defineStore('userAgents', () => {
     if (!agent) return
     agent.name = name.trim() || agent.name
     if (agent.bundle.persona) agent.bundle.persona.name = agent.name
+    touchAgent(id)
+  }
+
+  function updateAgentAvatar(id: string, avatar: string) {
+    const agent = getAgent(id)
+    if (!agent || !avatar.trim()) return
+    agent.avatar = avatar.trim()
     touchAgent(id)
   }
 
@@ -251,6 +278,7 @@ export const useUserAgentsStore = defineStore('userAgents', () => {
     createAgent,
     duplicateAgent,
     renameAgent,
+    updateAgentAvatar,
     deleteAgent,
   }
 })
