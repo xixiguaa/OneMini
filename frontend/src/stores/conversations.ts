@@ -429,6 +429,21 @@ export const useConversationsStore = defineStore('conversations', () => {
     return conv
   }
 
+  function reset() {
+    for (const [, timer] of persistTimers) {
+      clearTimeout(timer)
+    }
+    persistTimers.clear()
+    list.value = []
+    activeId.value = null
+    hydrated.value = false
+    persistError.value = null
+    incognitoActive.value = false
+    incognitoMessages.value = []
+    incognitoActiveLeafId.value = null
+    incognitoWorkingMemory.value = undefined
+  }
+
   return {
     list,
     activeId,
@@ -444,6 +459,7 @@ export const useConversationsStore = defineStore('conversations', () => {
     persistError,
     isIncognito,
     incognitoActive,
+    reset,
     hydrate,
     startIncognito,
     exitIncognito,

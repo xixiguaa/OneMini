@@ -20,6 +20,13 @@ export interface ChatStreamOptions {
   /** DeepSeek：thinking.type=enabled/disabled，其它服务商忽略 */
   thinkingEnabled?: boolean
   reasoningEffort?: ReasoningEffort
+  claudeAgentConfig?: {
+    cwd?: string
+    permissionMode?: string
+    thinkingBudget?: number
+  }
+  enabledSkills?: string[]
+  conversationId?: string
   signal?: AbortSignal
   onDelta: (text: string) => void
   /** DeepSeek / Reasoner 等模型的 reasoning_content 推理流 */
@@ -43,6 +50,13 @@ export async function sendChatStream(opts: ChatStreamOptions): Promise<string> {
       temperature: opts.temperature,
       thinking_enabled: opts.thinkingEnabled,
       reasoning_effort: opts.reasoningEffort,
+      claude_agent_config: opts.claudeAgentConfig ? {
+        cwd: opts.claudeAgentConfig.cwd,
+        permission_mode: opts.claudeAgentConfig.permissionMode,
+        thinking_budget: opts.claudeAgentConfig.thinkingBudget,
+      } : undefined,
+      enabled_skills: opts.enabledSkills,
+      conversation_id: opts.conversationId,
     }),
     signal: opts.signal,
   })

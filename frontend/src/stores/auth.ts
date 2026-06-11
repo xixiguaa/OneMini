@@ -10,6 +10,7 @@ import {
 } from '../api/auth'
 import { setAuthToken, getAuthToken } from '../utils/authToken'
 import { clearClientUserId, setClientUserId } from '../utils/userId'
+import { useConversationsStore } from './conversations'
 import { useToastStore } from './toast'
 
 const SESSION_EXPIRED_MESSAGE = '请重新登录'
@@ -31,6 +32,7 @@ export const useAuthStore = defineStore('auth', () => {
     clearClientUserId()
     user.value = null
     error.value = null
+    useConversationsStore().reset()
   }
 
   function applySession(accessToken: string, nextUser: AuthUser) {
@@ -42,6 +44,7 @@ export const useAuthStore = defineStore('auth', () => {
     setClientUserId(nextUser.id)
     user.value = nextUser
     error.value = null
+    useConversationsStore().reset()
   }
 
   async function hydrate(): Promise<void> {

@@ -1,6 +1,7 @@
 import re
 import time
 import uuid
+import warnings
 from typing import Any
 
 from pymilvus import (
@@ -9,15 +10,19 @@ from pymilvus import (
     DataType,
     FieldSchema,
     MilvusException,
+    PyMilvusDeprecationWarning,
     connections,
     utility,
 )
+
+warnings.filterwarnings("ignore", category=PyMilvusDeprecationWarning)
 
 from app.config import Settings, get_settings
 from app.services.embeddings import embed_texts, get_embedding_dim
 
 _connected = False
 _collection: Collection | None = None
+_milvus_client: Any = None
 
 
 def _alias() -> str:
@@ -38,7 +43,7 @@ def connect_milvus(settings: Settings | None = None) -> None:
 
 
 def disconnect_milvus() -> None:
-    global _connected, _collection
+    global _connected, _collection, _milvus_client
     try:
         from app.services.langchain_store import reset_vector_store
 
@@ -49,6 +54,24 @@ def disconnect_milvus() -> None:
         connections.disconnect(_alias())
     _connected = False
     _collection = None
+    _milvus_client = None
+
+
+def get_milvus_client(settings: Settings | None = None) -> Any:
+    global _milvus_client
+    if _milvus_client is not None:
+        return _milvus_client
+    from pymilvus import MilvusClient
+    settings = settings or get_settings()
+    uri = f"http://{settings.milvus_host}:{settings.milvus_port}"
+    _milvus_client = MilvusClient(uri=uri)
+    return _milvus_client
+
+
+def flush_collection(col: Any, settings: Settings | None = None) -> None:
+    collection_name = col if isinstance(col, str) else col.name
+    client = get_milvus_client(settings)
+    client.flush(collection_name)
 
 
 def ping_milvus(settings: Settings | None = None) -> dict[str, Any]:
@@ -136,7 +159,7 @@ def _insert_chunks_pymilvus(
         for i in range(len(chunks))
     ]
     col.insert(data)
-    col.flush()
+    flush_collection(col, settings)
     return len(chunks)
 
 
@@ -211,7 +234,7 @@ def delete_document(
     col = _get_collection(settings)
     expr = f'doc_id == "{doc_id}"'
     col.delete(expr)
-    col.flush()
+    flush_collection(col, settings)
     return 1
 
 

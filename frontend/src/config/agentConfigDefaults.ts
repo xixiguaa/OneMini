@@ -11,6 +11,11 @@ export const DEFAULT_SKELETON: OneMiniSkeleton = {
   ...(skeletonJson as OneMiniSkeleton),
   workspace: WORKSPACE_ROOT,
   bootstrapMaxChars: 18000,
+  claudeAgent: {
+    cwd: '',
+    permissionMode: 'interactive',
+    thinkingBudget: 2048,
+  },
 }
 
 export const DEFAULT_WORKSPACE: AgentWorkspace = {

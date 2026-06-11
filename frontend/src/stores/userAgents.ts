@@ -49,6 +49,13 @@ function normalizeBundle(bundle?: Partial<AgentConfigBundle>): AgentConfigBundle
         ...defaults.skeleton.multiAgent,
         ...(src?.skeleton?.multiAgent ?? {}),
       },
+      claudeAgent: defaults.skeleton.claudeAgent
+        ? {
+            cwd: src?.skeleton?.claudeAgent?.cwd ?? defaults.skeleton.claudeAgent.cwd,
+            permissionMode: src?.skeleton?.claudeAgent?.permissionMode ?? defaults.skeleton.claudeAgent.permissionMode,
+            thinkingBudget: src?.skeleton?.claudeAgent?.thinkingBudget ?? defaults.skeleton.claudeAgent.thinkingBudget,
+          }
+        : undefined,
     },
     persona,
   }

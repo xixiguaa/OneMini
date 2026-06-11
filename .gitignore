@@ -95,3 +95,5 @@ llm-wiki/.trash/
 llm-wiki/.obsidian/workspace.json
 llm-wiki/.obsidian/workspace-mobile.json
 llm-wiki/.obsidian/cache
+
+.agents/

@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cd /d e:\\\\open-source\\\\OneMini\\\\backend)",
+      "Bash(netstat -ano)",
+      "Bash(tasklist //fi \"PID eq 20172\")",
+      "Bash(wmic process *)",
+      "Bash(taskkill //PID 20172 //F)",
+      "Bash(nohup python ./run.py)",
+      "Bash(echo \"PID: $!\")"
+    ]
+  }
+}

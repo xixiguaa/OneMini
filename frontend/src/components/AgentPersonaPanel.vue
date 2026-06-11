@@ -1,49 +1,37 @@
 <script setup lang="ts">
 import {
   Brain,
-  ChevronDown,
-  Database,
   Maximize2,
   RotateCcw,
   Sparkles,
   User,
-  Wrench,
   X,
 } from 'lucide-vue-next'
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
-import AgentWorkspacePanel from './AgentWorkspacePanel.vue'
+import { computed, onUnmounted, ref, watch } from 'vue'
 import PromptFullscreenModal from './PromptFullscreenModal.vue'
-import { listKnowledgeDocuments, type KnowledgeDocument } from '../api/platform'
 import { MODEL_PARAM_PRESETS } from '../config/modelParamPresets'
 import { useAgentConfigStore } from '../stores/agentConfig'
 import { useSettingsStore } from '../stores/settings'
 import { useUserAgentsStore } from '../stores/userAgents'
-import { RESTRICTION_PRESETS, TONE_OPTIONS } from '../types/agentPersona'
+import { TONE_OPTIONS } from '../types/agentPersona'
 import {
   buildIntroPreview,
   composeSystemPromptPreview,
-  composeSystemPromptSegments,
 } from '../utils/agentPersonaCompose'
 import { AGENT_AVATAR_OPTIONS, resolveAgentAvatarSrc } from '../config/agentAvatars'
 import { optimizeSystemPrompt } from '../utils/promptOptimize'
 import { isModelReady } from '../utils/resolveModel'
 
-type ConfigTab = 'basic' | 'brain' | 'capabilities' | 'advanced'
+type ConfigTab = 'basic' | 'brain'
 
 const agentConfig = useAgentConfigStore()
 const userAgents = useUserAgentsStore()
 const settings = useSettingsStore()
 
 const activeTab = ref<ConfigTab>('basic')
-const capsOpen = ref(true)
-const showAdvanced = ref(false)
-const customRestriction = ref('')
-const copiedPrompt = ref(false)
 const promptModalOpen = ref(false)
 const optimizing = ref(false)
 const optimizeError = ref('')
-const knowledgeDocs = ref<KnowledgeDocument[]>([])
-const addKnowledgeOpen = ref(false)
 const avatarPreviewOpen = ref(false)
 
 const form = computed(() => agentConfig.persona)
@@ -54,37 +42,12 @@ const currentAvatarLabel = computed(
 )
 const introPreview = computed(() => buildIntroPreview(form.value))
 const systemPromptPreview = computed(() => composeSystemPromptPreview(form.value))
-const promptSegments = computed(() => composeSystemPromptSegments(form.value))
 const chatModels = computed(() => settings.chatModels.filter(isModelReady))
 const temperature = computed(() => agentConfig.skeleton.models.temperature)
-const knowledgeBindings = computed(() => agentConfig.knowledgeBindings)
-
-const boundDocs = computed(() =>
-  knowledgeBindings.value
-    .map((b) => {
-      const doc = knowledgeDocs.value.find((d) => d.doc_id === b.docId)
-      return doc ? { ...b, doc } : null
-    })
-    .filter(Boolean) as Array<(typeof knowledgeBindings.value)[0] & { doc: KnowledgeDocument }>,
-)
-
-const unboundDocs = computed(() => {
-  const bound = new Set(knowledgeBindings.value.map((b) => b.docId))
-  return knowledgeDocs.value.filter((d) => !bound.has(d.doc_id))
-})
-
-const SEGMENT_COLORS: Record<string, string> = {
-  identity: '#6366f1',
-  soul: '#8b5cf6',
-  user: '#0ea5e9',
-  agents: '#10b981',
-}
 
 const configTabs: { id: ConfigTab; label: string; icon: typeof User }[] = [
   { id: 'basic', label: '基础设定', icon: User },
   { id: 'brain', label: '核心大脑', icon: Brain },
-  { id: 'capabilities', label: '能力扩展', icon: Wrench },
-  { id: 'advanced', label: '进阶', icon: Database },
 ]
 
 function patch(field: keyof typeof form.value, value: unknown) {
@@ -100,41 +63,6 @@ function pickAvatar(avatarId: string) {
   userAgents.updateAgentAvatar(activeAgent.value.id, avatarId)
 }
 
-function toggleRestriction(tag: string) {
-  const set = new Set(form.value.restrictions)
-  if (set.has(tag)) set.delete(tag)
-  else set.add(tag)
-  patch('restrictions', [...set])
-}
-
-function addCustomRestriction() {
-  const text = customRestriction.value.trim()
-  if (!text) return
-  if (!form.value.restrictions.includes(text)) {
-    patch('restrictions', [...form.value.restrictions, text])
-  }
-  customRestriction.value = ''
-}
-
-function removeRestriction(tag: string) {
-  patch(
-    'restrictions',
-    form.value.restrictions.filter((r) => r !== tag),
-  )
-}
-
-async function copySystemPrompt() {
-  try {
-    await navigator.clipboard.writeText(systemPromptPreview.value)
-    copiedPrompt.value = true
-    setTimeout(() => {
-      copiedPrompt.value = false
-    }, 2000)
-  } catch {
-    /* ignore */
-  }
-}
-
 async function runOptimize(brief?: string) {
   optimizeError.value = ''
   optimizing.value = true
@@ -142,9 +70,6 @@ async function runOptimize(brief?: string) {
     const source = brief ?? (form.value.customInstructions || form.value.tagline)
     const result = await optimizeSystemPrompt(source, agentConfig.skeleton, settings)
     patch('promptOverride', result)
-    if (promptModalOpen.value) {
-      /* modal reads modelValue via parent binding */
-    }
   } catch (e) {
     optimizeError.value = e instanceof Error ? e.message : '优化失败'
   } finally {
@@ -156,17 +81,13 @@ function onPromptSave(value: string) {
   patch('promptOverride', value)
 }
 
-async function loadKnowledge() {
-  try {
-    knowledgeDocs.value = await listKnowledgeDocuments()
-  } catch {
-    knowledgeDocs.value = []
-  }
-}
-
-function docLabel(doc: KnowledgeDocument) {
-  const name = doc.source.split('/').pop() || doc.source
-  return name.length > 28 ? `${name.slice(0, 26)}…` : name
+function updateClaudeAgent(field: string, value: any) {
+  agentConfig.updateSkeleton({
+    claudeAgent: {
+      ...agentConfig.skeleton.claudeAgent!,
+      [field]: value,
+    }
+  })
 }
 
 function onAvatarPreviewKeydown(e: KeyboardEvent) {
@@ -181,10 +102,6 @@ watch(avatarPreviewOpen, (open) => {
     document.removeEventListener('keydown', onAvatarPreviewKeydown)
     document.body.style.overflow = ''
   }
-})
-
-onMounted(() => {
-  void loadKnowledge()
 })
 
 onUnmounted(() => {
@@ -375,7 +292,7 @@ onUnmounted(() => {
             <span>主模型</span>
             <select
               class="input"
-              :value="agentConfig.skeleton.models.primary"
+              :value="agentConfig.skeleton.models.primary || settings.getSkill('chat')?.defaultModelId || ''"
               @change="agentConfig.setPrimaryModel(($event.target as HTMLSelectElement).value)"
             >
               <option v-for="m in chatModels" :key="m.id" :value="m.id">
@@ -423,245 +340,51 @@ onUnmounted(() => {
             />
           </div>
         </article>
-      </section>
-
-      <!-- 能力扩展 -->
-      <section v-show="activeTab === 'capabilities'" class="tab-panel">
-        <details class="config-card config-card--collapsible" :open="capsOpen" @toggle="capsOpen = ($event.target as HTMLDetailsElement).open">
-          <summary class="config-card__head config-card__head--summary">
-            <h3>知识库绑定</h3>
-            <ChevronDown :size="16" class="collapse-chevron" />
-          </summary>
-
-          <div class="knowledge-section">
-            <div v-if="boundDocs.length" class="tile-grid">
-              <div v-for="item in boundDocs" :key="item.docId" class="kb-tile">
-                <div class="kb-tile__head">
-                  <span class="kb-tile__icon">📄</span>
-                  <span class="kb-tile__name" :title="item.doc.source">{{ docLabel(item.doc) }}</span>
-                  <button
-                    type="button"
-                    class="kb-tile__unbind"
-                    aria-label="解绑"
-                    @click="agentConfig.unbindKnowledge(item.docId)"
-                  >
-                    <X :size="12" />
-                  </button>
-                </div>
-                <div class="kb-tile__sliders">
-                  <label class="mini-slider">
-                    <span>权重 {{ item.weight }}</span>
-                    <input
-                      type="range"
-                      class="glass-range"
-                      min="0"
-                      max="100"
-                      step="5"
-                      :value="item.weight"
-                      @input="
-                        agentConfig.updateKnowledgeBinding(item.docId, {
-                          weight: Number(($event.target as HTMLInputElement).value),
-                        })
-                      "
-                    />
-                  </label>
-                  <label class="mini-slider">
-                    <span>Top-K {{ item.topK }}</span>
-                    <input
-                      type="range"
-                      class="glass-range"
-                      min="1"
-                      max="20"
-                      step="1"
-                      :value="item.topK"
-                      @input="
-                        agentConfig.updateKnowledgeBinding(item.docId, {
-                          topK: Number(($event.target as HTMLInputElement).value),
-                        })
-                      "
-                    />
-                  </label>
-                </div>
-              </div>
-            </div>
-
-            <div class="add-knowledge">
-              <button type="button" class="add-kb-btn" @click="addKnowledgeOpen = !addKnowledgeOpen">
-                + 绑定知识库
-              </button>
-              <div v-if="addKnowledgeOpen && unboundDocs.length" class="unbound-list">
-                <button
-                  v-for="doc in unboundDocs"
-                  :key="doc.doc_id"
-                  type="button"
-                  class="unbound-item"
-                  @click="agentConfig.bindKnowledge(doc.doc_id); addKnowledgeOpen = false"
-                >
-                  📄 {{ docLabel(doc) }}
-                </button>
-              </div>
-            </div>
-          </div>
-        </details>
 
         <article class="config-card">
           <header class="config-card__head">
-            <h3>用户设定</h3>
+            <h3>Claude SDK 专属配置</h3>
           </header>
-          <div class="field-row">
-            <label class="field field--half">
-              <span>称呼用户为</span>
-              <input
-                class="input"
-                :value="form.userNickname"
-                @input="patch('userNickname', ($event.target as HTMLInputElement).value)"
-              />
-            </label>
-            <label class="field field--half">
-              <span>回复语言</span>
-              <input
-                class="input"
-                :value="form.language"
-                @input="patch('language', ($event.target as HTMLInputElement).value)"
-              />
-            </label>
-          </div>
+
           <label class="field">
-            <span>能力边界 · 擅长</span>
+            <span>工作目录 CWD</span>
             <input
               class="input"
-              :value="form.strengths"
-              @input="patch('strengths', ($event.target as HTMLInputElement).value)"
+              :value="agentConfig.skeleton.claudeAgent?.cwd ?? ''"
+              placeholder="默认使用项目当前路径"
+              @input="updateClaudeAgent('cwd', ($event.target as HTMLInputElement).value)"
             />
           </label>
+
           <label class="field">
-            <span>不擅长 / 局限</span>
-            <input
+            <span>权限模式 Permission Mode</span>
+            <select
               class="input"
-              :value="form.weaknesses"
-              @input="patch('weaknesses', ($event.target as HTMLInputElement).value)"
-            />
+              :value="agentConfig.skeleton.claudeAgent?.permissionMode ?? 'interactive'"
+              @change="updateClaudeAgent('permissionMode', ($event.target as HTMLSelectElement).value)"
+            >
+              <option value="interactive">人工确认 (Interactive)</option>
+              <option value="acceptEdits">自动修改 (Accept Edits)</option>
+              <option value="notificationsOnly">只读/仅通知 (Notifications Only)</option>
+            </select>
           </label>
-        </article>
 
-        <article class="config-card">
-          <header class="config-card__head">
-            <h3>禁止行为</h3>
-          </header>
-          <div class="chip-grid">
-            <button
-              v-for="tag in RESTRICTION_PRESETS"
-              :key="tag"
-              type="button"
-              class="chip"
-              :class="{ active: form.restrictions.includes(tag) }"
-              @click="toggleRestriction(tag)"
-            >
-              {{ tag }}
-            </button>
-          </div>
-          <div v-if="form.restrictions.length" class="active-chips">
-            <span
-              v-for="tag in form.restrictions"
-              :key="`active-${tag}`"
-              class="chip chip--removable"
-            >
-              {{ tag }}
-              <button type="button" aria-label="移除" @click="removeRestriction(tag)">×</button>
-            </span>
-          </div>
-          <div class="custom-chip-row">
+          <div class="slider-field">
+            <div class="slider-head">
+              <span>思考 Token 限制 Thinking Budget</span>
+              <span class="slider-value">{{ agentConfig.skeleton.claudeAgent?.thinkingBudget ?? 2048 }}</span>
+            </div>
             <input
-              v-model="customRestriction"
-              class="input"
-              placeholder="自定义禁止项"
-              @keydown.enter.prevent="addCustomRestriction"
+              type="range"
+              class="glass-range"
+              min="0"
+              max="8192"
+              step="1024"
+              :value="agentConfig.skeleton.claudeAgent?.thinkingBudget ?? 2048"
+              @input="updateClaudeAgent('thinkingBudget', Number(($event.target as HTMLInputElement).value))"
             />
-            <button type="button" class="add-chip-btn" @click="addCustomRestriction">添加</button>
           </div>
         </article>
-
-        <article class="config-card">
-          <header class="config-card__head">
-            <h3>工作方式</h3>
-          </header>
-          <div class="toggle-list">
-            <label class="toggle-row">
-              <input
-                type="checkbox"
-                :checked="form.clarifyFirst"
-                @change="patch('clarifyFirst', ($event.target as HTMLInputElement).checked)"
-              />
-              <span>需求含糊时先澄清</span>
-            </label>
-            <label class="toggle-row">
-              <input
-                type="checkbox"
-                :checked="form.planComplexTasks"
-                @change="patch('planComplexTasks', ($event.target as HTMLInputElement).checked)"
-              />
-              <span>复杂任务先给步骤规划</span>
-            </label>
-            <label class="toggle-row">
-              <input
-                type="checkbox"
-                :checked="form.conclusionFirst"
-                @change="patch('conclusionFirst', ($event.target as HTMLInputElement).checked)"
-              />
-              <span>结论先行，细节放后</span>
-            </label>
-          </div>
-        </article>
-      </section>
-
-      <!-- 进阶 -->
-      <section v-show="activeTab === 'advanced'" class="tab-panel">
-        <details class="advanced-block" :open="showAdvanced" @toggle="showAdvanced = ($event.target as HTMLDetailsElement).open">
-          <summary class="advanced-summary">
-            <ChevronDown :size="16" class="advanced-chevron" />
-            查看生成的 System Prompt 分段
-          </summary>
-          <div class="prompt-preview-wrap">
-            <div class="prompt-preview-toolbar">
-              <div class="prompt-legend">
-                <span
-                  v-for="seg in promptSegments"
-                  :key="seg.key"
-                  class="legend-chip"
-                  :style="{ '--seg-color': SEGMENT_COLORS[seg.key] }"
-                >
-                  {{ seg.label }}
-                </span>
-              </div>
-              <button type="button" class="copy-prompt-btn" @click="copySystemPrompt">
-                {{ copiedPrompt ? '已复制' : '复制全文' }}
-              </button>
-            </div>
-            <div class="prompt-segments">
-              <div
-                v-for="(seg, i) in promptSegments"
-                :key="seg.key"
-                class="prompt-segment"
-                :style="{ '--seg-color': SEGMENT_COLORS[seg.key] }"
-              >
-                <div class="prompt-segment-head">
-                  <span class="prompt-segment-tag">{{ seg.label }}</span>
-                  <span class="prompt-segment-file">{{ seg.filename }}</span>
-                </div>
-                <pre class="prompt-segment-body">{{ seg.content }}</pre>
-                <hr v-if="i < promptSegments.length - 1" class="prompt-segment-divider" />
-              </div>
-            </div>
-          </div>
-        </details>
-
-        <details class="advanced-block advanced-block--files">
-          <summary class="advanced-summary">
-            <ChevronDown :size="16" class="advanced-chevron" />
-            分文件 Markdown 编辑
-          </summary>
-          <AgentWorkspacePanel embedded @manual-edit="agentConfig.syncPersonaFromWorkspace()" />
-        </details>
       </section>
     </div>
 

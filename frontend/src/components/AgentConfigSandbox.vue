@@ -14,6 +14,7 @@ import { sendChatStream, type ChatMessagePayload } from '../api/agent'
 import { useAgentConfigStore } from '../stores/agentConfig'
 import { useSettingsStore } from '../stores/settings'
 import { useUserAgentsStore } from '../stores/userAgents'
+import { usePlatformStore } from '../stores/platform'
 import { composeSystemPromptPreview } from '../utils/agentPersonaCompose'
 import { resolveChatModel } from '../utils/resolveModel'
 import AgentAvatar from './AgentAvatar.vue'
@@ -45,10 +46,12 @@ interface TraceEntry {
 const agentConfig = useAgentConfigStore()
 const settings = useSettingsStore()
 const userAgents = useUserAgentsStore()
+const platform = usePlatformStore()
 
 const messages = ref<SandboxMessage[]>([])
 const input = ref('')
 const loading = ref(false)
+const sandboxSessionId = ref(`sandbox-${Math.random().toString(36).slice(2, 9)}`)
 const showTrace = ref(false)
 const showVars = ref(false)
 const traces = ref<TraceEntry[]>([])
@@ -94,7 +97,8 @@ function clearChat() {
   if (loading.value) abortRef.value?.abort()
   messages.value = []
   loading.value = false
-  pushTrace('清除对话', '沙盒消息已清空')
+  sandboxSessionId.value = `sandbox-${Math.random().toString(36).slice(2, 9)}`
+  pushTrace('清除对话', '沙盒消息已清空并重置会话')
 }
 
 function refreshConfig() {
@@ -147,6 +151,13 @@ async function send() {
       baseUrl: model.baseUrl,
       modelConfigId: model.id,
       temperature: temperature.value,
+      claudeAgentConfig: agentConfig.skeleton.claudeAgent,
+      enabledSkills: [
+        ...(platform.webSearchEnabled ? ['web-search'] : []),
+        ...(platform.ragEnabled ? ['knowledge-rag'] : []),
+        ...(platform.wikiChatEnabled ? ['knowledge-wiki'] : []),
+      ],
+      conversationId: sandboxSessionId.value,
       signal: controller.signal,
       onDelta: (delta) => {
         const msg = messages.value.find((m) => m.id === assistantId)

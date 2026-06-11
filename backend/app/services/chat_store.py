@@ -11,13 +11,24 @@ from __future__ import annotations
 import json
 import time
 import uuid
+import warnings
 from typing import Any
 
-from pymilvus import Collection, CollectionSchema, DataType, FieldSchema, MilvusException, utility
+from pymilvus import (
+    Collection,
+    CollectionSchema,
+    DataType,
+    FieldSchema,
+    MilvusException,
+    PyMilvusDeprecationWarning,
+    utility,
+)
+
+warnings.filterwarnings("ignore", category=PyMilvusDeprecationWarning)
 
 from app.config import Settings, get_settings
 from app.services.embeddings import embed_texts, get_embedding_dim
-from app.services.milvus_store import _alias, connect_milvus
+from app.services.milvus_store import _alias, connect_milvus, flush_collection
 
 _chat_collection: Collection | None = None
 
@@ -357,7 +368,7 @@ def create_conversation(
             }
         ]
     )
-    col.flush()
+    flush_collection(col, settings)
 
     return {
         "id": new_id,
@@ -408,7 +419,7 @@ def update_conversation(
             }
         ]
     )
-    col.flush()
+    flush_collection(col, settings)
     return get_conversation(user_id, conversation_id)
 
 
@@ -423,7 +434,7 @@ def delete_conversation(user_id: str, conversation_id: str) -> bool:
 
     col.delete(f'conversation_id == "{cid}" and entity_type == "{ENTITY_MESSAGE}"')
     col.delete(f'id == "{cid}" and entity_type == "{ENTITY_CONVERSATION}"')
-    col.flush()
+    flush_collection(col, settings)
     return True
 
 
@@ -432,7 +443,7 @@ def _delete_by_ids(col: Collection, ids: list[str]) -> None:
         return
     quoted = ", ".join(f'"{_escape(i)}"' for i in ids)
     col.delete(f"id in [{quoted}]")
-    col.flush()
+    flush_collection(col)
 
 
 def _conversation_meta_json(
@@ -526,7 +537,7 @@ def replace_messages(
         for i, row in enumerate(normalized):
             row["embedding"] = vectors[i]
         col.insert(normalized)
-        col.flush()
+        flush_collection(col, settings)
 
     conv_meta = _conversation_meta_json(
         active_leaf_id=active_leaf_id,
@@ -555,7 +566,7 @@ def replace_messages(
             }
         ]
     )
-    col.flush()
+    flush_collection(col, settings)
 
     return get_conversation(user_id, conversation_id)
 
@@ -644,7 +655,7 @@ def set_message_feedback(
 
     _delete_by_ids(col, [message_id])
     col.insert([updated])
-    col.flush()
+    flush_collection(col, settings)
     return _row_to_message(updated)
 
 

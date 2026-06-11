@@ -7,10 +7,13 @@ LangChain + Milvus 向量库（langchain-milvus 官方集成）。
 from __future__ import annotations
 
 import time
+import warnings
 from typing import Any
 
 from langchain_milvus import Milvus
-from pymilvus import connections
+from pymilvus import PyMilvusDeprecationWarning, connections
+
+warnings.filterwarnings("ignore", category=PyMilvusDeprecationWarning)
 
 from app.config import Settings, get_settings
 from app.services.langchain_embeddings import FastEmbedEmbeddings

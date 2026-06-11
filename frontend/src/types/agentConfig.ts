@@ -60,6 +60,11 @@ export interface OneMiniSkeleton {
     bindings: KnowledgeBinding[]
   }
   multiAgent: MultiAgentConfig
+  claudeAgent?: {
+    cwd: string
+    permissionMode: 'acceptEdits' | 'notificationsOnly' | 'interactive'
+    thinkingBudget: number
+  }
 }
 
 export interface SpecialistAgent {

@@ -60,6 +60,13 @@ function mergeSkeleton(saved?: Partial<OneMiniSkeleton>): OneMiniSkeleton {
         ? saved.multiAgent.agents
         : base.multiAgent.agents,
     },
+    claudeAgent: saved.claudeAgent && base.claudeAgent
+      ? {
+          cwd: saved.claudeAgent.cwd ?? base.claudeAgent.cwd,
+          permissionMode: saved.claudeAgent.permissionMode ?? base.claudeAgent.permissionMode,
+          thinkingBudget: saved.claudeAgent.thinkingBudget ?? base.claudeAgent.thinkingBudget,
+        }
+      : base.claudeAgent,
   }
 }
 

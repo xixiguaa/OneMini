@@ -13,16 +13,26 @@ from __future__ import annotations
 import argparse
 import sys
 import time
+import warnings
 from pathlib import Path
 
 # 保证可 import app
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from pymilvus import Collection, CollectionSchema, DataType, FieldSchema, utility
+from pymilvus import (
+    Collection,
+    CollectionSchema,
+    DataType,
+    FieldSchema,
+    PyMilvusDeprecationWarning,
+    utility,
+)
+
+warnings.filterwarnings("ignore", category=PyMilvusDeprecationWarning)
 
 from app.config import get_settings
 from app.services.embeddings import embed_texts, get_embedding_dim
-from app.services.milvus_store import _alias, connect_milvus
+from app.services.milvus_store import _alias, connect_milvus, flush_collection
 
 CHAT_OUTPUT_FIELDS = [
     "id",
@@ -125,7 +135,7 @@ def migrate(old_name: str, new_name: str, *, batch_size: int = 32) -> dict:
         inserted += len(data)
         print(f"  已写入 {inserted}/{len(rows)} 块…")
 
-    new_col.flush()
+    flush_collection(new_col, settings)
     print(f"完成: {inserted} 块 -> {new_name}")
     return {"old_chunks": len(rows), "inserted": inserted, "new_collection": new_name}
 
@@ -228,7 +238,7 @@ def migrate_chat(
         inserted += len(data)
         print(f"  对话已写入 {inserted}/{len(rows)} 行…")
 
-    new_col.flush()
+    flush_collection(new_col, settings)
     print(f"对话完成: {inserted} 行 -> {new_name}")
     return {"old_rows": len(rows), "inserted": inserted, "new_chat_collection": new_name}
 
