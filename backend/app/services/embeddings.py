@@ -74,7 +74,7 @@ def _register_bge_m3_fastembed() -> None:
             sources=ModelSource(hf="BAAI/bge-m3"),
             dim=1024,
             model_file="onnx/model.onnx",
-            additional_files=["onnx/Constant_7_attr__value"],
+            additional_files=["onnx/Constant_7_attr__value", "onnx/model.onnx_data"],
             description="BGE-M3 dense ONNX (multilingual, 1024d)",
             license="mit",
             size_in_gb=2.27,

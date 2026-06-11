@@ -109,15 +109,15 @@ class McpClientManager:
                     await self._connect_stdio(cfg)
                 except Exception as exc:
                     self._failed[cfg.id] = str(exc)
-                    print(f"⚠ MCP Server `{cfg.id}` 连接失败: {exc}")
+                    print(f"[WARN] MCP Server `{cfg.id}` 连接失败: {exc}")
 
             if self._servers:
                 tool_count = len(self.list_registered_tools())
-                print(f"✓ MCP 已连接 {len(self._servers)} 个 Server，共 {tool_count} 个工具")
+                print(f"[OK] MCP 已连接 {len(self._servers)} 个 Server，共 {tool_count} 个工具")
             elif servers and not self._failed:
-                print("⚠ MCP 已启用但未连接任何 Server")
+                print("[WARN] MCP 已启用但未连接任何 Server")
             elif self._failed:
-                print(f"⚠ MCP 全部连接失败: {self._failed}")
+                print(f"[WARN] MCP 全部连接失败: {self._failed}")
 
             self._started = True
 

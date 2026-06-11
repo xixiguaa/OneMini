@@ -54,7 +54,7 @@ def run_legacy_import_if_needed() -> dict[str, int]:
                     data.get("phone_index") or {},
                 )
         except (json.JSONDecodeError, OSError) as exc:
-            print(f"⚠ 用户 JSON 迁移跳过: {exc}")
+            print(f"[WARN] 用户 JSON 迁移跳过: {exc}")
 
     hist_dir = _create_history_dir()
     if create_count == 0 and hist_dir.is_dir():
@@ -71,7 +71,7 @@ def run_legacy_import_if_needed() -> dict[str, int]:
                     stats["create_history_users"] += 1
                     stats["create_history_items"] += n
             except (json.JSONDecodeError, OSError) as exc:
-                print(f"⚠ 创作历史迁移跳过 {path.name}: {exc}")
+                print(f"[WARN] 创作历史迁移跳过 {path.name}: {exc}")
 
     if gallery_count == 0 and _gallery_json_path().is_file():
         try:
@@ -79,6 +79,6 @@ def run_legacy_import_if_needed() -> dict[str, int]:
             if isinstance(raw, list):
                 stats["public_gallery"] = public_gallery_store.import_legacy_json(raw)
         except (json.JSONDecodeError, OSError) as exc:
-            print(f"⚠ 公共画廊迁移跳过: {exc}")
+            print(f"[WARN] 公共画廊迁移跳过: {exc}")
 
     return stats

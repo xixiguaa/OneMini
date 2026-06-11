@@ -40,6 +40,7 @@ dist-ssr/
 
 # 本地 MinIO 数据目录（docker volume 挂载）
 minio/
+docker_volumes/
 
 # Rust 构建残留（项目已不使用 Cargo）
 backend/target/

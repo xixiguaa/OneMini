@@ -1,6 +1,12 @@
+import os
 from functools import lru_cache
 
+import dotenv
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# 提前加载 .env 到环境变量中，供 huggingface_hub / fastembed 等第三方库读取
+dotenv.load_dotenv()
+
 
 
 class Settings(BaseSettings):

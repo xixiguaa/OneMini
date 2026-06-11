@@ -20,44 +20,44 @@ async def lifespan(_app: FastAPI):
     pg = ping_postgres(settings)
     if pg.get("ok"):
         init_db(settings)
-        print(f"✓ PostgreSQL 已连接 {settings.db_host}:{settings.db_port}/{settings.db_name}")
+        print(f"[OK] PostgreSQL 已连接 {settings.db_host}:{settings.db_port}/{settings.db_name}")
         minio_status = ping_minio(settings)
         if minio_status.get("ok"):
             ensure_bucket(settings)
-            print(f"✓ MinIO 已连接 {settings.minio_endpoint} bucket={settings.minio_bucket}")
+            print(f"[OK] MinIO 已连接 {settings.minio_endpoint} bucket={settings.minio_bucket}")
         else:
-            print(f"⚠ MinIO 未连接: {minio_status.get('error')}")
+            print(f"[WARN] MinIO 未连接: {minio_status.get('error')}")
         try:
             migrated = run_legacy_import_if_needed()
             if any(migrated.values()):
-                print(f"✓ 已从本地 JSON 迁移: {migrated}")
+                print(f"[OK] 已从本地 JSON 迁移: {migrated}")
         except Exception as exc:
-            print(f"⚠ 本地数据迁移失败: {exc}")
+            print(f"[WARN] 本地数据迁移失败: {exc}")
     else:
-        print(f"⚠ PostgreSQL 未连接: {pg.get('error')}（请配置 backend/.env 中的 DB_PASSWORD）")
+        print(f"[WARN] PostgreSQL 未连接: {pg.get('error')}（请配置 backend/.env 中的 DB_PASSWORD）")
 
     status = ping_milvus(settings)
     if status.get("ok"):
-        print(f"✓ Milvus 已连接 {settings.milvus_host}:{settings.milvus_port} ({status.get('version')})")
+        print(f"[OK] Milvus 已连接 {settings.milvus_host}:{settings.milvus_port} ({status.get('version')})")
         connect_milvus(settings)
         try:
             _get_chat_collection(settings)
-            print(f"✓ 对话集合 {settings.milvus_chat_collection} 已就绪（Attu 可查看）")
+            print(f"[OK] 对话集合 {settings.milvus_chat_collection} 已就绪（Attu 可查看）")
         except Exception as exc:
-            print(f"⚠ 对话集合初始化失败: {exc}")
+            print(f"[WARN] 对话集合初始化失败: {exc}")
     else:
-        print(f"⚠ Milvus 未连接: {status.get('error')}")
+        print(f"[WARN] Milvus 未连接: {status.get('error')}")
 
     try:
         await get_mcp_manager().start(settings)
     except Exception as exc:
-        print(f"⚠ MCP 初始化失败: {exc}")
+        print(f"[WARN] MCP 初始化失败: {exc}")
 
     yield
     try:
         await get_mcp_manager().stop()
     except Exception as exc:
-        print(f"⚠ MCP 关闭失败: {exc}")
+        print(f"[WARN] MCP 关闭失败: {exc}")
     disconnect_milvus()
 
 
