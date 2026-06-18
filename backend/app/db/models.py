@@ -86,3 +86,31 @@ class PublicGalleryItemRow(Base):
     created_at: Mapped[int] = mapped_column(BigInteger, nullable=False, index=True)
     aspect_ratio: Mapped[str | None] = mapped_column(String(32), nullable=True)
     storage_key: Mapped[str | None] = mapped_column(String(512), nullable=True)
+
+
+class AgentSkillRow(Base):
+    __tablename__ = "agent_skills"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    name: Mapped[str] = mapped_column(String(128), nullable=False)
+    description: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    minio_key: Mapped[str] = mapped_column(String(512), nullable=False)
+    is_global_enabled: Mapped[bool] = mapped_column(default=True, nullable=False)
+    created_at: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    updated_at: Mapped[int] = mapped_column(BigInteger, nullable=False)
+
+
+class UserAgentRow(Base):
+    __tablename__ = "user_agents"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    user_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    name: Mapped[str] = mapped_column(String(128), nullable=False)
+    description: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    avatar: Mapped[str] = mapped_column(String(128), nullable=False)
+    bundle: Mapped[str] = mapped_column(Text, nullable=False) # JSON serialized AgentConfigBundle
+    created_at: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    updated_at: Mapped[int] = mapped_column(BigInteger, nullable=False)
+
+
+

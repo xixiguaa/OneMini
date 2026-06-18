@@ -1,19 +1,19 @@
 <script setup lang="ts">
 import { Image, Lock, Pencil, Share2, Video, X } from 'lucide-vue-next'
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
-import { useGalleryLikes } from '../composables/useGalleryLikes'
-import { usePublicGallery } from '../composables/usePublicGallery'
-import { useUserFollow } from '../composables/useUserFollow'
-import { useAgentStore } from '../stores/agent'
-import { useAuthStore } from '../stores/auth'
+import { useGalleryLikes } from '../../composables/useGalleryLikes'
+import { usePublicGallery } from '../../composables/usePublicGallery'
+import { useUserFollow } from '../../composables/useUserFollow'
+import { useAgentStore } from '../../stores/agent'
+import { useAuthStore } from '../../stores/auth'
 import {
   profileAvatarForUser,
   profileBioForUser,
   profileDisplayNameForUser,
   useCreatorProfileStore,
-} from '../stores/creatorProfile'
-import { useToastStore } from '../stores/toast'
-import WorksWaterfall from './WorksWaterfall.vue'
+} from '../../stores/creatorProfile'
+import { useToastStore } from '../../stores/toast'
+import WorksWaterfall from '../../components/WorksWaterfall.vue'
 
 type ProfileTab = 'published' | 'liked'
 type PublishedMediaTab = 'image' | 'video'
@@ -382,8 +382,8 @@ onUnmounted(() => {
 </template>
 
 <style scoped lang="scss">
-@use '../styles/variables.scss' as *;
-@use '../styles/cosmic-glass.scss' as cosmic;
+@use '../../styles/variables.scss' as *;
+@use '../../styles/cosmic-glass.scss' as cosmic;
 
 .user-profile {
   flex: 1;

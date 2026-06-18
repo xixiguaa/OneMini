@@ -46,6 +46,7 @@ export interface OneMiniSkeleton {
   }
   skills: {
     plugins: string[]
+    enabledSkillIds?: string[]
     /** 各技能调用条件描述（对应 LLM tool description） */
     invokeDescriptions?: Record<string, string>
     /** 技能参数，如联网搜索条数、域名黑名单 */
@@ -60,11 +61,6 @@ export interface OneMiniSkeleton {
     bindings: KnowledgeBinding[]
   }
   multiAgent: MultiAgentConfig
-  claudeAgent?: {
-    cwd: string
-    permissionMode: 'acceptEdits' | 'notificationsOnly' | 'interactive'
-    thinkingBudget: number
-  }
 }
 
 export interface SpecialistAgent {

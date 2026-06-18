@@ -19,6 +19,7 @@ import { useAgentStore } from '../stores/agent'
 import { useUiPrefsStore } from '../stores/uiPrefs'
 import type { ViewId } from '../types/agent'
 import { BRAND_NAME } from '../utils/modelLogo'
+import { useRouter } from 'vue-router'
 
 const agent = useAgentStore()
 const ui = useUiPrefsStore()
@@ -41,8 +42,10 @@ const chatNavItem = computed(() => ({
   icon: MessageSquare,
 }))
 
+const router = useRouter()
+
 function selectView(id: ViewId) {
-  agent.setCurrentView(id)
+  router.push({ name: id })
 }
 
 function onNewChat() {

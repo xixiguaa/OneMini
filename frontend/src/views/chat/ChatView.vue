@@ -1,10 +1,10 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import BrandLogo from './BrandLogo.vue'
-import ChatInput from './ChatInput.vue'
-import ChatMessages from './ChatMessages.vue'
-import ConfigBanner from './ConfigBanner.vue'
-import { useAgentStore } from '../stores/agent'
+import BrandLogo from '../../components/BrandLogo.vue'
+import ChatInput from '../../components/ChatInput.vue'
+import ChatMessages from '../../components/ChatMessages.vue'
+import ConfigBanner from '../../components/ConfigBanner.vue'
+import { useAgentStore } from '../../stores/agent'
 
 const agent = useAgentStore()
 
@@ -36,7 +36,7 @@ const isEmpty = computed(() => !agent.messages.length)
 </template>
 
 <style scoped lang="scss">
-@use '../styles/variables.scss' as *;
+@use '../../styles/variables.scss' as *;
 
 .chat-view {
   flex: 1;

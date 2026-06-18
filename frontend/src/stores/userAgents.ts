@@ -14,6 +14,7 @@ import {
 } from '../types/userAgent'
 import { normalizeAgentAvatarId, pickDefaultAvatarId } from '../config/agentAvatars'
 import { randomUUID } from '../utils/uuid'
+import { platformAuthHeaders } from '../utils/authHeaders'
 
 const STORAGE_KEY = 'onemini-user-agents-v1'
 const LEGACY_CONFIG_KEY = 'onemini-agent-config-v1'
@@ -49,13 +50,6 @@ function normalizeBundle(bundle?: Partial<AgentConfigBundle>): AgentConfigBundle
         ...defaults.skeleton.multiAgent,
         ...(src?.skeleton?.multiAgent ?? {}),
       },
-      claudeAgent: defaults.skeleton.claudeAgent
-        ? {
-            cwd: src?.skeleton?.claudeAgent?.cwd ?? defaults.skeleton.claudeAgent.cwd,
-            permissionMode: src?.skeleton?.claudeAgent?.permissionMode ?? defaults.skeleton.claudeAgent.permissionMode,
-            thinkingBudget: src?.skeleton?.claudeAgent?.thinkingBudget ?? defaults.skeleton.claudeAgent.thinkingBudget,
-          }
-        : undefined,
     },
     persona,
   }
@@ -225,6 +219,8 @@ export const useUserAgentsStore = defineStore('userAgents', () => {
       updatedAt: now,
     })
     activeAgentId.value = id
+    // Auto-save to backend asynchronously
+    void saveAgentToBackend(id)
     return id
   }
 
@@ -243,6 +239,8 @@ export const useUserAgentsStore = defineStore('userAgents', () => {
       updatedAt: now,
     })
     activeAgentId.value = newId
+    // Auto-save to backend asynchronously
+    void saveAgentToBackend(newId)
     return newId
   }
 
@@ -252,6 +250,8 @@ export const useUserAgentsStore = defineStore('userAgents', () => {
     agent.name = name.trim() || agent.name
     if (agent.bundle.persona) agent.bundle.persona.name = agent.name
     touchAgent(id)
+    // Auto-save to backend asynchronously
+    void saveAgentToBackend(id)
   }
 
   function updateAgentAvatar(id: string, avatar: string) {
@@ -259,9 +259,105 @@ export const useUserAgentsStore = defineStore('userAgents', () => {
     if (!agent || !avatar.trim()) return
     agent.avatar = avatar.trim()
     touchAgent(id)
+    // Auto-save to backend asynchronously
+    void saveAgentToBackend(id)
   }
 
-  function deleteAgent(id: string) {
+  const syncing = ref(false)
+
+  async function syncFromBackend() {
+    if (syncing.value) return
+    syncing.value = true
+    try {
+      const res = await fetch('/api/platform/agent/list', {
+        headers: platformAuthHeaders(),
+      })
+      if (res.ok) {
+        const backendList = await res.json()
+        if (backendList && Array.isArray(backendList)) {
+          const backendAgents = backendList.map((a: any) => ({
+            id: a.id,
+            name: a.name,
+            description: a.description,
+            avatar: a.avatar,
+            bundle: normalizeBundle(a.bundle),
+            createdAt: a.created_at,
+            updatedAt: a.updated_at,
+          }))
+
+          const merged: UserAgent[] = []
+          const backendMap = new Map<string, UserAgent>()
+          for (const ba of backendAgents) {
+            backendMap.set(ba.id, ba)
+          }
+
+          // 1. Process local agents: if local is newer (has unsaved changes), keep it; otherwise, use backend
+          for (const la of agents.value) {
+            const ba = backendMap.get(la.id)
+            if (ba) {
+              if (ba.updatedAt > la.updatedAt) {
+                merged.push(ba)
+              } else {
+                merged.push(la)
+              }
+              backendMap.delete(la.id)
+            } else {
+              // Local only (possibly newly created local agent)
+              merged.push(la)
+            }
+          }
+
+          // 2. Add remaining backend agents
+          for (const ba of backendMap.values()) {
+            merged.push(ba)
+          }
+
+          // Sort by updatedAt descending
+          merged.sort((a, b) => b.updatedAt - a.updatedAt)
+
+          if (merged.length > 0) {
+            agents.value = merged
+            if (!agents.value.some((a) => a.id === activeAgentId.value)) {
+              activeAgentId.value = agents.value[0].id
+            }
+          }
+        }
+      }
+    } catch (e) {
+      console.error('Failed to sync agents from backend:', e)
+    } finally {
+      syncing.value = false
+    }
+  }
+
+  async function saveAgentToBackend(id: string) {
+    const agent = getAgent(id)
+    if (!agent) return
+    try {
+      const res = await fetch('/api/platform/agent/save', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...platformAuthHeaders(),
+        },
+        body: JSON.stringify({
+          id: agent.id,
+          name: agent.name,
+          description: agent.description,
+          avatar: agent.avatar,
+          bundle: toRaw(agent.bundle),
+        }),
+      })
+      if (!res.ok) {
+        throw new Error('保存配置失败')
+      }
+    } catch (e) {
+      console.error('Failed to save agent to backend:', e)
+      throw e
+    }
+  }
+
+  async function deleteAgent(id: string) {
     if (agents.value.length <= 1) return false
     const idx = agents.value.findIndex((a) => a.id === id)
     if (idx < 0) return false
@@ -269,14 +365,28 @@ export const useUserAgentsStore = defineStore('userAgents', () => {
     if (activeAgentId.value === id) {
       activeAgentId.value = agents.value[0]?.id ?? DEFAULT_USER_AGENT_ID
     }
+    try {
+      await fetch(`/api/platform/agent/${id}`, {
+        method: 'DELETE',
+        headers: platformAuthHeaders(),
+      })
+    } catch (e) {
+      console.error('Failed to delete agent on backend:', e)
+    }
     return true
   }
+
+  // Trigger initial sync from backend
+  setTimeout(() => {
+    void syncFromBackend()
+  }, 200)
 
   return {
     agents,
     activeAgentId,
     activeAgent,
     sortedAgents,
+    syncing,
     personaTemplates: AGENT_PERSONA_TEMPLATES,
     getAgent,
     selectAgent,
@@ -287,5 +397,7 @@ export const useUserAgentsStore = defineStore('userAgents', () => {
     renameAgent,
     updateAgentAvatar,
     deleteAgent,
+    syncFromBackend,
+    saveAgentToBackend,
   }
 })

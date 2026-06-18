@@ -734,12 +734,7 @@ export const useAgentStore = defineStore('agent', () => {
           baseUrl: resolveChatBaseUrl(model.provider, model.baseUrl),
           modelConfigId: model.id,
           temperature,
-          claudeAgentConfig: agentConfig.skeleton.claudeAgent,
-          enabledSkills: [
-            ...(platform.webSearchEnabled ? ['web-search'] : []),
-            ...(platform.ragEnabled ? ['knowledge-rag'] : []),
-            ...(platform.wikiChatEnabled ? ['knowledge-wiki'] : []),
-          ],
+          enabledSkills: agentConfig.skeleton.skills.enabledSkillIds ?? [],
           conversationId: conversations.activeId || undefined,
           ...thinkingApi,
         }

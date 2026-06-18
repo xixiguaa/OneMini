@@ -1,18 +1,22 @@
 <script setup lang="ts">
 import {
   Brain,
+  Cpu,
   Maximize2,
   RotateCcw,
   Sparkles,
   User,
   X,
 } from 'lucide-vue-next'
-import { computed, onUnmounted, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { fetchCustomSkillsApi, type CustomSkillPayload } from '../api/agent'
+import { AGENT_SKILL_CATALOG } from '../config/agentSkillCatalog'
 import PromptFullscreenModal from './PromptFullscreenModal.vue'
 import { MODEL_PARAM_PRESETS } from '../config/modelParamPresets'
 import { useAgentConfigStore } from '../stores/agentConfig'
 import { useSettingsStore } from '../stores/settings'
 import { useUserAgentsStore } from '../stores/userAgents'
+import { usePlatformStore } from '../stores/platform'
 import { TONE_OPTIONS } from '../types/agentPersona'
 import {
   buildIntroPreview,
@@ -27,6 +31,7 @@ type ConfigTab = 'basic' | 'brain'
 const agentConfig = useAgentConfigStore()
 const userAgents = useUserAgentsStore()
 const settings = useSettingsStore()
+const platform = usePlatformStore()
 
 const activeTab = ref<ConfigTab>('basic')
 const promptModalOpen = ref(false)
@@ -81,14 +86,7 @@ function onPromptSave(value: string) {
   patch('promptOverride', value)
 }
 
-function updateClaudeAgent(field: string, value: any) {
-  agentConfig.updateSkeleton({
-    claudeAgent: {
-      ...agentConfig.skeleton.claudeAgent!,
-      [field]: value,
-    }
-  })
-}
+
 
 function onAvatarPreviewKeydown(e: KeyboardEvent) {
   if (e.key === 'Escape') avatarPreviewOpen.value = false
@@ -107,6 +105,63 @@ watch(avatarPreviewOpen, (open) => {
 onUnmounted(() => {
   document.removeEventListener('keydown', onAvatarPreviewKeydown)
   if (avatarPreviewOpen.value) document.body.style.overflow = ''
+})
+
+const customSkillsList = ref<CustomSkillPayload[]>([])
+
+async function fetchCustomSkills() {
+  try {
+    customSkillsList.value = await fetchCustomSkillsApi()
+  } catch (e) {
+    console.error('Failed to fetch custom skills for persona panel:', e)
+  }
+}
+
+const localSkillItems = computed(() => {
+  const list: any[] = []
+  
+  // 1. Built-in: web-search
+  if (platform.webSearchEnabled) {
+    const item = AGENT_SKILL_CATALOG.find((s) => s.id === 'web-search')
+    if (item) list.push(item)
+  }
+  // 2. Built-in: knowledge-rag
+  if (platform.knowledgeChatMode === 'rag') {
+    const item = AGENT_SKILL_CATALOG.find((s) => s.id === 'knowledge-rag')
+    if (item) list.push(item)
+  }
+  // 3. Built-in: knowledge-wiki
+  if (platform.knowledgeChatMode === 'wiki') {
+    const item = AGENT_SKILL_CATALOG.find((s) => s.id === 'knowledge-wiki')
+    if (item) list.push(item)
+  }
+
+  // 4. Custom skills that are globally enabled
+  for (const s of customSkillsList.value) {
+    if (s.is_global_enabled) {
+      list.push({
+        id: s.id,
+        name: s.name,
+        description: s.description || '自定义技能包',
+        icon: Cpu,
+        iconTone: 'pink',
+      })
+    }
+  }
+
+  return list
+})
+
+function isLocalSkillEnabled(skillId: string) {
+  return (agentConfig.skeleton.skills.enabledSkillIds ?? []).includes(skillId)
+}
+
+function toggleLocalSkill(skillId: string, on: boolean) {
+  agentConfig.toggleLocalSkill(skillId, on)
+}
+
+onMounted(() => {
+  void fetchCustomSkills()
 })
 </script>
 
@@ -341,48 +396,40 @@ onUnmounted(() => {
           </div>
         </article>
 
+
         <article class="config-card">
           <header class="config-card__head">
-            <h3>Claude SDK 专属配置</h3>
+            <h3>智能体技能 (Agent Skills)</h3>
+            <p>启用或禁用当前智能体的特定技能</p>
           </header>
 
-          <label class="field">
-            <span>工作目录 CWD</span>
-            <input
-              class="input"
-              :value="agentConfig.skeleton.claudeAgent?.cwd ?? ''"
-              placeholder="默认使用项目当前路径"
-              @input="updateClaudeAgent('cwd', ($event.target as HTMLInputElement).value)"
-            />
-          </label>
-
-          <label class="field">
-            <span>权限模式 Permission Mode</span>
-            <select
-              class="input"
-              :value="agentConfig.skeleton.claudeAgent?.permissionMode ?? 'interactive'"
-              @change="updateClaudeAgent('permissionMode', ($event.target as HTMLSelectElement).value)"
+          <div class="local-skills-list" v-if="localSkillItems.length > 0">
+            <div
+              v-for="item in localSkillItems"
+              :key="item.id"
+              class="local-skill-item"
             >
-              <option value="interactive">人工确认 (Interactive)</option>
-              <option value="acceptEdits">自动修改 (Accept Edits)</option>
-              <option value="notificationsOnly">只读/仅通知 (Notifications Only)</option>
-            </select>
-          </label>
-
-          <div class="slider-field">
-            <div class="slider-head">
-              <span>思考 Token 限制 Thinking Budget</span>
-              <span class="slider-value">{{ agentConfig.skeleton.claudeAgent?.thinkingBudget ?? 2048 }}</span>
+              <div class="local-skill-info">
+                <span class="local-skill-icon" :class="`local-skill-icon--${item.iconTone || 'pink'}`">
+                  <component :is="item.icon" :size="14" />
+                </span>
+                <div class="local-skill-details">
+                  <div class="local-skill-name">{{ item.name }}</div>
+                  <div class="local-skill-desc">{{ item.description }}</div>
+                </div>
+              </div>
+              <label class="local-skill-toggle">
+                <input
+                  type="checkbox"
+                  :checked="isLocalSkillEnabled(item.id)"
+                  @change="toggleLocalSkill(item.id, ($event.target as HTMLInputElement).checked)"
+                />
+                <span class="switch" />
+              </label>
             </div>
-            <input
-              type="range"
-              class="glass-range"
-              min="0"
-              max="8192"
-              step="1024"
-              :value="agentConfig.skeleton.claudeAgent?.thinkingBudget ?? 2048"
-              @input="updateClaudeAgent('thinkingBudget', Number(($event.target as HTMLInputElement).value))"
-            />
+          </div>
+          <div v-else class="local-skills-empty">
+            没有全局启用的技能，请先在「技能商店」启用或添加技能。
           </div>
         </article>
       </section>
@@ -1247,5 +1294,127 @@ onUnmounted(() => {
   .field-row {
     flex-direction: column;
   }
+}
+
+.local-skills-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.local-skill-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--bg-card) 60%, transparent);
+  border: 1px solid $border-light;
+}
+
+.local-skill-info {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.local-skill-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  flex-shrink: 0;
+
+  &--blue {
+    background: color-mix(in srgb, #3b82f6 14%, transparent);
+    color: #3b82f6;
+  }
+  &--green {
+    background: color-mix(in srgb, #22c55e 14%, transparent);
+    color: #22c55e;
+  }
+  &--purple {
+    background: color-mix(in srgb, $accent 14%, transparent);
+    color: $accent;
+  }
+  &--pink {
+    background: color-mix(in srgb, #ec4899 14%, transparent);
+    color: #ec4899;
+  }
+}
+
+.local-skill-details {
+  min-width: 0;
+}
+
+.local-skill-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: $text-primary;
+}
+
+.local-skill-desc {
+  font-size: 11px;
+  color: $text-muted;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-top: 1px;
+}
+
+.local-skill-toggle {
+  position: relative;
+  display: inline-block;
+  width: 32px;
+  height: 18px;
+  flex-shrink: 0;
+
+  input {
+    opacity: 0;
+    width: 0;
+    height: 0;
+  }
+
+  .switch {
+    position: absolute;
+    cursor: pointer;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: color-mix(in srgb, $border-light 80%, transparent);
+    transition: 0.2s;
+    border-radius: 18px;
+
+    &:before {
+      position: absolute;
+      content: "";
+      height: 14px;
+      width: 14px;
+      left: 2px;
+      bottom: 2px;
+      background-color: var(--bg-card);
+      transition: 0.2s;
+      border-radius: 50%;
+    }
+  }
+
+  input:checked + .switch {
+    background-color: $accent-emphasis;
+  }
+
+  input:checked + .switch:before {
+    transform: translateX(14px);
+  }
+}
+
+.local-skills-empty {
+  font-size: 12px;
+  color: $text-muted;
+  text-align: center;
+  padding: 16px;
 }
 </style>

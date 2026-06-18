@@ -11,12 +11,12 @@ import {
   Sparkles,
   Type,
 } from 'lucide-vue-next'
-import LoadingIndicator from './LoadingIndicator.vue'
+import LoadingIndicator from '../../components/LoadingIndicator.vue'
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
-import Viewport3D from './Viewport3D.vue'
-import { useAgentStore } from '../stores/agent'
-import { useSettingsStore } from '../stores/settings'
-import { useWorldHistoryStore } from '../stores/worldHistory'
+import Viewport3D from '../../components/Viewport3D.vue'
+import { useAgentStore } from '../../stores/agent'
+import { useSettingsStore } from '../../stores/settings'
+import { useWorldHistoryStore } from '../../stores/worldHistory'
 const agent = useAgentStore()
 const settings = useSettingsStore()
 const worldHistory = useWorldHistoryStore()
@@ -309,7 +309,7 @@ onUnmounted(() => {
 </template>
 
 <style scoped lang="scss">
-@use '../styles/variables.scss' as *;
+@use '../../styles/variables.scss' as *;
 
 .models-page {
   flex: 1;

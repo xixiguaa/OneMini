@@ -31,11 +31,11 @@ const menuTransitionName = computed(() => (collapsed.value ? 'menu-pop-right' : 
 const avatarInitial = computed(() => accountAvatarInitial(auth.user))
 const maskedLabel = computed(() => maskAccountLabel(auth.user))
 
-function setTriggerRef(el: Element | null) {
+function setTriggerRef(el: any) {
   menuPopover.triggerRef.value = el as HTMLElement | null
 }
 
-function setPanelRef(el: Element | null) {
+function setPanelRef(el: any) {
   menuPopover.panelRef.value = el as HTMLElement | null
 }
 

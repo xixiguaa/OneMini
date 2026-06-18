@@ -14,7 +14,6 @@ import { sendChatStream, type ChatMessagePayload } from '../api/agent'
 import { useAgentConfigStore } from '../stores/agentConfig'
 import { useSettingsStore } from '../stores/settings'
 import { useUserAgentsStore } from '../stores/userAgents'
-import { usePlatformStore } from '../stores/platform'
 import { composeSystemPromptPreview } from '../utils/agentPersonaCompose'
 import { resolveChatModel } from '../utils/resolveModel'
 import AgentAvatar from './AgentAvatar.vue'
@@ -46,7 +45,6 @@ interface TraceEntry {
 const agentConfig = useAgentConfigStore()
 const settings = useSettingsStore()
 const userAgents = useUserAgentsStore()
-const platform = usePlatformStore()
 
 const messages = ref<SandboxMessage[]>([])
 const input = ref('')
@@ -111,6 +109,17 @@ async function send() {
 
   const modelResult = resolveChatModel(agentConfig.skeleton, settings)
   if (!modelResult.ok) {
+    input.value = ''
+    messages.value.push({
+      id: `u-${Date.now()}`,
+      role: 'user',
+      content: text,
+    })
+    messages.value.push({
+      id: `a-${Date.now()}`,
+      role: 'assistant',
+      content: `⚠️ ${modelResult.error}`,
+    })
     pushTrace('错误', modelResult.error)
     return
   }
@@ -151,12 +160,7 @@ async function send() {
       baseUrl: model.baseUrl,
       modelConfigId: model.id,
       temperature: temperature.value,
-      claudeAgentConfig: agentConfig.skeleton.claudeAgent,
-      enabledSkills: [
-        ...(platform.webSearchEnabled ? ['web-search'] : []),
-        ...(platform.ragEnabled ? ['knowledge-rag'] : []),
-        ...(platform.wikiChatEnabled ? ['knowledge-wiki'] : []),
-      ],
+      enabledSkills: agentConfig.skeleton.skills.enabledSkillIds ?? [],
       conversationId: sandboxSessionId.value,
       signal: controller.signal,
       onDelta: (delta) => {

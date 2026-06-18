@@ -42,24 +42,24 @@ import {
   type WikiNodeContent,
   type WikiIngestLlmConfig,
   type WikiRawFile,
-} from '../api/wiki'
-import { WIKI_INGEST_MODEL_STORAGE_KEY } from '../config/constants'
-import { CHAT_MODEL_CAPABILITIES } from '../config/defaults'
-import { useConfirmDialog } from '../composables/useConfirmDialog'
-import { useSettingsStore } from '../stores/settings'
-import { isModelReady } from '../utils/resolveModel'
-import type { ModelConfig } from '../types/agent'
+} from '../../api/wiki'
+import { WIKI_INGEST_MODEL_STORAGE_KEY } from '../../config/constants'
+import { CHAT_MODEL_CAPABILITIES } from '../../config/defaults'
+import { useConfirmDialog } from '../../composables/useConfirmDialog'
+import { useSettingsStore } from '../../stores/settings'
+import { isModelReady } from '../../utils/resolveModel'
+import type { ModelConfig } from '../../types/agent'
 import {
   OBSIDIAN_DOWNLOAD_URL,
   resolveObsidianTargetPath,
   tryOpenObsidianVault,
-} from '../utils/openObsidian'
-import ConfirmDialog from './ConfirmDialog.vue'
-import LoadingIndicator from './LoadingIndicator.vue'
-import ModelLogo from './ModelLogo.vue'
-import WikiGraphCanvas from './WikiGraphCanvas.vue'
-import WikiIssuesDrawer from './WikiIssuesDrawer.vue'
-import WikiNodeDetail from './WikiNodeDetail.vue'
+} from '../../utils/openObsidian'
+import ConfirmDialog from '../../components/ConfirmDialog.vue'
+import LoadingIndicator from '../../components/LoadingIndicator.vue'
+import ModelLogo from '../../components/ModelLogo.vue'
+import WikiGraphCanvas from '../../components/WikiGraphCanvas.vue'
+import WikiIssuesDrawer from '../../components/WikiIssuesDrawer.vue'
+import WikiNodeDetail from '../../components/WikiNodeDetail.vue'
 
 const settingsStore = useSettingsStore()
 
@@ -1489,8 +1489,8 @@ watch(selectedNodeId, (id) => expandSectionForNode(id))
 </template>
 
 <style scoped lang="scss">
-@use '../styles/variables.scss' as *;
-@use '../styles/cosmic-glass.scss' as cosmic;
+@use '../../styles/variables.scss' as *;
+@use '../../styles/cosmic-glass.scss' as cosmic;
 
 @mixin hide-scrollbar {
   scrollbar-width: none;

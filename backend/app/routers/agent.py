@@ -153,72 +153,39 @@ async def agent_chat_stream(req: AgentChatRequest, user_id: str = Depends(get_cu
         )
 
     messages = [{"role": m.role, "content": m.content} for m in req.messages]
-
     base = _resolve_chat_url(req.provider, req.base_url)
 
-    if req.claude_agent_config is not None:
-        if req.provider == "anthropic":
-            from app.services.claude_agent_service import stream_claude_agent
+    if req.enabled_skills or req.claude_agent_config is not None:
+        from app.services.mcp.agent_loop import stream_agent_with_mcp_tools
 
-            async def event_stream():
-                try:
-                    async for event in stream_claude_agent(
-                        messages=messages,
-                        claude_agent_config=req.claude_agent_config,
-                        enabled_skills=req.enabled_skills or [],
-                        user_id=user_id,
-                        api_key=api_key,
-                        conversation_id=req.conversation_id,
-                        model=req.model,
-                        base_url=base or None,
-                    ):
-                        yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
-                    yield "data: [DONE]\n\n"
-                except Exception as exc:
-                    yield f"data: {json.dumps({'error': str(exc)}, ensure_ascii=False)}\n\n"
-
-            return StreamingResponse(
-                event_stream(),
-                media_type="text/event-stream; charset=utf-8",
-                headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
-            )
-
-        # Non-anthropic with claude_agent_config: try MCP agent loop if MCP is available
-        mcp_available = False
-        try:
-            _ensure_mcp_ready()
-            mcp_available = True
-        except HTTPException:
-            pass
-
-        if mcp_available:
-            from app.services.mcp.agent_loop import stream_agent_with_mcp_tools
-
-            # Map sandbox thinking_budget to thinking_enabled
+        thinking_enabled = req.thinking_enabled
+        if req.claude_agent_config:
             thinking_budget = req.claude_agent_config.get("thinking_budget", 0)
-            thinking_enabled = thinking_budget > 0
+            thinking_enabled = thinking_budget > 0 or thinking_enabled
 
-            async def event_stream():
-                try:
-                    async for event in stream_agent_with_mcp_tools(
-                        messages,
-                        model=req.model,
-                        provider=req.provider,
-                        api_key=api_key,
-                        base_url=base or None,
-                        temperature=req.temperature,
-                        thinking_enabled=thinking_enabled,
-                    ):
-                        yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
-                    yield "data: [DONE]\n\n"
-                except Exception as exc:
-                    yield f"data: {json.dumps({'error': str(exc)}, ensure_ascii=False)}\n\n"
+        async def event_stream():
+            try:
+                async for event in stream_agent_with_mcp_tools(
+                    messages,
+                    model=req.model,
+                    provider=req.provider,
+                    api_key=api_key,
+                    base_url=base or None,
+                    temperature=req.temperature,
+                    thinking_enabled=thinking_enabled,
+                    enabled_skills=req.enabled_skills or [],
+                    user_id=user_id,
+                ):
+                    yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
+                yield "data: [DONE]\n\n"
+            except Exception as exc:
+                yield f"data: {json.dumps({'error': str(exc)}, ensure_ascii=False)}\n\n"
 
-            return StreamingResponse(
-                event_stream(),
-                media_type="text/event-stream; charset=utf-8",
-                headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
-            )
+        return StreamingResponse(
+            event_stream(),
+            media_type="text/event-stream; charset=utf-8",
+            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+        )
 
     if req.provider not in (None, "tencent") and req.provider not in OPENAI_COMPATIBLE_PROVIDERS:
         raise HTTPException(400, f"不支持的服务商: {req.provider}")
@@ -450,3 +417,75 @@ async def extract_chat_file(
         "text": text,
         "note": note,
     }
+
+
+class SaveAgentRequest(BaseModel):
+    id: str
+    name: str
+    description: str
+    avatar: str
+    bundle: dict
+
+
+@router.get("/list")
+async def list_agents(user_id: str = Depends(get_current_user)):
+    from app.db.models import UserAgentRow
+    from app.db.session import get_session
+    with get_session() as db:
+        rows = db.query(UserAgentRow).filter(UserAgentRow.user_id == user_id).all()
+        return [
+            {
+                "id": r.id,
+                "name": r.name,
+                "description": r.description,
+                "avatar": r.avatar,
+                "bundle": json.loads(r.bundle),
+                "created_at": r.created_at,
+                "updated_at": r.updated_at
+            }
+            for r in rows
+        ]
+
+
+@router.post("/save")
+async def save_agent(req: SaveAgentRequest, user_id: str = Depends(get_current_user)):
+    from app.db.models import UserAgentRow
+    from app.db.session import get_session
+    import time
+    with get_session() as db:
+        now = int(time.time() * 1000)
+        row = db.query(UserAgentRow).filter(UserAgentRow.id == req.id, UserAgentRow.user_id == user_id).first()
+        if row:
+            row.name = req.name
+            row.description = req.description
+            row.avatar = req.avatar
+            row.bundle = json.dumps(req.bundle, ensure_ascii=False)
+            row.updated_at = now
+        else:
+            row = UserAgentRow(
+                id=req.id,
+                user_id=user_id,
+                name=req.name,
+                description=req.description,
+                avatar=req.avatar,
+                bundle=json.dumps(req.bundle, ensure_ascii=False),
+                created_at=now,
+                updated_at=now
+            )
+            db.add(row)
+        db.commit()
+        return {"success": True}
+
+
+@router.delete("/{agent_id}")
+async def delete_agent(agent_id: str, user_id: str = Depends(get_current_user)):
+    from app.db.models import UserAgentRow
+    from app.db.session import get_session
+    with get_session() as db:
+        row = db.query(UserAgentRow).filter(UserAgentRow.id == agent_id, UserAgentRow.user_id == user_id).first()
+        if not row:
+            raise HTTPException(404, "未找到指定的智能体")
+        db.delete(row)
+        db.commit()
+        return {"success": True}
+

@@ -20,11 +20,6 @@ export interface ChatStreamOptions {
   /** DeepSeek：thinking.type=enabled/disabled，其它服务商忽略 */
   thinkingEnabled?: boolean
   reasoningEffort?: ReasoningEffort
-  claudeAgentConfig?: {
-    cwd?: string
-    permissionMode?: string
-    thinkingBudget?: number
-  }
   enabledSkills?: string[]
   conversationId?: string
   signal?: AbortSignal
@@ -50,11 +45,6 @@ export async function sendChatStream(opts: ChatStreamOptions): Promise<string> {
       temperature: opts.temperature,
       thinking_enabled: opts.thinkingEnabled,
       reasoning_effort: opts.reasoningEffort,
-      claude_agent_config: opts.claudeAgentConfig ? {
-        cwd: opts.claudeAgentConfig.cwd,
-        permission_mode: opts.claudeAgentConfig.permissionMode,
-        thinking_budget: opts.claudeAgentConfig.thinkingBudget,
-      } : undefined,
       enabled_skills: opts.enabledSkills,
       conversation_id: opts.conversationId,
     }),
@@ -290,3 +280,62 @@ export async function extractFileText(file: File): Promise<ExtractFileTextResult
   }
   return res.json()
 }
+
+export interface CustomSkillPayload {
+  id: string
+  name: string
+  description: string
+  minio_key: string
+  is_global_enabled: boolean
+}
+
+export async function fetchCustomSkillsApi(): Promise<CustomSkillPayload[]> {
+  const res = await fetch('/api/platform/agent/skills', {
+    headers: platformAuthHeaders(),
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: res.statusText }))
+    throw new Error(parseApiError(err, '获取自定义技能列表失败'))
+  }
+  return res.json()
+}
+
+export async function uploadCustomSkillApi(file: File): Promise<CustomSkillPayload> {
+  const form = new FormData()
+  form.append('file', file)
+  const res = await fetch('/api/platform/agent/skills/upload', {
+    method: 'POST',
+    headers: platformAuthHeaders(),
+    body: form,
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: res.statusText }))
+    throw new Error(parseApiError(err, '上传技能包失败'))
+  }
+  return res.json()
+}
+
+export async function toggleCustomSkillApi(skillId: string, isEnabled: boolean): Promise<any> {
+  const res = await fetch(`/api/platform/agent/skills/${skillId}?is_enabled=${isEnabled}`, {
+    method: 'PUT',
+    headers: platformAuthHeaders(),
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: res.statusText }))
+    throw new Error(parseApiError(err, '更新技能状态失败'))
+  }
+  return res.json()
+}
+
+export async function deleteCustomSkillApi(skillId: string): Promise<any> {
+  const res = await fetch(`/api/platform/agent/skills/${skillId}`, {
+    method: 'DELETE',
+    headers: platformAuthHeaders(),
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: res.statusText }))
+    throw new Error(parseApiError(err, '删除技能失败'))
+  }
+  return res.json()
+}
+

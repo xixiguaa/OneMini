@@ -1,7 +1,10 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useLoginPointer } from '../composables/useLoginPointer'
+import { useUiPrefsStore } from '../stores/uiPrefs'
 import { createNightSkyEngine, supportsWebGL, type NightSkyEngine } from '../utils/loginNightSkyEngine'
+
+const ui = useUiPrefsStore()
 
 const CLOUD_SHAPES = {
   a: 'M 14 54 C 4 40 10 24 34 26 C 44 8 70 10 86 24 C 106 12 130 16 146 32 C 166 34 178 46 168 54 L 16 54 Z',
@@ -72,9 +75,10 @@ function disposeEngine() {
 }
 
 async function initDarkEngine() {
-  if (!interactionsEnabled.value || !supportsWebGL() || !isDark.value) {
-    useStaticFallback.value = !interactionsEnabled.value || !supportsWebGL()
+  if (ui.lowPerformanceMode || !interactionsEnabled.value || !supportsWebGL() || !isDark.value) {
+    useStaticFallback.value = ui.lowPerformanceMode || !interactionsEnabled.value || !supportsWebGL()
     if (!isDark.value) useStaticFallback.value = false
+    disposeEngine()
     return
   }
 
@@ -111,6 +115,13 @@ watch(skyTheme, (theme) => {
     useStaticFallback.value = false
   }
 })
+
+watch(
+  () => ui.lowPerformanceMode,
+  () => {
+    void initDarkEngine()
+  }
+)
 
 onMounted(() => {
   void initDarkEngine()

@@ -7,13 +7,13 @@ import {
   listKnowledgeDocuments,
   uploadKnowledgeFile,
   type KnowledgeDocument,
-} from '../api/platform'
-import { getWikiStatus, runWikiLint, type WikiLintResult } from '../api/wiki'
-import { useConfirmDialog } from '../composables/useConfirmDialog'
-import { useAgentStore } from '../stores/agent'
-import { usePlatformStore } from '../stores/platform'
-import ConfirmDialog from './ConfirmDialog.vue'
-import LoadingIndicator from './LoadingIndicator.vue'
+} from '../../api/platform'
+import { getWikiStatus, runWikiLint, type WikiLintResult } from '../../api/wiki'
+import { useConfirmDialog } from '../../composables/useConfirmDialog'
+import { useAgentStore } from '../../stores/agent'
+import { usePlatformStore } from '../../stores/platform'
+import ConfirmDialog from '../../components/ConfirmDialog.vue'
+import LoadingIndicator from '../../components/LoadingIndicator.vue'
 
 const platform = usePlatformStore()
 const agent = useAgentStore()
@@ -415,7 +415,7 @@ onMounted(async () => {
 </template>
 
 <style scoped lang="scss">
-@use '../styles/variables.scss' as *;
+@use '../../styles/variables.scss' as *;
 
 .models-page {
   flex: 1;

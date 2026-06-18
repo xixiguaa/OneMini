@@ -48,6 +48,7 @@ function mergeSkeleton(saved?: Partial<OneMiniSkeleton>): OneMiniSkeleton {
         ...(saved.skills?.permissions ?? {}),
       },
       hiddenSkillIds: saved.skills?.hiddenSkillIds ?? base.skills.hiddenSkillIds ?? [],
+      enabledSkillIds: saved.skills?.enabledSkillIds ?? base.skills.enabledSkillIds ?? [],
     },
     knowledge: {
       bindings: saved.knowledge?.bindings ?? base.knowledge?.bindings ?? [],
@@ -60,13 +61,6 @@ function mergeSkeleton(saved?: Partial<OneMiniSkeleton>): OneMiniSkeleton {
         ? saved.multiAgent.agents
         : base.multiAgent.agents,
     },
-    claudeAgent: saved.claudeAgent && base.claudeAgent
-      ? {
-          cwd: saved.claudeAgent.cwd ?? base.claudeAgent.cwd,
-          permissionMode: saved.claudeAgent.permissionMode ?? base.claudeAgent.permissionMode,
-          thinkingBudget: saved.claudeAgent.thinkingBudget ?? base.claudeAgent.thinkingBudget,
-        }
-      : base.claudeAgent,
   }
 }
 
@@ -319,5 +313,20 @@ export const useAgentConfigStore = defineStore('agentConfig', () => {
     updateKnowledgeBinding,
     applyModelPreset,
     setPrimaryModel,
+    toggleLocalSkill(skillId: string, on: boolean) {
+      const list = [...(skeleton.value.skills.enabledSkillIds ?? [])]
+      const idx = list.indexOf(skillId)
+      if (on && idx < 0) {
+        list.push(skillId)
+      } else if (!on && idx >= 0) {
+        list.splice(idx, 1)
+      }
+      updateSkeleton({
+        skills: {
+          ...skeleton.value.skills,
+          enabledSkillIds: list,
+        },
+      })
+    },
   }
 })

@@ -285,3 +285,27 @@ input.login-field-input {
     color: inherit;
   }
 }
+
+/* 低配性能模式 (Low Performance Mode) 全局优化 */
+html[data-low-performance='true'] {
+  *,
+  *::before,
+  *::after {
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+  }
+
+  // 彻底隐藏整个主页背景极光与噪点组件，消除高负荷的模糊与 mix-blend-mode (混合模式) 消耗
+  .page-aurora {
+    display: none !important;
+  }
+
+  // 关闭登录页面极光和云层的 CSS 动画
+  .login-sky__aurora,
+  .login-sky__clouds,
+  .cloud__float,
+  .static-star {
+    animation: none !important;
+  }
+}
+

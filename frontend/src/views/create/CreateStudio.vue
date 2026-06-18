@@ -19,34 +19,34 @@ import { computed, nextTick, onMounted, onUnmounted, provide, reactive, ref, wat
 import {
   createStudioOpenFloatingComposerKey,
   createStudioScrollToComposerKey,
-} from '../composables/createStudioScroll'
-import { acceptFilesForCreateMode } from '../utils/files'
-import { useAnchoredPopover } from '../composables/useAnchoredPopover'
-import { usePublicGallery } from '../composables/usePublicGallery'
-import { useTypewriter } from '../composables/useTypewriter'
+} from '../../composables/createStudioScroll'
+import { acceptFilesForCreateMode } from '../../utils/files'
+import { useAnchoredPopover } from '../../composables/useAnchoredPopover'
+import { usePublicGallery } from '../../composables/usePublicGallery'
+import { useTypewriter } from '../../composables/useTypewriter'
 import {
   composerSubmenuOpenKey,
   createComposerMenuCloseAllKey,
   createMenuCloseSignalKey,
   toggleExclusiveComposerMenu,
-} from '../composables/useCreateComposerMenus'
-import ChatAttachmentCard from './ChatAttachmentCard.vue'
-import CreateGenerationPill from './CreateGenerationPill.vue'
-import ReferenceImageStack from './ReferenceImageStack.vue'
-import CreativeSkillsMenu from './CreativeSkillsMenu.vue'
-import GenPreferencesPopover from './GenPreferencesPopover.vue'
-import ModelLogo from './ModelLogo.vue'
-import ImageEditOverlay from './ImageEditOverlay.vue'
-import LipSyncComposerCard from './LipSyncComposerCard.vue'
-import WorksWaterfall from './WorksWaterfall.vue'
-import { isModelReady } from '../utils/resolveModel'
-import { useAgentStore } from '../stores/agent'
-import { useToastStore } from '../stores/toast'
-import { formatUserError } from '../utils/formatUserError'
-import { useCreateHistoryStore } from '../stores/createHistory'
-import { useSettingsStore } from '../stores/settings'
-import type { CreateMode, SkillId } from '../types/agent'
-import { applyAspectRatioToPrompt, applyVideoPrefsToPrompt } from '../utils/aspectRatioPrompt'
+} from '../../composables/useCreateComposerMenus'
+import ChatAttachmentCard from '../../components/ChatAttachmentCard.vue'
+import CreateGenerationPill from '../../components/CreateGenerationPill.vue'
+import ReferenceImageStack from '../../components/ReferenceImageStack.vue'
+import CreativeSkillsMenu from '../../components/CreativeSkillsMenu.vue'
+import GenPreferencesPopover from '../../components/GenPreferencesPopover.vue'
+import ModelLogo from '../../components/ModelLogo.vue'
+import ImageEditOverlay from '../../components/ImageEditOverlay.vue'
+import LipSyncComposerCard from '../../components/LipSyncComposerCard.vue'
+import WorksWaterfall from '../../components/WorksWaterfall.vue'
+import { isModelReady } from '../../utils/resolveModel'
+import { useAgentStore } from '../../stores/agent'
+import { useToastStore } from '../../stores/toast'
+import { formatUserError } from '../../utils/formatUserError'
+import { useCreateHistoryStore } from '../../stores/createHistory'
+import { useSettingsStore } from '../../stores/settings'
+import type { CreateMode, SkillId } from '../../types/agent'
+import { applyAspectRatioToPrompt, applyVideoPrefsToPrompt } from '../../utils/aspectRatioPrompt'
 
 const agent = useAgentStore()
 const settings = useSettingsStore()
@@ -1144,8 +1144,8 @@ const fileAccept = computed(() => acceptFilesForCreateMode(agent.createMode))
 </template>
 
 <style scoped lang="scss">
-@use '../styles/variables.scss' as *;
-@use '../styles/cosmic-glass.scss' as cosmic;
+@use '../../styles/variables.scss' as *;
+@use '../../styles/cosmic-glass.scss' as cosmic;
 
 $floating-ease-expand: cubic-bezier(0.22, 1, 0.36, 1);
 $floating-ease-collapse: cubic-bezier(0.36, 0, 0.12, 1);
@@ -2256,8 +2256,8 @@ html[data-sidebar-collapsed='true'] .floating-composer {
 </style>
 
 <style lang="scss">
-@use '../styles/cosmic-glass.scss' as cosmic;
-@use '../styles/variables.scss' as *;
+@use '../../styles/cosmic-glass.scss' as cosmic;
+@use '../../styles/variables.scss' as *;
 
 .create-composer-backdrop {
   z-index: 10001;

@@ -1,8 +1,15 @@
 <script setup lang="ts">
-import { Loader2, Plus, Search } from 'lucide-vue-next'
+import { Cpu, Loader2, Plus, Search } from 'lucide-vue-next'
 import { computed, onMounted, ref } from 'vue'
 import AgentSkillDetailSheet from './AgentSkillDetailSheet.vue'
 import { fetchMcpStatus, fetchMcpTools, type McpToolPayload } from '../api/mcp'
+import {
+  fetchCustomSkillsApi,
+  uploadCustomSkillApi,
+  toggleCustomSkillApi,
+  deleteCustomSkillApi,
+  type CustomSkillPayload,
+} from '../api/agent'
 import {
   AGENT_SKILL_CATALOG,
   catalogItemForMcpTool,
@@ -11,10 +18,12 @@ import {
 } from '../config/agentSkillCatalog'
 import { useAgentConfigStore } from '../stores/agentConfig'
 import { usePlatformStore } from '../stores/platform'
+import { useToastStore } from '../stores/toast'
 
 // 技能页：卡片展示 description 与 source 路径，参考 marketplace 卡片布局
 const agentConfig = useAgentConfigStore()
 const platform = usePlatformStore()
+const toast = useToastStore()
 
 const search = ref('')
 const selectedId = ref<string | null>(null)
@@ -22,14 +31,32 @@ const addMenuOpen = ref(false)
 const mcpLoading = ref(false)
 const mcpConnected = ref(false)
 const mcpTools = ref<McpToolPayload[]>([])
+const customSkills = ref<CustomSkillPayload[]>([])
+const uploading = ref(false)
+const fileInput = ref<HTMLInputElement | null>(null)
 
 const mcpCatalogItems = computed(() =>
   mcpTools.value.map((t) => catalogItemForMcpTool(t)),
 )
 
+const customCatalogItems = computed((): AgentSkillCatalogItem[] => {
+  return customSkills.value.map((s) => ({
+    id: s.id,
+    name: s.name,
+    description: s.description || '自定义技能包',
+    kind: 'custom',
+    icon: Cpu,
+    iconTone: 'pink',
+    availability: 'ready',
+    defaultInvokeDescription: s.description || '调用此自定义技能。',
+    isCustom: true,
+    isGlobalEnabled: s.is_global_enabled,
+  } as any))
+})
+
 const allSkills = computed(() => {
   const hidden = new Set(agentConfig.skeleton.skills.hiddenSkillIds ?? [])
-  return [...AGENT_SKILL_CATALOG, ...mcpCatalogItems.value].filter((s) => !hidden.has(s.id))
+  return [...AGENT_SKILL_CATALOG, ...mcpCatalogItems.value, ...customCatalogItems.value].filter((s) => !hidden.has(s.id))
 })
 
 const filteredSkills = computed(() => {
@@ -58,7 +85,7 @@ const skillSections = computed(() =>
 )
 
 const selectedSkill = computed(() =>
-  selectedId.value ? getCatalogItem(selectedId.value, mcpCatalogItems.value) : null,
+  selectedId.value ? getCatalogItem(selectedId.value, [...mcpCatalogItems.value, ...customCatalogItems.value]) : null,
 )
 
 const selectedMcpName = computed(() => {
@@ -68,6 +95,9 @@ const selectedMcpName = computed(() => {
 
 function isSkillEnabled(item: AgentSkillCatalogItem) {
   if (item.availability === 'planned') return false
+  if ((item as any).isCustom) {
+    return (item as any).isGlobalEnabled
+  }
   switch (item.id) {
     case 'web-search':
       return platform.webSearchEnabled
@@ -84,9 +114,10 @@ function isSkillEnabled(item: AgentSkillCatalogItem) {
   return false
 }
 
+// 只有 planned 技能和非自定义的 MCP 技能禁止在前台 global 级别 toggle
 function canToggle(item: AgentSkillCatalogItem) {
   if (item.availability === 'planned') return false
-  if (item.kind === 'mcp') return false
+  if (item.kind === 'mcp' && !(item as any).isCustom) return false
   return true
 }
 
@@ -105,6 +136,9 @@ function statusKind(item: AgentSkillCatalogItem) {
 }
 
 function skillSource(item: AgentSkillCatalogItem): string {
+  if ((item as any).isCustom) {
+    return `custom/${item.id}`
+  }
   if (item.kind === 'mcp') {
     return item.id.startsWith('mcp:') ? item.id.slice(4) : item.id
   }
@@ -121,7 +155,17 @@ function selectSkill(id: string) {
   selectedId.value = selectedId.value === id ? null : id
 }
 
-function toggleSkill(item: AgentSkillCatalogItem, on: boolean) {
+async function toggleSkill(item: AgentSkillCatalogItem, on: boolean) {
+  if ((item as any).isCustom) {
+    try {
+      await toggleCustomSkillApi(item.id, on)
+      toast.showSuccess(`技能全局${on ? '启用' : '禁用'}成功`)
+      await refreshCustomSkills()
+    } catch (e: any) {
+      toast.showError(e.message || '更新状态失败')
+    }
+    return
+  }
   switch (item.id) {
     case 'web-search':
       platform.setWebSearchEnabled(on)
@@ -138,7 +182,7 @@ function toggleSkill(item: AgentSkillCatalogItem, on: boolean) {
 function onCardToggle(item: AgentSkillCatalogItem, e: Event) {
   e.stopPropagation()
   if (!canToggle(item)) return
-  toggleSkill(item, (e.target as HTMLInputElement).checked)
+  void toggleSkill(item, (e.target as HTMLInputElement).checked)
 }
 
 async function refreshMcp() {
@@ -155,8 +199,52 @@ async function refreshMcp() {
   }
 }
 
-function onRemoveSelected() {
+async function refreshCustomSkills() {
+  try {
+    customSkills.value = await fetchCustomSkillsApi()
+  } catch (e) {
+    console.error('Failed to load custom skills:', e)
+  }
+}
+
+function triggerUpload() {
+  addMenuOpen.value = false
+  fileInput.value?.click()
+}
+
+async function onFileChange(e: Event) {
+  const target = e.target as HTMLInputElement
+  const file = target.files?.[0]
+  if (!file) return
+  uploading.value = true
+  try {
+    await uploadCustomSkillApi(file)
+    toast.showSuccess('自定义技能上传成功')
+    await refreshCustomSkills()
+  } catch (err: any) {
+    toast.showError(err.message || '上传失败')
+  } finally {
+    uploading.value = false
+    target.value = ''
+  }
+}
+
+async function onRemoveSelected() {
   if (!selectedId.value) return
+  const item = selectedSkill.value
+  if (item && (item as any).isCustom) {
+    if (confirm(`确定要彻底删除自定义技能「${item.name}」吗？\n该操作会同步删除云端存储的技能包。`)) {
+      try {
+        await deleteCustomSkillApi(item.id)
+        toast.showSuccess('自定义技能删除成功')
+        selectedId.value = null
+        await refreshCustomSkills()
+      } catch (err: any) {
+        toast.showError(err.message || '删除失败')
+      }
+    }
+    return
+  }
   agentConfig.hideSkillId(selectedId.value)
   selectedId.value = null
 }
@@ -167,6 +255,7 @@ function closeSheet() {
 
 onMounted(() => {
   void refreshMcp()
+  void refreshCustomSkills()
 })
 </script>
 
@@ -177,7 +266,7 @@ onMounted(() => {
         <label class="skill-search embedded-field">
           <Search :size="14" aria-hidden="true" />
           <input v-model="search" type="search" />
-          <Loader2 v-if="mcpLoading" :size="14" class="skill-search__spinner om-loading-spinner" />
+          <Loader2 v-if="mcpLoading || uploading" :size="14" class="skill-search__spinner om-loading-spinner" />
         </label>
         <div class="add-wrap">
           <button type="button" class="btn-add" @click="addMenuOpen = !addMenuOpen">
@@ -188,8 +277,18 @@ onMounted(() => {
             <button type="button" @click="addMenuOpen = false; refreshMcp()">
               刷新 MCP 工具
             </button>
+            <button type="button" @click="triggerUpload">
+              上传 ZIP 技能包
+            </button>
             <button type="button" disabled>从模板库添加…</button>
           </div>
+          <input
+            ref="fileInput"
+            type="file"
+            accept=".zip"
+            style="display: none"
+            @change="onFileChange"
+          />
         </div>
       </div>
     </header>

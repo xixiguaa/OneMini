@@ -23,7 +23,7 @@ import {
 } from '../config/digitalHumanModes'
 import type { VoiceItem } from '../config/voicePicker'
 import { acceptFilesForCreateMode } from '../utils/files'
-import { useAnchoredPopover, type PopoverPlacement } from '../composables/useAnchoredPopover'
+import { useAnchoredPopover } from '../composables/useAnchoredPopover'
 import { useAgentStore } from '../stores/agent'
 import { useSettingsStore } from '../stores/settings'
 import { useToastStore } from '../stores/toast'
@@ -44,7 +44,7 @@ const props = withDefaults(
     collapsible?: boolean
     autoCollapseOnBlur?: boolean
     /** 顶部输入区默认向下；底部浮动/编辑页输入条固定向上 */
-    popoverPlacement?: Exclude<PopoverPlacement, 'auto'>
+    popoverPlacement?: 'above' | 'below'
     /** 创作页复用外层 file input（更可靠） */
     pickRefFile?: () => void
   }>(),

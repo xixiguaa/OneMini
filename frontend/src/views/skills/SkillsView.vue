@@ -1,18 +1,34 @@
 <script setup lang="ts">
-import { FlaskConical, Plus, Settings, Sparkles, Store, Trash2 } from 'lucide-vue-next'
+import { FlaskConical, Loader2, Plus, Save, Settings, Sparkles, Store, Trash2 } from 'lucide-vue-next'
 import { computed, onUnmounted, ref, watch } from 'vue'
-import AgentAvatar from './AgentAvatar.vue'
-import AgentConfigSandbox from './AgentConfigSandbox.vue'
-import AgentPersonaPanel from './AgentPersonaPanel.vue'
-import AgentSkillsPanel from './AgentSkillsPanel.vue'
-import ConfirmDialog from './ConfirmDialog.vue'
-import { useConfirmDialog } from '../composables/useConfirmDialog'
-import { useAgentConfigStore } from '../stores/agentConfig'
-import { useUserAgentsStore } from '../stores/userAgents'
-import { CONFIG_SECTIONS, type AgentConfigSection } from '../types/agentConfig'
+import AgentAvatar from '../../components/AgentAvatar.vue'
+import AgentConfigSandbox from '../../components/AgentConfigSandbox.vue'
+import AgentPersonaPanel from '../../components/AgentPersonaPanel.vue'
+import AgentSkillsPanel from '../../components/AgentSkillsPanel.vue'
+import ConfirmDialog from '../../components/ConfirmDialog.vue'
+import { useConfirmDialog } from '../../composables/useConfirmDialog'
+import { useAgentConfigStore } from '../../stores/agentConfig'
+import { useUserAgentsStore } from '../../stores/userAgents'
+import { useToastStore } from '../../stores/toast'
+import { CONFIG_SECTIONS, type AgentConfigSection } from '../../types/agentConfig'
 
 const userAgents = useUserAgentsStore()
 const agentConfig = useAgentConfigStore()
+const toast = useToastStore()
+const saving = ref(false)
+
+async function saveActiveAgent() {
+  if (!activeAgent.value) return
+  saving.value = true
+  try {
+    await userAgents.saveAgentToBackend(activeAgent.value.id)
+    toast.showSuccess('智能体配置已保存到云端')
+  } catch (e) {
+    toast.showError('保存配置失败，请稍后重试')
+  } finally {
+    saving.value = false
+  }
+}
 const section = ref<AgentConfigSection>('config')
 const deleteTargetId = ref<string | null>(null)
 const sandboxOpen = ref(false)
@@ -121,7 +137,7 @@ onUnmounted(() => {
         </nav>
 
         <nav
-          v-if="userAgents.agents.length > 1"
+          v-if="userAgents.agents.length >= 1"
           class="agent-picker"
           aria-label="智能体列表"
         >
@@ -139,6 +155,7 @@ onUnmounted(() => {
             <AgentAvatar :name="agent.name" :id="agent.id" :avatar="agent.avatar" size="sm" />
             <span class="agent-chip__name">{{ agent.name }}</span>
             <button
+              v-if="userAgents.agents.length > 1"
               type="button"
               class="agent-chip__delete"
               title="删除智能体"
@@ -151,6 +168,17 @@ onUnmounted(() => {
         </nav>
 
         <div class="workspace-actions">
+          <button
+            v-if="section === 'config'"
+            type="button"
+            class="save-trigger"
+            :disabled="saving"
+            @click="saveActiveAgent"
+          >
+            <Loader2 v-if="saving" :size="14" class="om-loading-spinner" />
+            <Save v-else :size="14" />
+            保存配置
+          </button>
           <button
             v-if="section === 'config'"
             type="button"
@@ -234,7 +262,7 @@ onUnmounted(() => {
 </template>
 
 <style scoped lang="scss">
-@use '../styles/variables.scss' as *;
+@use '../../styles/variables.scss' as *;
 
 .agent-hub {
   flex: 1;
@@ -356,6 +384,29 @@ onUnmounted(() => {
     color: $accent-emphasis;
     background: $accent-light;
     border-color: color-mix(in srgb, $accent 20%, transparent);
+  }
+}
+
+.save-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 500;
+  color: #fff;
+  background: var(--btn-primary-gradient, $accent);
+  border: none;
+  cursor: pointer;
+
+  &:hover {
+    filter: brightness(1.05);
+  }
+
+  &:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
   }
 }
 

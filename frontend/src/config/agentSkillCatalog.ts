@@ -1,7 +1,7 @@
 import type { Component } from 'vue'
 import { Database, GitBranch, Globe, Terminal, Wrench } from 'lucide-vue-next'
 
-export type AgentSkillKind = 'web' | 'knowledge' | 'mcp' | 'planned'
+export type AgentSkillKind = 'web' | 'knowledge' | 'mcp' | 'planned' | 'custom'
 
 export type AgentSkillAvailability = 'ready' | 'config' | 'planned'
 

@@ -1,6 +1,7 @@
 import { createPinia } from 'pinia'
 import { createApp } from 'vue'
 import App from './App.vue'
+import router from './router'
 import { useAgentStore } from './stores/agent'
 import { useAuthStore } from './stores/auth'
 import { useSettingsStore } from './stores/settings'
@@ -13,6 +14,7 @@ initUiPrefsFromStorage()
 const app = createApp(App)
 const pinia = createPinia()
 app.use(pinia)
+app.use(router)
 useUserAgentsStore()
 
 app.mount('#app')

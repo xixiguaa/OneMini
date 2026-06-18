@@ -100,6 +100,10 @@ export const messages = {
       creatorAvatarTooLarge: '头像请小于 512KB',
       creatorAvatarInvalid: '请选择图片文件',
       creatorSaved: '展示资料已更新',
+      performance: '低配性能模式',
+      lowPerfDesc: '减弱动态效果，关闭极光背景及毛玻璃高斯模糊滤镜，极大提升低端设备流畅度。',
+      lowPerfOn: '已开启',
+      lowPerfOff: '已关闭',
     },
   },
   en: {
@@ -203,6 +207,10 @@ export const messages = {
       creatorAvatarTooLarge: 'Avatar must be under 512KB',
       creatorAvatarInvalid: 'Please choose an image file',
       creatorSaved: 'Profile updated',
+      performance: 'Low Performance Mode',
+      lowPerfDesc: 'Disable animations, aurora background blobs, and glassmorphic blur filters to boost performance on low-end devices.',
+      lowPerfOn: 'Enabled',
+      lowPerfOff: 'Disabled',
     },
   },
 } as const

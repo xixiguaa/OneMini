@@ -158,13 +158,13 @@ function togglePerm(id: string) {
         <button type="button" class="btn btn--ghost" @click="emit('close')">取消</button>
       </div>
       <button
-        v-if="skill.kind === 'mcp'"
+        v-if="skill.kind === 'mcp' || skill.kind === 'custom'"
         type="button"
         class="btn btn--danger"
         @click="emit('remove')"
       >
         <Trash2 :size="14" />
-        从列表隐藏
+        {{ skill.kind === 'custom' ? '删除技能' : '从列表隐藏' }}
       </button>
     </footer>
   </div>

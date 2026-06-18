@@ -2,25 +2,20 @@
 import GhostIcon from './components/GhostIcon.vue'
 import { storeToRefs } from 'pinia'
 import { onMounted, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import AppSidebar from './components/AppSidebar.vue'
 import AppToast from './components/AppToast.vue'
-import ChatView from './components/ChatView.vue'
-import CreateStudio from './components/CreateStudio.vue'
 import IncognitoOverlay from './components/IncognitoOverlay.vue'
 import LoginPage from './components/LoginPage.vue'
-import ModelsView from './components/ModelsView.vue'
-import KnowledgeView from './components/KnowledgeView.vue'
 import PageAuroraBackground from './components/PageAuroraBackground.vue'
-import WikiGraphView from './components/WikiGraphView.vue'
-import SkillsView from './components/SkillsView.vue'
-import UserProfileView from './components/UserProfileView.vue'
-import WorldStudio from './components/WorldStudio.vue'
 import { useAgentStore } from './stores/agent'
 import { useAuthStore } from './stores/auth'
 import { useLocale } from './composables/useLocale'
 
 const agent = useAgentStore()
 const auth = useAuthStore()
+const route = useRoute()
+const router = useRouter()
 const { t } = useLocale()
 const { ready, isAuthenticated } = storeToRefs(auth)
 
@@ -46,45 +41,81 @@ onMounted(() => {
 watch(isAuthenticated, (ok) => {
   if (ok) applyRouteFromUrl()
 })
+
+// Bi-directional sync between vue-router and Pinia agent store view state
+watch(
+  () => route.name,
+  (name) => {
+    if (name && name !== agent.currentView) {
+      if (name === 'profile') {
+        const userId = route.query.user as string | null
+        agent.openUserProfile(userId)
+      } else {
+        agent.setCurrentView(name as any)
+      }
+    }
+  }
+)
+
+watch(
+  () => [agent.currentView, agent.profileUserId],
+  ([view, userId]) => {
+    if (view) {
+      const currentQueryUser = route.query.user as string | null
+      const targetQueryUser = userId as string | null
+
+      if (route.name !== view || currentQueryUser !== targetQueryUser) {
+        if (view === 'profile') {
+          router.push({
+            name: 'profile',
+            query: targetQueryUser ? { user: targetQueryUser } : undefined
+          })
+        } else {
+          router.push({ name: view as string })
+        }
+      }
+    }
+  }
+)
 </script>
 
 <template>
-  <Teleport to="body">
-    <AppToast />
-  </Teleport>
-  <div v-if="!ready" class="auth-boot">
-    <p>加载中…</p>
-  </div>
-  <LoginPage v-else-if="!isAuthenticated" />
-  <div v-else class="app">
-    <PageAuroraBackground />
-    <button
-      v-if="agent.currentView === 'chat' && !agent.isIncognito"
-      type="button"
-      class="incognito-trigger"
-      :title="t('incognito.openHint')"
-      :aria-label="t('incognito.openHint')"
-      @click="agent.newIncognitoSession()"
-    >
-      <GhostIcon :size="26" />
-    </button>
-    <IncognitoOverlay v-if="agent.isIncognito" />
-    <AppSidebar />
-    <main class="main">
-      <ChatView v-if="agent.currentView === 'chat'" />
-      <CreateStudio v-else-if="agent.currentView === 'create'" />
-      <WorldStudio v-else-if="agent.currentView === 'world'" />
-      <ModelsView v-else-if="agent.currentView === 'models'" />
-      <SkillsView v-else-if="agent.currentView === 'skills'" />
-      <KnowledgeView v-else-if="agent.currentView === 'knowledge'" />
-      <WikiGraphView v-else-if="agent.currentView === 'wikiGraph'" />
-      <UserProfileView v-else-if="agent.currentView === 'profile'" />
-    </main>
+  <div class="app-root">
+    <Teleport to="body">
+      <AppToast />
+    </Teleport>
+    <div v-if="!ready" class="auth-boot">
+      <p>加载中…</p>
+    </div>
+    <LoginPage v-else-if="!isAuthenticated" />
+    <div v-else class="app">
+      <PageAuroraBackground />
+      <button
+        v-if="agent.currentView === 'chat' && !agent.isIncognito"
+        type="button"
+        class="incognito-trigger"
+        :title="t('incognito.openHint')"
+        :aria-label="t('incognito.openHint')"
+        @click="agent.newIncognitoSession()"
+      >
+        <GhostIcon :size="26" />
+      </button>
+      <IncognitoOverlay v-if="agent.isIncognito" />
+      <AppSidebar />
+      <main class="main">
+        <router-view />
+      </main>
+    </div>
   </div>
 </template>
 
 <style scoped lang="scss">
 @use './styles/variables.scss' as *;
+
+.app-root {
+  width: 100%;
+  height: 100%;
+}
 
 .auth-boot {
   min-height: 100vh;

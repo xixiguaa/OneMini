@@ -298,6 +298,23 @@ async function confirmDeleteAll() {
                     />
                   </div>
                 </section>
+
+                <section class="settings-section">
+                  <div class="settings-row">
+                    <div class="row-main">
+                      <h3>{{ t('settings.performance') }}</h3>
+                      <p class="row-desc">{{ t('settings.lowPerfDesc') }}</p>
+                    </div>
+                    <button
+                      type="button"
+                      class="row-action"
+                      :class="{ active: ui.lowPerformanceMode }"
+                      @click="ui.setLowPerformanceMode(!ui.lowPerformanceMode)"
+                    >
+                      {{ ui.lowPerformanceMode ? t('settings.lowPerfOn') : t('settings.lowPerfOff') }}
+                    </button>
+                  </div>
+                </section>
               </template>
 
               <template v-else-if="activeTab === 'account'">
@@ -722,6 +739,18 @@ async function confirmDeleteAll() {
   &:disabled {
     opacity: 0.5;
     cursor: not-allowed;
+  }
+
+  &.active {
+    background: var(--btn-primary-gradient, $accent);
+    color: $btn-primary-text;
+    border-color: rgba(255, 255, 255, 0.12);
+    box-shadow: var(--btn-primary-shadow, $shadow-glow);
+
+    &:hover:not(:disabled) {
+      filter: brightness(1.08);
+      color: $btn-primary-text;
+    }
   }
 
   &--danger {

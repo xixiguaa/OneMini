@@ -5,7 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import get_settings
 from app.db.session import init_db, ping_postgres
-from app.routers import agent, auth, chat, conversations, create_history, follows, health, knowledge, mcp, secrets, wiki
+from app.routers import agent, auth, chat, conversations, create_history, follows, health, knowledge, mcp, secrets, wiki, skills
 from app.services.chat_store import _get_chat_collection
 from app.services.legacy_data_import import run_legacy_import_if_needed
 from app.services.milvus_store import connect_milvus, disconnect_milvus, ping_milvus
@@ -88,6 +88,7 @@ app.include_router(create_history.router, prefix=API_PREFIX)
 app.include_router(follows.router, prefix=API_PREFIX)
 app.include_router(wiki.router, prefix=API_PREFIX)
 app.include_router(mcp.router, prefix=API_PREFIX)
+app.include_router(skills.router, prefix=API_PREFIX)
 
 
 @app.get("/")

@@ -1,21 +1,21 @@
 <script setup lang="ts">
 import { Plus, Trash2 } from 'lucide-vue-next'
 import { computed, ref } from 'vue'
-import { useConfirmDialog } from '../composables/useConfirmDialog'
+import { useConfirmDialog } from '../../composables/useConfirmDialog'
 import {
   getModelConfigGroup,
   getVisionMediaLabel,
   MODEL_CONFIG_GROUPS,
   MULTIMODAL_FEATURE_TAGS,
   type ModelConfigGroupId,
-} from '../config/defaults'
-import { isModelReady } from '../utils/resolveModel'
-import ConfirmDialog from './ConfirmDialog.vue'
-import ModelAddPanel from './ModelAddPanel.vue'
-import ModelDetailPanel from './ModelDetailPanel.vue'
-import { useSettingsStore } from '../stores/settings'
-import ModelLogo from './ModelLogo.vue'
-import type { ModelConfig } from '../types/agent'
+} from '../../config/defaults'
+import { isModelReady } from '../../utils/resolveModel'
+import ConfirmDialog from '../../components/ConfirmDialog.vue'
+import ModelAddPanel from '../../components/ModelAddPanel.vue'
+import ModelDetailPanel from '../../components/ModelDetailPanel.vue'
+import { useSettingsStore } from '../../stores/settings'
+import ModelLogo from '../../components/ModelLogo.vue'
+import type { ModelConfig } from '../../types/agent'
 
 const settings = useSettingsStore()
 const {
@@ -236,7 +236,7 @@ function modelMeta(m: ModelConfig) {
 </template>
 
 <style scoped lang="scss">
-@use '../styles/variables.scss' as *;
+@use '../../styles/variables.scss' as *;
 
 .models-page {
   flex: 1;

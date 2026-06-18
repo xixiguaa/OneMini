@@ -11,6 +11,7 @@ interface UiPrefs {
   theme: ThemeMode
   locale: Locale
   sidebarCollapsed: boolean
+  lowPerformanceMode: boolean
 }
 
 function resolveSystemTheme(): ResolvedTheme {
@@ -46,12 +47,13 @@ function loadPrefs(): UiPrefs {
         theme: normalizeTheme(parsed.theme),
         locale: parsed.locale === 'en' ? 'en' : 'zh',
         sidebarCollapsed: Boolean(parsed.sidebarCollapsed),
+        lowPerformanceMode: Boolean(parsed.lowPerformanceMode),
       }
     }
   } catch {
     /* ignore */
   }
-  return { theme: 'dark', locale: 'zh', sidebarCollapsed: false }
+  return { theme: 'dark', locale: 'zh', sidebarCollapsed: false, lowPerformanceMode: false }
 }
 
 /** 在 createApp 之前调用，避免主题闪烁 */
@@ -62,6 +64,9 @@ export function initUiPrefsFromStorage() {
   document.documentElement.dataset.sidebarCollapsed = prefs.sidebarCollapsed
     ? 'true'
     : 'false'
+  document.documentElement.dataset.lowPerformance = prefs.lowPerformanceMode
+    ? 'true'
+    : 'false'
   return prefs
 }
 
@@ -70,6 +75,7 @@ export const useUiPrefsStore = defineStore('uiPrefs', () => {
   const theme = ref<ThemeMode>(saved.theme)
   const locale = ref<Locale>(saved.locale)
   const sidebarCollapsed = ref(saved.sidebarCollapsed)
+  const lowPerformanceMode = ref(saved.lowPerformanceMode)
 
   const resolvedTheme = computed<ResolvedTheme>(() => resolveTheme(theme.value))
 
@@ -93,12 +99,16 @@ export const useUiPrefsStore = defineStore('uiPrefs', () => {
       theme: theme.value,
       locale: locale.value,
       sidebarCollapsed: sidebarCollapsed.value,
+      lowPerformanceMode: lowPerformanceMode.value,
     }),
     (val) => {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(val))
       applyTheme(val.theme)
       applyLocale(val.locale)
       document.documentElement.dataset.sidebarCollapsed = val.sidebarCollapsed
+        ? 'true'
+        : 'false'
+      document.documentElement.dataset.lowPerformance = val.lowPerformanceMode
         ? 'true'
         : 'false'
       bindSystemMediaListener()
@@ -127,15 +137,21 @@ export const useUiPrefsStore = defineStore('uiPrefs', () => {
     sidebarCollapsed.value = v
   }
 
+  function setLowPerformanceMode(v: boolean) {
+    lowPerformanceMode.value = v
+  }
+
   return {
     theme,
     resolvedTheme,
     locale,
     sidebarCollapsed,
+    lowPerformanceMode,
     setTheme,
     toggleTheme,
     setLocale,
     toggleSidebar,
     setSidebarCollapsed,
+    setLowPerformanceMode,
   }
 })
